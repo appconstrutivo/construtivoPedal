@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --surface: #f8fafc;
+  --surface-card: #ffffff;
+  --text: #0f172a;
+  --text-muted: #64748b;
+  --border: #e2e8f0;
+  --accent: #2563eb;
+}
+
+body {
+  @apply min-h-screen bg-[var(--surface)] text-[var(--text)] antialiased;
+}
