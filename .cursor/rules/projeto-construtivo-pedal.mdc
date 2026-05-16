@@ -10,6 +10,19 @@ alwaysApply: true
 - Arquitetura: **online**; banco de dados e backend em **Supabase** (criação do projeto no painel ainda será definida). **Não** planejar fluxo offline-first nem persistência local como fonte de verdade.
 
 - Supabase: usar MCP do Cursor (token configurado em `~/.cursor/mcp.json`). Não commitar tokens nem secrets.
+- **Projeto Supabase:** `cwjopgywdynsvhmxqcxh` (Construtivo Pedal).
+
+## Migrações SQL (autonomia do agente)
+
+O agente **tem autonomia** para aplicar migrações no Supabase quando necessário para o sistema funcionar — **sem pedir confirmação** ao usuário para rodar SQL, desde que:
+
+1. Use os scripts em `supabase/sql/` (ordem numérica) ou DDL equivalente documentado no repositório.
+2. Aplique via MCP Supabase (`apply_migration` / `execute_sql`), não peça ao usuário colar SQL manualmente se puder executar direto.
+3. Antes de aplicar, verifique migrações já existentes (`list_migrations`) e colunas/tabelas (`execute_sql` em `information_schema`) para não duplicar.
+4. Após aplicar, confirme que colunas/funções esperadas existem.
+5. Nunca commitar tokens, secrets nem credenciais.
+
+Erros do PostgREST do tipo *"Could not find the 'X' column … in the schema cache"* indicam migração pendente — **aplicar o SQL correspondente** e pedir ao usuário apenas recarregar a tela (o cache do schema atualiza em segundos).
 
 - Responder em **pt-BR**.
 
@@ -319,6 +332,41 @@ Toda entidade do sistema deve estar vinculada a:
 - tenant_id,
 - company_id,
 - store_id (quando aplicável).
+
+---
+
+# LOJA ATIVA NO HEADER (`activeStoreId`)
+
+O seletor **Loja** no topo (`AppShell`) define a loja operacional da sessão. **Não** repetir seletor de loja em modais de cadastro.
+
+## Regra obrigatória
+
+Todo dado **operacional por loja** deve:
+
+1. **Gravar** `store_id` = loja ativa no momento do cadastro (insert).
+2. **Listar / filtrar** por `store_id` = loja ativa (select).
+3. **Recarregar** a lista ao trocar a loja no header e **limpar** seleção/detalhe aberto.
+4. **Bloquear** cadastro se não houver loja selecionada (mensagem: "Selecione uma loja no topo da tela.").
+
+## Módulos que já usam `activeStoreId` (referência)
+
+- **Início / dashboard**: KPIs e “ao vivo” filtrados pela loja ativa
+- Estoque (`estoque_itens.store_id`, movimentações, cards de resumo, fornecedores, kits por item resultante)
+- Oficina / OS (`ordens_servico.store_id`)
+- Catálogo de serviços (`catalogo_servicos.store_id`)
+- **Clientes** (`clientes.store_id`)
+- **Fornecedores** (`fornecedores.store_id`)
+
+## Ao implementar módulo novo
+
+- Receber `activeStoreId` da página via `App.tsx`.
+- Passar `store_id` no service de criação.
+- Filtrar listagens por `store_id` no service.
+- Nunca listar só por `company_id` se o registro for por loja.
+
+## Migrações
+
+Ao adicionar `store_id` em tabela existente: backfill para loja **Matriz** (ou primeira loja ativa), igual às migrações `018` / `020`.
 
 ---
 

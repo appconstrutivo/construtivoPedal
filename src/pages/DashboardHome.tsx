@@ -1,22 +1,14 @@
-import { useId } from 'react'
+import { useEffect, useState, useId } from 'react'
 import type { NavKey } from '../layout/AppShell'
+import { listarOrdensServico, contarOsAbertas } from '../services/oficina.service'
+import { obterResumoEstoqueLoja } from '../services/estoque.service'
+import { listarVendasRecentes, obterResumoVendasHoje } from '../services/pdv.service'
 
 type DashboardHomeProps = {
   activeNav: NavKey
-}
-
-function todayIso(): string {
-  const d = new Date()
-  const z = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`
-}
-
-function formatTodayCompact(): string {
-  return new Intl.DateTimeFormat('pt-BR', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-  }).format(new Date())
+  companyId: string
+  activeStoreId: string
+  onNavigate: (nav: NavKey) => void
 }
 
 function IconWorkshop({ className }: { className?: string }) {
@@ -135,6 +127,10 @@ function IconStores({ className }: { className?: string }) {
   )
 }
 
+function formatBRL(v: number) {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
+}
+
 function PlaceholderPanel({ title, hint }: { title: string; hint: string }) {
   const headingId = useId()
   return (
@@ -147,7 +143,63 @@ function PlaceholderPanel({ title, hint }: { title: string; hint: string }) {
   )
 }
 
-export function DashboardHome({ activeNav }: DashboardHomeProps) {
+export function DashboardHome({ activeNav, companyId, activeStoreId, onNavigate }: DashboardHomeProps) {
+  const [osAbertasCount, setOsAbertasCount] = useState<number | null>(null)
+  const [ultimasOs, setUltimasOs] = useState<Array<{ id: string; numero: number; clienteNome: string }>>([])
+  const [estoqueCritico, setEstoqueCritico] = useState<number | null>(null)
+  const [vendasHoje, setVendasHoje] = useState<{ quantidade: number; total: number } | null>(null)
+  const [ultimaVendaTexto, setUltimaVendaTexto] = useState<string | null>(null)
+  const [semLoja, setSemLoja] = useState(false)
+
+  useEffect(() => {
+    if (activeNav !== 'inicio') return
+    if (!activeStoreId) {
+      setSemLoja(true)
+      setOsAbertasCount(0)
+      setUltimasOs([])
+      setEstoqueCritico(0)
+      setVendasHoje({ quantidade: 0, total: 0 })
+      setUltimaVendaTexto(null)
+      return
+    }
+    setSemLoja(false)
+    let cancel = false
+    void (async () => {
+      try {
+        const [n, lista, resumo, vendasResumo, vendasRecentes] = await Promise.all([
+          contarOsAbertas(companyId, activeStoreId),
+          listarOrdensServico(companyId, activeStoreId),
+          obterResumoEstoqueLoja(companyId, activeStoreId),
+          obterResumoVendasHoje(companyId, activeStoreId),
+          listarVendasRecentes(companyId, activeStoreId, 1),
+        ])
+        if (cancel) return
+        setOsAbertasCount(n)
+        setEstoqueCritico(resumo.criticos)
+        setVendasHoje(vendasResumo)
+        setUltimasOs(
+          lista.slice(0, 3).map((r) => ({ id: r.id, numero: r.numero, clienteNome: r.clienteNome })),
+        )
+        const ultima = vendasRecentes[0]
+        setUltimaVendaTexto(
+          ultima
+            ? `Venda #${ultima.numero} — ${formatBRL(Number(ultima.total))}`
+            : null,
+        )
+      } catch {
+        if (!cancel) {
+          setOsAbertasCount(null)
+          setUltimasOs([])
+          setEstoqueCritico(null)
+          setVendasHoje(null)
+          setUltimaVendaTexto(null)
+        }
+      }
+    })()
+    return () => {
+      cancel = true
+    }
+  }, [activeNav, companyId, activeStoreId])
   if (activeNav !== 'inicio') {
     const titles: Record<Exclude<NavKey, 'inicio'>, { title: string; hint: string }> = {
       oficina: { title: 'Oficina', hint: 'OS, fotos e baixa de peças — em breve.' },
@@ -170,32 +222,25 @@ export function DashboardHome({ activeNav }: DashboardHomeProps) {
 
   return (
     <div className="cp-page cp-page--dash">
-      <header className="cp-dash-head">
-        <div className="cp-dash-head__row">
-          <h1 className="cp-dash-head__title">Painel</h1>
-          <time className="cp-dash-head__date" dateTime={todayIso()}>
-            {formatTodayCompact()}
-          </time>
-        </div>
-      </header>
-
-      <section className="cp-dash-block" aria-labelledby="lbl-at">
-        <div id="lbl-at" className="cp-dash-label cp-dash-label--teal">
-          <span className="cp-dash-label__dot" aria-hidden />
-          Atalhos
-        </div>
+      <section className="cp-dash-block" aria-label="Atalhos">
         <div className="cp-act-grid">
           <button
             type="button"
             className="cp-act cp-act--workshop"
             aria-label="Abrir nova ordem de serviço na oficina"
+            onClick={() => onNavigate('oficina')}
           >
             <span className="cp-act__glyph" aria-hidden>
               <IconWorkshop />
             </span>
             <span className="cp-act__title">Nova OS</span>
           </button>
-          <button type="button" className="cp-act cp-act--sale" aria-label="Abrir ponto de venda no balcão">
+          <button
+            type="button"
+            className="cp-act cp-act--sale"
+            aria-label="Abrir ponto de venda no balcão"
+            onClick={() => onNavigate('pdv')}
+          >
             <span className="cp-act__glyph" aria-hidden>
               <IconPOS />
             </span>
@@ -222,7 +267,9 @@ export function DashboardHome({ activeNav }: DashboardHomeProps) {
             </span>
             <div className="cp-kpi__body">
               <span className="cp-kpi__label">OS abertas</span>
-              <span className="cp-kpi__value">—</span>
+              <span className="cp-kpi__value">
+                {semLoja ? '—' : osAbertasCount === null ? '—' : String(osAbertasCount)}
+              </span>
             </div>
           </li>
           <li className="cp-kpi cp-kpi--schedule" title="Próximos 7 dias">
@@ -240,7 +287,9 @@ export function DashboardHome({ activeNav }: DashboardHomeProps) {
             </span>
             <div className="cp-kpi__body">
               <span className="cp-kpi__label">Vendas</span>
-              <span className="cp-kpi__value">—</span>
+              <span className="cp-kpi__value">
+                {semLoja ? '—' : vendasHoje === null ? '—' : String(vendasHoje.quantidade)}
+              </span>
             </div>
           </li>
           <li className="cp-kpi cp-kpi--stock" title="Itens abaixo do estoque mínimo">
@@ -249,7 +298,9 @@ export function DashboardHome({ activeNav }: DashboardHomeProps) {
             </span>
             <div className="cp-kpi__body">
               <span className="cp-kpi__label">Crítico</span>
-              <span className="cp-kpi__value">—</span>
+              <span className="cp-kpi__value">
+                {semLoja ? '—' : estoqueCritico === null ? '—' : String(estoqueCritico)}
+              </span>
             </div>
           </li>
         </ul>
@@ -264,11 +315,21 @@ export function DashboardHome({ activeNav }: DashboardHomeProps) {
           <ul className="cp-live">
             <li className="cp-live__row cp-live__row--workshop">
               <span className="cp-live__mark" aria-hidden />
-              <span className="cp-live__text">Sem OS sincronizada</span>
+              <span className="cp-live__text">
+                {semLoja
+                  ? 'Selecione uma loja no topo'
+                  : ultimasOs.length === 0
+                    ? 'Sem OS recentes nesta loja'
+                    : ultimasOs.map((o) => `OS #${o.numero} — ${o.clienteNome}`).join(' · ')}
+              </span>
             </li>
             <li className="cp-live__row cp-live__row--sale">
               <span className="cp-live__mark" aria-hidden />
-              <span className="cp-live__text">PDV sem vendas hoje</span>
+              <span className="cp-live__text">
+                {semLoja
+                  ? 'Selecione uma loja no topo'
+                  : ultimaVendaTexto ?? 'PDV sem vendas hoje'}
+              </span>
             </li>
           </ul>
         </section>

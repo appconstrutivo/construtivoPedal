@@ -117,6 +117,8 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'mais', label: 'Mais', icon: <IconGrid /> },
 ]
 
+export type HeaderStoreOption = { id: string; name: string }
+
 type AppShellProps = {
   children: ReactNode
   activeNav?: NavKey
@@ -124,6 +126,12 @@ type AppShellProps = {
   companyName?: string
   userEmail?: string
   onSignOut?: () => Promise<void> | void
+  /** Loja ativa para toda a sessão (id vazio = sem loja). */
+  stores?: HeaderStoreOption[]
+  activeStoreId?: string
+  onActiveStoreChange?: (storeId: string) => void
+  storesLoading?: boolean
+  onNovaLojaClick?: () => void
 }
 
 export function AppShell({
@@ -133,10 +141,16 @@ export function AppShell({
   companyName = 'Sua bicicletaria',
   userEmail,
   onSignOut,
+  stores = [],
+  activeStoreId = '',
+  onActiveStoreChange,
+  storesLoading = false,
+  onNovaLojaClick,
 }: AppShellProps) {
   const [activeNavInternal, setActiveNavInternal] = useState<NavKey>('inicio')
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const accountMenuRef = useRef<HTMLDivElement | null>(null)
   const activeNav = activeNavControlled ?? activeNavInternal
 
@@ -181,7 +195,7 @@ export function AppShell({
   }
 
   return (
-    <div className="cp-shell">
+    <div className={sidebarCollapsed ? 'cp-shell cp-shell--sidebar-collapsed' : 'cp-shell'}>
       <a className="cp-skip" href="#cp-main">
         Pular para o conteúdo
       </a>
@@ -198,6 +212,28 @@ export function AppShell({
         </div>
 
         <div className="cp-header__actions">
+          <button
+            type="button"
+            className="cp-btn cp-btn--ghost cp-header__sidebar-toggle"
+            onClick={() => setSidebarCollapsed((prev) => !prev)}
+            aria-label={sidebarCollapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}
+            aria-pressed={sidebarCollapsed}
+            title={sidebarCollapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}
+          >
+            <svg aria-hidden width={20} height={20} viewBox="0 0 24 24" fill="none">
+              <path
+                d={
+                  sidebarCollapsed
+                    ? 'M9 6 15 12 9 18'
+                    : 'M15 6 9 12l6 6'
+                }
+                stroke="currentColor"
+                strokeWidth={1.75}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
           <div className="cp-search" role="search">
             <label htmlFor="cp-global-search" className="cp-sr-only">
               Busca global
@@ -210,6 +246,42 @@ export function AppShell({
               autoComplete="off"
             />
           </div>
+          {onActiveStoreChange && (
+            <div className="cp-header__store">
+              <label htmlFor="cp-header-store" className="cp-header__store-label">
+                Loja
+              </label>
+              <select
+                id="cp-header-store"
+                className="cp-header__store-select"
+                value={activeStoreId}
+                onChange={(e) => onActiveStoreChange(e.target.value)}
+                disabled={storesLoading}
+                aria-busy={storesLoading}
+                title="Todas as operações usam a loja selecionada"
+              >
+                {stores.length === 0 ? (
+                  <option value="">Cadastre uma loja</option>
+                ) : null}
+                {stores.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+              {onNovaLojaClick && (
+                <button
+                  type="button"
+                  className="cp-header__store-add"
+                  onClick={onNovaLojaClick}
+                  title="Cadastrar nova loja"
+                  aria-label="Cadastrar nova loja"
+                >
+                  +
+                </button>
+              )}
+            </div>
+          )}
           <button type="button" className="cp-btn cp-btn--ghost cp-header__notify" aria-label="Notificações">
             <span className="cp-header__notify-dot" aria-hidden />
           </button>

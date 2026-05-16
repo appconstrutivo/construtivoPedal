@@ -1,9 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { AppShell, type NavKey } from './layout/AppShell'
+import { NovaLojaModal } from './components/NovaLojaModal'
+import { criarLoja, listarLojas, type StoreRow } from './services/lojas.service'
 import { DashboardHome } from './pages/DashboardHome'
 import { ClientesPage } from './pages/ClientesPage'
 import { EstoquePage } from './pages/EstoquePage'
+import { OficinaPage } from './pages/OficinaPage'
+import { PdvPage } from './pages/PdvPage'
 import { AuthPages } from './pages/AuthPages'
 import { isSupabaseConfigured, supabase } from './lib/supabaseClient'
 
@@ -12,6 +16,12 @@ function hasSessionChanged(previous: Session | null, next: Session | null): bool
   if (!previous || !next) return true
 
   return previous.user.id !== next.user.id || previous.access_token !== next.access_token
+}
+
+const ACTIVE_STORE_STORAGE_KEY = 'cp_pedal_active_store_v1'
+
+function activeStoreStorageKey(companyId: string) {
+  return `${ACTIVE_STORE_STORAGE_KEY}:${companyId}`
 }
 
 function PlaceholderPage({ title, hint }: { title: string; hint: string }) {
@@ -39,6 +49,10 @@ export default function App() {
     companyName: string
     role: string
   } | null>(null)
+  const [stores, setStores] = useState<StoreRow[]>([])
+  const [activeStoreId, setActiveStoreId] = useState('')
+  const [storesLoading, setStoresLoading] = useState(false)
+  const [modalNovaLojaOpen, setModalNovaLojaOpen] = useState(false)
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -167,6 +181,65 @@ export default function App() {
     }
   }, [sessionUserId])
 
+  const carregarLojas = useCallback(
+    async (opts?: { selectStoreId?: string }) => {
+      if (!tenant?.companyId) return
+      setStoresLoading(true)
+      try {
+        const list = await listarLojas(tenant.companyId)
+        setStores(list)
+        const key = activeStoreStorageKey(tenant.companyId)
+        let next = ''
+        if (opts?.selectStoreId && list.some((s) => s.id === opts.selectStoreId)) {
+          next = opts.selectStoreId
+        } else if (list.length > 0) {
+          const raw = localStorage.getItem(key)
+          if (raw && list.some((s) => s.id === raw)) {
+            next = raw
+          } else {
+            const matriz = list.find((s) => s.name.trim().toLowerCase() === 'matriz')
+            next = matriz?.id ?? list[0].id
+          }
+        }
+        setActiveStoreId(next)
+        if (next) localStorage.setItem(key, next)
+      } catch {
+        setStores([])
+      } finally {
+        setStoresLoading(false)
+      }
+    },
+    [tenant?.companyId],
+  )
+
+  useEffect(() => {
+    if (!tenant?.companyId) {
+      setStores([])
+      setActiveStoreId('')
+      return
+    }
+    void carregarLojas()
+  }, [tenant?.companyId, carregarLojas])
+
+  async function handleCriarLoja(payload: { name: string; address: string }) {
+    if (!tenant?.companyId) throw new Error('Empresa não carregada.')
+    const row = await criarLoja({
+      company_id: tenant.companyId,
+      name: payload.name,
+      address: payload.address || null,
+      active: true,
+    })
+    await carregarLojas({ selectStoreId: row.id })
+  }
+
+  function handleActiveStoreChange(storeId: string) {
+    if (!storeId) return
+    setActiveStoreId(storeId)
+    if (tenant?.companyId) {
+      localStorage.setItem(activeStoreStorageKey(tenant.companyId), storeId)
+    }
+  }
+
   if (checkingSession) {
     return (
       <div className="cp-auth-loading" role="status" aria-live="polite">
@@ -219,14 +292,37 @@ export default function App() {
       companyName={tenant.companyName}
       userEmail={session.user.email}
       onSignOut={handleSignOut}
+      stores={stores.map((s) => ({ id: s.id, name: s.name }))}
+      activeStoreId={activeStoreId}
+      onActiveStoreChange={handleActiveStoreChange}
+      storesLoading={storesLoading}
+      onNovaLojaClick={() => setModalNovaLojaOpen(true)}
     >
-      {activeNav === 'inicio' && <DashboardHome activeNav={activeNav} />}
-      {activeNav === 'clientes' && <ClientesPage companyId={tenant.companyId} />}
-      {activeNav === 'oficina' && (
-        <PlaceholderPage title="Oficina" hint="OS, checklist, fotos e baixa de peças." />
+      <NovaLojaModal
+        open={modalNovaLojaOpen}
+        onClose={() => setModalNovaLojaOpen(false)}
+        onSubmit={handleCriarLoja}
+      />
+      {activeNav === 'inicio' && (
+        <DashboardHome
+          activeNav={activeNav}
+          companyId={tenant.companyId}
+          activeStoreId={activeStoreId}
+          onNavigate={setActiveNav}
+        />
       )}
-      {activeNav === 'pdv' && <PlaceholderPage title="PDV" hint="Balcão rápido com vínculo à bike." />}
-      {activeNav === 'estoque' && <EstoquePage companyId={tenant.companyId} />}
+      {activeNav === 'clientes' && (
+        <ClientesPage companyId={tenant.companyId} activeStoreId={activeStoreId} />
+      )}
+      {activeNav === 'oficina' && (
+        <OficinaPage companyId={tenant.companyId} activeStoreId={activeStoreId} />
+      )}
+      {activeNav === 'pdv' && (
+        <PdvPage companyId={tenant.companyId} activeStoreId={activeStoreId} />
+      )}
+      {activeNav === 'estoque' && (
+        <EstoquePage companyId={tenant.companyId} activeStoreId={activeStoreId} />
+      )}
       {activeNav === 'mais' && (
         <PlaceholderPage title="Mais" hint="Equipe, plano e preferências da empresa." />
       )}

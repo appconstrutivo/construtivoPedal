@@ -2,6 +2,11 @@ import { useState, useMemo, useEffect, useCallback } from 'react'
 import {
   listarClientes,
   criarCliente,
+  atualizarCliente,
+  excluirCliente,
+  criarBicicleta,
+  atualizarBicicleta,
+  excluirBicicleta,
   type ClienteComRelacoes,
   type BicicletaRow,
   type AtividadeRow,
@@ -34,10 +39,22 @@ function initials(nome: string) {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 }
 
-function formatDate(iso: string) {
+/** Aceita date-only (YYYY-MM-DD) ou ISO completo vindo do Postgres/Supabase. */
+function parseClientDate(value: string | null | undefined): Date | null {
+  if (value == null) return null
+  const s = String(value).trim()
+  if (!s) return null
+  const d =
+    s.includes('T') || s.length > 10 ? new Date(s) : new Date(`${s}T12:00:00`)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+function formatDate(iso: string | null | undefined) {
+  const d = parseClientDate(iso)
+  if (!d) return '—'
   return new Intl.DateTimeFormat('pt-BR', {
     day: '2-digit', month: 'short', year: 'numeric',
-  }).format(new Date(iso + 'T12:00:00'))
+  }).format(d)
 }
 
 function formatBRL(value: number) {
@@ -45,12 +62,15 @@ function formatBRL(value: number) {
 }
 
 function daysSince(iso: string) {
-  return Math.floor((Date.now() - new Date(iso + 'T12:00:00').getTime()) / 86_400_000)
+  const d = parseClientDate(iso)
+  if (!d) return Number.NaN
+  return Math.floor((Date.now() - d.getTime()) / 86_400_000)
 }
 
 function visitLabel(iso: string | null) {
   if (!iso) return 'Nunca'
   const d = daysSince(iso)
+  if (!Number.isFinite(d)) return 'Nunca'
   if (d === 0) return 'Hoje'
   if (d === 1) return 'Ontem'
   if (d < 30) return `${d}d atrás`
@@ -169,38 +189,82 @@ function IconSpin() {
     </svg>
   )
 }
+function IconPencil() {
+  return (
+    <svg aria-hidden width={15} height={15} viewBox="0 0 24 24" fill="none">
+      <path
+        d="m14.7 6.3 3 3a2 2 0 0 1-2.3 3.2l-.5-.5L10 17.6a2 2 0 1 1-2.8-2.8l5.1-5.1-.5-.5a2 2 0 0 1 3.2-2.3Z"
+        stroke="currentColor"
+        strokeWidth={1.75}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+function IconTrash() {
+  return (
+    <svg aria-hidden width={15} height={15} viewBox="0 0 24 24" fill="none">
+      <path
+        d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m2 0v11a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V7h12Z"
+        stroke="currentColor"
+        strokeWidth={1.75}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
 
 /* ─── modal novo cliente ──────────────────────────── */
 
-type NovoClienteModalProps = {
+type ClienteFormModalProps = {
   companyId: string
+  activeStoreId: string
+  cliente?: ClienteComRelacoes
   onClose: () => void
   onSalvo: (c: ClienteComRelacoes) => void
 }
 
-function NovoClienteModal({ companyId, onClose, onSalvo }: NovoClienteModalProps) {
-  const [nome, setNome] = useState('')
-  const [fone, setFone] = useState('')
-  const [email, setEmail] = useState('')
-  const [endereco, setEndereco] = useState('')
+function ClienteFormModal({ companyId, activeStoreId, cliente, onClose, onSalvo }: ClienteFormModalProps) {
+  const editando = Boolean(cliente)
+  const [nome, setNome] = useState(cliente?.nome ?? '')
+  const [fone, setFone] = useState(cliente?.fone ?? '')
+  const [email, setEmail] = useState(cliente?.email ?? '')
+  const [endereco, setEndereco] = useState(cliente?.endereco ?? '')
   const [saving, setSaving] = useState(false)
   const [erro, setErro] = useState('')
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!nome.trim()) { setErro('Nome é obrigatório.'); return }
+    if (!editando && !activeStoreId) {
+      setErro('Selecione uma loja no topo da tela.')
+      return
+    }
     setSaving(true)
     setErro('')
     try {
-      const novo = await criarCliente({
-        company_id: companyId,
-        nome: nome.trim(),
-        fone: fone.trim() || null,
-        email: email.trim() || null,
-        endereco: endereco.trim() || null,
-        tags: [],
-      })
-      onSalvo({ ...novo, bicicletas: [], atividades: [], ultima_visita: null })
+      if (editando && cliente) {
+        const atualizado = await atualizarCliente(cliente.id, {
+          nome: nome.trim(),
+          fone: fone.trim() || null,
+          email: email.trim() || null,
+          endereco: endereco.trim() || null,
+        })
+        onSalvo({ ...cliente, ...atualizado })
+      } else {
+        const novo = await criarCliente({
+          company_id: companyId,
+          store_id: activeStoreId,
+          nome: nome.trim(),
+          fone: fone.trim() || null,
+          email: email.trim() || null,
+          endereco: endereco.trim() || null,
+          tags: [],
+        })
+        onSalvo({ ...novo, bicicletas: [], atividades: [], ultima_visita: null })
+      }
     } catch (err: unknown) {
       setErro(err instanceof Error ? err.message : 'Erro ao salvar.')
     } finally {
@@ -212,7 +276,9 @@ function NovoClienteModal({ companyId, onClose, onSalvo }: NovoClienteModalProps
     <div className="cl-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <div className="cl-modal">
         <div className="cl-modal__head">
-          <h2 id="modal-title" className="cl-modal__title">Novo cliente</h2>
+          <h2 id="modal-title" className="cl-modal__title">
+            {editando ? 'Editar cliente' : 'Novo cliente'}
+          </h2>
           <button type="button" className="cl-modal__close" onClick={onClose} aria-label="Fechar">
             <IconX />
           </button>
@@ -278,7 +344,188 @@ function NovoClienteModal({ companyId, onClose, onSalvo }: NovoClienteModalProps
             </button>
             <button type="submit" className="cl-btn cl-btn--accent" disabled={saving}>
               {saving && <IconSpin />}
-              {saving ? 'Salvando…' : 'Salvar cliente'}
+              {saving ? 'Salvando…' : editando ? 'Salvar alterações' : 'Salvar cliente'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+/* ─── modal nova bicicleta ───────────────────────── */
+
+type BicicletaFormModalProps = {
+  companyId: string
+  clienteId: string
+  bike?: BicicletaRow
+  onClose: () => void
+  onSalvo: (b: BicicletaRow) => void
+}
+
+function BicicletaFormModal({ companyId, clienteId, bike, onClose, onSalvo }: BicicletaFormModalProps) {
+  const editando = Boolean(bike)
+  const [marca, setMarca] = useState(bike?.marca ?? '')
+  const [modelo, setModelo] = useState(bike?.modelo ?? '')
+  const [aro, setAro] = useState(bike?.aro ?? '')
+  const [cor, setCor] = useState(bike?.cor ?? '')
+  const [numeroSerie, setNumeroSerie] = useState(bike?.numero_serie ?? '')
+  const [quilometragem, setQuilometragem] = useState(
+    bike?.quilometragem != null ? String(bike.quilometragem) : '',
+  )
+  const [observacoes, setObservacoes] = useState(bike?.observacoes ?? '')
+  const [saving, setSaving] = useState(false)
+  const [erro, setErro] = useState('')
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!marca.trim()) {
+      setErro('Marca é obrigatória.')
+      return
+    }
+    if (!modelo.trim()) {
+      setErro('Modelo é obrigatório.')
+      return
+    }
+    let km: number | null = null
+    if (quilometragem.trim()) {
+      const n = Number(quilometragem.replace(/\s/g, '').replace(',', '.'))
+      if (!Number.isFinite(n) || n < 0) {
+        setErro('Quilometragem inválida.')
+        return
+      }
+      km = Math.round(n)
+    }
+    setSaving(true)
+    setErro('')
+    try {
+      const payload = {
+        marca: marca.trim(),
+        modelo: modelo.trim(),
+        aro: aro.trim() || null,
+        cor: cor.trim() || null,
+        numero_serie: numeroSerie.trim() || null,
+        quilometragem: km,
+        observacoes: observacoes.trim() || null,
+      }
+      if (editando && bike) {
+        const atualizada = await atualizarBicicleta(bike.id, payload)
+        onSalvo(atualizada)
+      } else {
+        const nova = await criarBicicleta({
+          company_id: companyId,
+          cliente_id: clienteId,
+          ...payload,
+        })
+        onSalvo(nova)
+      }
+    } catch (err: unknown) {
+      setErro(err instanceof Error ? err.message : 'Erro ao salvar.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="cl-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-bike-title">
+      <div className="cl-modal">
+        <div className="cl-modal__head">
+          <h2 id="modal-bike-title" className="cl-modal__title">
+            {editando ? 'Editar bicicleta' : 'Nova bicicleta'}
+          </h2>
+          <button type="button" className="cl-modal__close" onClick={onClose} aria-label="Fechar">
+            <IconX />
+          </button>
+        </div>
+
+        <form className="cl-form" onSubmit={handleSubmit} noValidate>
+          <div className="cl-field">
+            <label htmlFor="nb-marca" className="cl-label">Marca <span className="cl-req" aria-hidden>*</span></label>
+            <input
+              id="nb-marca"
+              className="cl-input"
+              value={marca}
+              onChange={(e) => setMarca(e.target.value)}
+              placeholder="Ex.: Caloi, Trek"
+              autoComplete="off"
+            />
+          </div>
+          <div className="cl-field">
+            <label htmlFor="nb-modelo" className="cl-label">Modelo <span className="cl-req" aria-hidden>*</span></label>
+            <input
+              id="nb-modelo"
+              className="cl-input"
+              value={modelo}
+              onChange={(e) => setModelo(e.target.value)}
+              placeholder="Ex.: Explorer, Marlin 5"
+              autoComplete="off"
+            />
+          </div>
+          <div className="cl-field cl-field--inline-2">
+            <div>
+              <label htmlFor="nb-aro" className="cl-label">Aro</label>
+              <input
+                id="nb-aro"
+                className="cl-input"
+                value={aro}
+                onChange={(e) => setAro(e.target.value)}
+                placeholder="29, 700C…"
+                autoComplete="off"
+              />
+            </div>
+            <div>
+              <label htmlFor="nb-cor" className="cl-label">Cor</label>
+              <input
+                id="nb-cor"
+                className="cl-input"
+                value={cor}
+                onChange={(e) => setCor(e.target.value)}
+                placeholder="Preto, azul…"
+                autoComplete="off"
+              />
+            </div>
+          </div>
+          <div className="cl-field">
+            <label htmlFor="nb-serie" className="cl-label">Nº de série</label>
+            <input
+              id="nb-serie"
+              className="cl-input"
+              value={numeroSerie}
+              onChange={(e) => setNumeroSerie(e.target.value)}
+              autoComplete="off"
+            />
+          </div>
+          <div className="cl-field">
+            <label htmlFor="nb-km" className="cl-label">Quilometragem (opcional)</label>
+            <input
+              id="nb-km"
+              className="cl-input"
+              inputMode="decimal"
+              value={quilometragem}
+              onChange={(e) => setQuilometragem(e.target.value)}
+              placeholder="0"
+            />
+          </div>
+          <div className="cl-field">
+            <label htmlFor="nb-obs" className="cl-label">Observações</label>
+            <textarea
+              id="nb-obs"
+              className="cl-input cl-textarea"
+              value={observacoes}
+              onChange={(e) => setObservacoes(e.target.value)}
+              rows={2}
+            />
+          </div>
+
+          {erro && <p className="cl-form-error" role="alert">{erro}</p>}
+
+          <div className="cl-modal__foot">
+            <button type="button" className="cl-btn cl-btn--ghost" onClick={onClose} disabled={saving}>
+              Cancelar
+            </button>
+            <button type="submit" className="cl-btn cl-btn--accent" disabled={saving}>
+              {saving && <IconSpin />}
+              {saving ? 'Salvando…' : editando ? 'Salvar alterações' : 'Salvar bicicleta'}
             </button>
           </div>
         </form>
@@ -291,12 +538,63 @@ function NovoClienteModal({ companyId, onClose, onSalvo }: NovoClienteModalProps
 
 function ClienteDetalhe({
   cliente,
+  companyId,
+  activeStoreId,
   onClose,
+  onClienteAtualizado,
+  onClienteExcluido,
+  onBicicletaSalva,
+  onBicicletaExcluida,
 }: {
   cliente: ClienteComRelacoes
+  companyId: string
+  activeStoreId: string
   onClose: () => void
+  onClienteAtualizado: (c: ClienteComRelacoes) => void
+  onClienteExcluido: (clienteId: string) => void
+  onBicicletaSalva: (b: BicicletaRow) => void
+  onBicicletaExcluida: (bikeId: string, clienteId: string) => void
 }) {
   const cor = avatarColor(cliente.nome)
+  const [modalCliente, setModalCliente] = useState(false)
+  const [bikeModal, setBikeModal] = useState<BicicletaRow | 'nova' | null>(null)
+  const [excluindoCliente, setExcluindoCliente] = useState(false)
+  const [excluindoBikeId, setExcluindoBikeId] = useState<string | null>(null)
+  const [erroAcao, setErroAcao] = useState<string | null>(null)
+
+  async function handleExcluirCliente() {
+    const nBikes = cliente.bicicletas.length
+    const msg =
+      nBikes > 0
+        ? `Excluir "${cliente.nome}" e ${nBikes} bicicleta(s) cadastrada(s)?\n\nEsta ação não pode ser desfeita.`
+        : `Excluir o cliente "${cliente.nome}"?\n\nEsta ação não pode ser desfeita.`
+    if (!window.confirm(msg)) return
+    setExcluindoCliente(true)
+    setErroAcao(null)
+    try {
+      await excluirCliente(companyId, cliente.id)
+      onClienteExcluido(cliente.id)
+    } catch (e: unknown) {
+      setErroAcao(e instanceof Error ? e.message : 'Erro ao excluir cliente.')
+    } finally {
+      setExcluindoCliente(false)
+    }
+  }
+
+  async function handleExcluirBike(b: BicicletaRow) {
+    const nome = `${b.marca} ${b.modelo}`.trim()
+    if (!window.confirm(`Excluir a bicicleta "${nome}"?\n\nEsta ação não pode ser desfeita.`)) return
+    setExcluindoBikeId(b.id)
+    setErroAcao(null)
+    try {
+      await excluirBicicleta(b.id)
+      onBicicletaExcluida(b.id, cliente.id)
+    } catch (e: unknown) {
+      setErroAcao(e instanceof Error ? e.message : 'Erro ao excluir bicicleta.')
+    } finally {
+      setExcluindoBikeId(null)
+    }
+  }
 
   return (
     <div className="cl-detail" aria-label={`Detalhe de ${cliente.nome}`}>
@@ -306,13 +604,27 @@ function ClienteDetalhe({
           <span>Clientes</span>
         </button>
         <div className="cl-detail__actions">
-          <button type="button" className="cl-btn cl-btn--ghost">Editar</button>
+          <button type="button" className="cl-btn cl-btn--ghost" onClick={() => setModalCliente(true)}>
+            Editar
+          </button>
+          <button
+            type="button"
+            className="cl-btn cl-btn--danger"
+            onClick={() => void handleExcluirCliente()}
+            disabled={excluindoCliente}
+          >
+            {excluindoCliente ? 'Excluindo…' : 'Excluir'}
+          </button>
           <button type="button" className="cl-btn cl-btn--accent">
             <IconPlus />
             Nova OS
           </button>
         </div>
       </div>
+
+      {erroAcao && (
+        <p className="cl-form-error cl-detail__erro" role="alert">{erroAcao}</p>
+      )}
 
       <div className="cl-detail__hero">
         <span className="cl-avatar cl-avatar--lg" style={{ background: cor }} aria-hidden>
@@ -344,9 +656,19 @@ function ClienteDetalhe({
       </div>
 
       <section className="cl-section" aria-labelledby="lbl-bikes">
-        <div id="lbl-bikes" className="cp-dash-label cp-dash-label--violet">
-          <span className="cp-dash-label__dot" aria-hidden />
-          Bicicletas <span className="cl-count">{cliente.bicicletas.length}</span>
+        <div className="cl-section__head">
+          <div id="lbl-bikes" className="cp-dash-label cp-dash-label--violet">
+            <span className="cp-dash-label__dot" aria-hidden />
+            Bicicletas <span className="cl-count">{cliente.bicicletas.length}</span>
+          </div>
+          <button
+            type="button"
+            className="cl-btn cl-btn--ghost"
+            onClick={() => setBikeModal('nova')}
+          >
+            <IconPlus />
+            Nova bicicleta
+          </button>
         </div>
         {cliente.bicicletas.length === 0 ? (
           <p className="cl-empty-hint">Nenhuma bike cadastrada.</p>
@@ -363,11 +685,56 @@ function ClienteDetalhe({
                     {b.numero_serie && ` · ${b.numero_serie}`}
                   </span>
                 </div>
+                <div className="cl-bike__actions">
+                  <button
+                    type="button"
+                    className="cl-icon-btn"
+                    aria-label={`Editar ${b.marca} ${b.modelo}`}
+                    onClick={() => setBikeModal(b)}
+                  >
+                    <IconPencil />
+                  </button>
+                  <button
+                    type="button"
+                    className="cl-icon-btn cl-icon-btn--danger"
+                    aria-label={`Excluir ${b.marca} ${b.modelo}`}
+                    onClick={() => void handleExcluirBike(b)}
+                    disabled={excluindoBikeId === b.id}
+                  >
+                    <IconTrash />
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
         )}
       </section>
+
+      {modalCliente && (
+        <ClienteFormModal
+          companyId={companyId}
+          activeStoreId={activeStoreId}
+          cliente={cliente}
+          onClose={() => setModalCliente(false)}
+          onSalvo={(c) => {
+            onClienteAtualizado(c)
+            setModalCliente(false)
+          }}
+        />
+      )}
+
+      {bikeModal && (
+        <BicicletaFormModal
+          companyId={companyId}
+          clienteId={cliente.id}
+          bike={bikeModal === 'nova' ? undefined : bikeModal}
+          onClose={() => setBikeModal(null)}
+          onSalvo={(b) => {
+            onBicicletaSalva(b)
+            setBikeModal(null)
+          }}
+        />
+      )}
 
       <section className="cl-section" aria-labelledby="lbl-hist">
         <div id="lbl-hist" className="cp-dash-label cp-dash-label--blue">
@@ -461,9 +828,10 @@ function ClienteRow({
 
 type ClientesPageProps = {
   companyId: string
+  activeStoreId: string
 }
 
-export function ClientesPage({ companyId }: ClientesPageProps) {
+export function ClientesPage({ companyId, activeStoreId }: ClientesPageProps) {
   const [clientes, setClientes] = useState<ClienteComRelacoes[]>([])
   const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
@@ -473,19 +841,30 @@ export function ClientesPage({ companyId }: ClientesPageProps) {
   const [modalAberto, setModalAberto] = useState(false)
 
   const carregar = useCallback(async () => {
+    if (!activeStoreId) {
+      setClientes([])
+      setSelecionado(null)
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setErro(null)
     try {
-      const data = await listarClientes(companyId)
+      const data = await listarClientes(companyId, activeStoreId)
       setClientes(data)
     } catch (e: unknown) {
       setErro(e instanceof Error ? e.message : 'Erro ao carregar clientes.')
     } finally {
       setLoading(false)
     }
-  }, [companyId])
+  }, [companyId, activeStoreId])
 
-  useEffect(() => { carregar() }, [carregar])
+  useEffect(() => { void carregar() }, [carregar])
+
+  useEffect(() => {
+    setSelecionado(null)
+    setModalAberto(false)
+  }, [activeStoreId])
 
   const clientesFiltrados = useMemo(() => {
     let lista = clientes
@@ -512,10 +891,64 @@ export function ClientesPage({ companyId }: ClientesPageProps) {
   const totalBikes = clientes.reduce((acc, c) => acc + c.bicicletas.length, 0)
   const showDetail = selecionado !== null
 
-  function handleSalvo(novo: ClienteComRelacoes) {
-    setClientes((prev) => [...prev, novo].sort((a, b) => a.nome.localeCompare(b.nome)))
+  function handleSalvo(cliente: ClienteComRelacoes) {
+    setClientes((prev) => {
+      const existe = prev.some((c) => c.id === cliente.id)
+      const next = existe
+        ? prev.map((c) => (c.id === cliente.id ? cliente : c))
+        : [...prev, cliente]
+      return next.sort((a, b) => a.nome.localeCompare(b.nome))
+    })
     setModalAberto(false)
-    setSelecionado(novo)
+    setSelecionado(cliente)
+  }
+
+  function handleClienteAtualizado(cliente: ClienteComRelacoes) {
+    setClientes((prev) =>
+      prev
+        .map((c) => (c.id === cliente.id ? cliente : c))
+        .sort((a, b) => a.nome.localeCompare(b.nome)),
+    )
+    setSelecionado(cliente)
+  }
+
+  function handleClienteExcluido(clienteId: string) {
+    setClientes((prev) => prev.filter((c) => c.id !== clienteId))
+    setSelecionado(null)
+  }
+
+  function handleBicicletaSalva(bike: BicicletaRow) {
+    const merge = (bikes: BicicletaRow[]) => {
+      const idx = bikes.findIndex((b) => b.id === bike.id)
+      if (idx >= 0) {
+        const next = [...bikes]
+        next[idx] = bike
+        return next
+      }
+      return [...bikes, bike]
+    }
+    setSelecionado((cur) => {
+      if (!cur || cur.id !== bike.cliente_id) return cur
+      return { ...cur, bicicletas: merge(cur.bicicletas) }
+    })
+    setClientes((prev) =>
+      prev.map((c) =>
+        c.id === bike.cliente_id ? { ...c, bicicletas: merge(c.bicicletas) } : c,
+      ),
+    )
+  }
+
+  function handleBicicletaExcluida(bikeId: string, clienteId: string) {
+    const remove = (bikes: BicicletaRow[]) => bikes.filter((b) => b.id !== bikeId)
+    setSelecionado((cur) => {
+      if (!cur || cur.id !== clienteId) return cur
+      return { ...cur, bicicletas: remove(cur.bicicletas) }
+    })
+    setClientes((prev) =>
+      prev.map((c) =>
+        c.id === clienteId ? { ...c, bicicletas: remove(c.bicicletas) } : c,
+      ),
+    )
   }
 
   return (
@@ -543,6 +976,8 @@ export function ClientesPage({ companyId }: ClientesPageProps) {
                 type="button"
                 className="cl-btn cl-btn--accent cl-btn--new"
                 onClick={() => setModalAberto(true)}
+                disabled={!activeStoreId}
+                title={!activeStoreId ? 'Selecione uma loja no topo' : undefined}
               >
                 <IconPlus />
                 Novo
@@ -585,9 +1020,13 @@ export function ClientesPage({ companyId }: ClientesPageProps) {
           ) : erro ? (
             <div className="cl-state-center cl-state-center--error" role="alert">
               <p>{erro}</p>
-              <button type="button" className="cl-btn cl-btn--ghost" onClick={carregar}>
+              <button type="button" className="cl-btn cl-btn--ghost" onClick={() => void carregar()}>
                 Tentar novamente
               </button>
+            </div>
+          ) : !activeStoreId ? (
+            <div className="cl-empty">
+              <p className="cl-empty__text">Selecione uma loja no topo da tela.</p>
             </div>
           ) : clientesFiltrados.length === 0 ? (
             <div className="cl-empty">
@@ -615,7 +1054,13 @@ export function ClientesPage({ companyId }: ClientesPageProps) {
           <div className="cl-detail-col">
             <ClienteDetalhe
               cliente={selecionado}
+              companyId={companyId}
+              activeStoreId={activeStoreId}
               onClose={() => setSelecionado(null)}
+              onClienteAtualizado={handleClienteAtualizado}
+              onClienteExcluido={handleClienteExcluido}
+              onBicicletaSalva={handleBicicletaSalva}
+              onBicicletaExcluida={handleBicicletaExcluida}
             />
           </div>
         ) : (
@@ -626,8 +1071,9 @@ export function ClientesPage({ companyId }: ClientesPageProps) {
       </div>
 
       {modalAberto && (
-        <NovoClienteModal
+        <ClienteFormModal
           companyId={companyId}
+          activeStoreId={activeStoreId}
           onClose={() => setModalAberto(false)}
           onSalvo={handleSalvo}
         />

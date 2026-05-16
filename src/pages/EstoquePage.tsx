@@ -1,37 +1,36 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  atualizarFornecedor,
+  atualizarItemEstoque,
+  criarFornecedor,
+  criarItemEstoque,
+  excluirFornecedor,
+  criarKitComComponentes,
+  criarMovimentacaoEstoque,
+  excluirItemEstoque,
+  obterUrlImagemItem,
+  reservarProximoSkuEstoque,
+  listarFornecedores,
+  listarItensEstoque,
+  listarKits,
+  listarMovimentacoesHoje,
+  montarKit,
+  type EstoqueItemComLocal,
+  type KitComComponentes,
+  type EstoqueMovimentacaoComItem,
+  type FornecedorRow,
+} from '../services/estoque.service'
+import { EstoqueImportModal } from '../components/EstoqueImportModal'
 
-type CategoriaEstoque = 'peca' | 'bike' | 'componente'
+type CategoriaEstoque = 'peca' | 'bike' | 'acessorio'
 type StatusEstoque = 'critico' | 'reposicao' | 'saudavel'
-
-type ItemEstoque = {
-  id: string
-  sku: string
-  nome: string
-  categoria: CategoriaEstoque
-  saldo: number
-  minimo: number
-  local: string
-  custoMedio: number
-}
-
-type Movimentacao = {
-  id: string
-  tipo: 'entrada' | 'saida' | 'ajuste'
-  item: string
-  quantidade: number
-  origem: string
-  horario: string
-}
-
-type EstoquePageProps = {
-  companyId: string
-}
+type TipoMovimentacao = 'entrada' | 'saida' | 'ajuste'
 
 const CATEGORIAS: { key: CategoriaEstoque | 'todos'; label: string }[] = [
   { key: 'todos', label: 'Todos' },
   { key: 'peca', label: 'Peças' },
   { key: 'bike', label: 'Bikes' },
-  { key: 'componente', label: 'Componentes' },
+  { key: 'acessorio', label: 'Acessórios' },
 ]
 
 const STATUS_FILTERS: { key: StatusEstoque | 'todos'; label: string }[] = [
@@ -41,117 +40,123 @@ const STATUS_FILTERS: { key: StatusEstoque | 'todos'; label: string }[] = [
   { key: 'saudavel', label: 'Saudável' },
 ]
 
-const ITENS_MOCK: ItemEstoque[] = [
-  {
-    id: 'it-001',
-    sku: 'PC-CLN-11V',
-    nome: 'Corrente KMC 11v',
-    categoria: 'peca',
-    saldo: 3,
-    minimo: 8,
-    local: 'Loja Centro',
-    custoMedio: 139.9,
-  },
-  {
-    id: 'it-002',
-    sku: 'BK-SL-29-M',
-    nome: 'Bike Sense Impact SL 29 M',
-    categoria: 'bike',
-    saldo: 2,
-    minimo: 1,
-    local: 'Loja Centro',
-    custoMedio: 5420,
-  },
-  {
-    id: 'it-003',
-    sku: 'PC-PST-180',
-    nome: 'Pastilha de Freio Shimano B01S',
-    categoria: 'peca',
-    saldo: 12,
-    minimo: 10,
-    local: 'Oficina',
-    custoMedio: 34.5,
-  },
-  {
-    id: 'it-004',
-    sku: 'CP-CASS-12V',
-    nome: 'Cassete SunRace 12v',
-    categoria: 'componente',
-    saldo: 1,
-    minimo: 4,
-    local: 'Loja Norte',
-    custoMedio: 289.9,
-  },
-  {
-    id: 'it-005',
-    sku: 'PC-CAM-29',
-    nome: 'Câmara 29 Presta',
-    categoria: 'peca',
-    saldo: 24,
-    minimo: 12,
-    local: 'Loja Norte',
-    custoMedio: 19.8,
-  },
-  {
-    id: 'it-006',
-    sku: 'CP-PED-CLP',
-    nome: 'Pedal Clip MTB',
-    categoria: 'componente',
-    saldo: 5,
-    minimo: 6,
-    local: 'Loja Centro',
-    custoMedio: 211.4,
-  },
-]
-
-const MOVIMENTACOES_MOCK: Movimentacao[] = [
-  {
-    id: 'mv-001',
-    tipo: 'saida',
-    item: 'Corrente KMC 11v',
-    quantidade: 1,
-    origem: 'OS #1542',
-    horario: '10:17',
-  },
-  {
-    id: 'mv-002',
-    tipo: 'entrada',
-    item: 'Câmara 29 Presta',
-    quantidade: 20,
-    origem: 'NF 48291',
-    horario: '11:42',
-  },
-  {
-    id: 'mv-003',
-    tipo: 'ajuste',
-    item: 'Pedal Clip MTB',
-    quantidade: -1,
-    origem: 'Inventário rápido',
-    horario: '13:06',
-  },
-  {
-    id: 'mv-004',
-    tipo: 'saida',
-    item: 'Pastilha Shimano B01S',
-    quantidade: 2,
-    origem: 'OS #1548',
-    horario: '15:21',
-  },
-]
-
 function formatBRL(v: number) {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
+  const n = Number.isFinite(v) ? v : 0
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n)
 }
 
-function categoriaLabel(categoria: CategoriaEstoque): string {
-  if (categoria === 'peca') return 'Peça'
-  if (categoria === 'bike') return 'Bike'
-  return 'Componente'
+function formatQuantidade(v: number) {
+  return new Intl.NumberFormat('pt-BR', {
+    maximumFractionDigits: 3,
+    minimumFractionDigits: Number.isInteger(v) ? 0 : 2,
+  }).format(v)
 }
 
-function statusItem(item: ItemEstoque): StatusEstoque {
-  if (item.saldo <= item.minimo * 0.5) return 'critico'
-  if (item.saldo <= item.minimo) return 'reposicao'
+function roundMoney(n: number): number {
+  return Math.round(n * 100) / 100
+}
+
+function parseDecimalInput(s: string): number {
+  const n = Number(String(s).trim().replace(',', '.'))
+  return Number.isFinite(n) ? n : Number.NaN
+}
+
+function markupPctFromCostAndPrice(custo: number, preco: number): string {
+  if (!(custo > 0) || !Number.isFinite(preco)) return ''
+  return String(roundMoney(((preco / custo - 1) * 100)))
+}
+
+function priceFromCostAndMarkup(custo: number, markupPct: number): string {
+  return String(roundMoney(custo * (1 + markupPct / 100)))
+}
+
+function toCategoriaEstoque(categoria: string): CategoriaEstoque {
+  if (categoria === 'bike') return 'bike'
+  if (categoria === 'acessorio' || categoria === 'componente') return 'acessorio'
+  return 'peca'
+}
+
+function IconPencil() {
+  return (
+    <svg aria-hidden width={14} height={14} viewBox="0 0 24 24" fill="none">
+      <path
+        d="m14.7 6.3 3 3a2 2 0 0 1-2.3 3.2l-.5-.5L10 17.6a2 2 0 1 1-2.8-2.8l5.1-5.1-.5-.5a2 2 0 0 1 3.2-2.3Z"
+        stroke="currentColor"
+        strokeWidth={1.75}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function IconX() {
+  return (
+    <svg aria-hidden width={14} height={14} viewBox="0 0 24 24" fill="none">
+      <path
+        d="M18 6 6 18M6 6l12 12"
+        stroke="currentColor"
+        strokeWidth={1.75}
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+function emptyFornecedorForm() {
+  return {
+    nome: '',
+    contato: '',
+    telefone: '',
+    email: '',
+    prazoMedioDias: '0',
+  }
+}
+
+type ModalItemAba = 'dados' | 'detalhes'
+
+function emptyItemForm() {
+  return {
+    sku: '',
+    nome: '',
+    imagemLink: '',
+    descricao: '',
+    categoria: 'peca' as CategoriaEstoque,
+    unidade: 'un',
+    fornecedorId: '',
+    quantidadeInicial: '0',
+    estoqueMinimo: '0',
+    custoMedio: '0',
+    precoVarejo: '0',
+    precoAtacado: '0',
+    markupVarejo: '',
+    markupAtacado: '',
+  }
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const u = new URL(value.trim())
+    return u.protocol === 'http:' || u.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function imagemLinkFromItem(imagemUrl: string | null | undefined): string {
+  if (!imagemUrl?.trim()) return ''
+  return /^https?:\/\//i.test(imagemUrl.trim()) ? imagemUrl.trim() : ''
+}
+
+function toTipoMovimentacao(tipo: string): TipoMovimentacao {
+  if (tipo === 'entrada') return 'entrada'
+  if (tipo === 'saida') return 'saida'
+  return 'ajuste'
+}
+
+function statusItem(item: EstoqueItemComLocal): StatusEstoque {
+  if (item.saldo_atual <= item.estoque_minimo * 0.5) return 'critico'
+  if (item.saldo_atual <= item.estoque_minimo) return 'reposicao'
   return 'saudavel'
 }
 
@@ -161,16 +166,115 @@ function statusLabel(status: StatusEstoque): string {
   return 'Saudável'
 }
 
-export function EstoquePage({ companyId }: EstoquePageProps) {
+function horaMovimentacao(createdAt: string): string {
+  return new Intl.DateTimeFormat('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(createdAt))
+}
+
+type EstoquePageProps = {
+  companyId: string
+  /** Loja ativa (header); string vazia = sem loja. */
+  activeStoreId: string
+}
+
+export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
   const [busca, setBusca] = useState('')
   const [categoria, setCategoria] = useState<CategoriaEstoque | 'todos'>('todos')
   const [status, setStatus] = useState<StatusEstoque | 'todos'>('todos')
+  const [itens, setItens] = useState<EstoqueItemComLocal[]>([])
+  const [movimentacoes, setMovimentacoes] = useState<EstoqueMovimentacaoComItem[]>([])
+  const [kits, setKits] = useState<KitComComponentes[]>([])
+  const [fornecedores, setFornecedores] = useState<FornecedorRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [erro, setErro] = useState<string | null>(null)
+  const [modalFornecedorOpen, setModalFornecedorOpen] = useState(false)
+  const [fornecedorEditandoId, setFornecedorEditandoId] = useState<string | null>(null)
+  const [excluindoFornecedorId, setExcluindoFornecedorId] = useState<string | null>(null)
+  const [modalItemOpen, setModalItemOpen] = useState(false)
+  const [modalMovOpen, setModalMovOpen] = useState(false)
+  const [modalKitOpen, setModalKitOpen] = useState(false)
+  const [modalMontagemOpen, setModalMontagemOpen] = useState(false)
+  const [modalImportOpen, setModalImportOpen] = useState(false)
+  const [salvandoFornecedor, setSalvandoFornecedor] = useState(false)
+  const [salvandoItem, setSalvandoItem] = useState(false)
+  const [salvandoMov, setSalvandoMov] = useState(false)
+  const [salvandoKit, setSalvandoKit] = useState(false)
+  const [salvandoMontagem, setSalvandoMontagem] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [fornecedorForm, setFornecedorForm] = useState(emptyFornecedorForm)
+  const [itemEditandoId, setItemEditandoId] = useState<string | null>(null)
+  /** Preserva store_id original ao editar (não vem mais do modal). */
+  const [itemEditandoStoreId, setItemEditandoStoreId] = useState<string | null>(null)
+  const [modalItemAba, setModalItemAba] = useState<ModalItemAba>('dados')
+  const [itemSelecionadoId, setItemSelecionadoId] = useState<string | null>(null)
+  const [itemPreviewUrl, setItemPreviewUrl] = useState<string | null>(null)
+  const [itemPreviewLoading, setItemPreviewLoading] = useState(false)
+  const [excluindoItem, setExcluindoItem] = useState(false)
+  const [itemForm, setItemForm] = useState(() => emptyItemForm())
+  const [itemSkuLoading, setItemSkuLoading] = useState(false)
+  const [movForm, setMovForm] = useState({
+    itemId: '',
+    tipo: 'saida' as TipoMovimentacao,
+    quantidade: '1',
+    origem: '',
+    observacao: '',
+  })
+  const [kitForm, setKitForm] = useState({
+    sku: '',
+    nome: '',
+    itemResultanteId: '',
+    componente1ItemId: '',
+    componente1Qtd: '1',
+    componente2ItemId: '',
+    componente2Qtd: '1',
+  })
+  const [montagemForm, setMontagemForm] = useState({
+    kitId: '',
+    quantidade: '1',
+    origem: '',
+  })
+
+  const carregarDados = useCallback(async () => {
+    setLoading(true)
+    setErro(null)
+    try {
+      const [itensData, movimentacoesData, fornecedoresData, kitsData] = await Promise.all([
+        listarItensEstoque(companyId, activeStoreId),
+        listarMovimentacoesHoje(companyId, activeStoreId),
+        listarFornecedores(companyId, activeStoreId),
+        listarKits(companyId, activeStoreId),
+      ])
+      setItens(itensData)
+      setMovimentacoes(movimentacoesData)
+      setFornecedores(fornecedoresData)
+      setKits(kitsData)
+    } catch (err: unknown) {
+      setErro(err instanceof Error ? err.message : 'Erro ao carregar estoque.')
+      setItens([])
+      setMovimentacoes([])
+      setFornecedores([])
+      setKits([])
+    } finally {
+      setLoading(false)
+    }
+  }, [companyId, activeStoreId])
+
+  useEffect(() => {
+    void carregarDados()
+  }, [carregarDados])
+
+  useEffect(() => {
+    setItemSelecionadoId(null)
+  }, [activeStoreId])
 
   const itensFiltrados = useMemo(() => {
     const termo = busca.trim().toLowerCase()
 
-    return ITENS_MOCK.filter((item) => {
-      if (categoria !== 'todos' && item.categoria !== categoria) return false
+    return itens.filter((item) => {
+      const categoriaItem = toCategoriaEstoque(item.categoria)
+      if (categoria !== 'todos' && categoriaItem !== categoria) return false
 
       const itemStatus = statusItem(item)
       if (status !== 'todos' && itemStatus !== status) return false
@@ -179,33 +283,487 @@ export function EstoquePage({ companyId }: EstoquePageProps) {
       return (
         item.nome.toLowerCase().includes(termo) ||
         item.sku.toLowerCase().includes(termo) ||
-        item.local.toLowerCase().includes(termo)
+        item.storeName.toLowerCase().includes(termo)
       )
     })
-  }, [busca, categoria, status])
+  }, [busca, categoria, status, itens])
 
   const resumo = useMemo(() => {
-    const totalSkus = ITENS_MOCK.length
-    const criticos = ITENS_MOCK.filter((item) => statusItem(item) === 'critico').length
-    const reposicao = ITENS_MOCK.filter((item) => statusItem(item) === 'reposicao').length
-    const valorEstoque = ITENS_MOCK.reduce((acc, item) => acc + item.custoMedio * item.saldo, 0)
+    const totalSkus = itens.length
+    const criticos = itens.filter((item) => statusItem(item) === 'critico').length
+    const reposicao = itens.filter((item) => statusItem(item) === 'reposicao').length
+    const valorEstoque = itens.reduce((acc, item) => acc + item.custo_medio * item.saldo_atual, 0)
     return { totalSkus, criticos, reposicao, valorEstoque }
-  }, [])
+  }, [itens])
+
+  function abrirMovimentacao(tipo: TipoMovimentacao, itemId?: string) {
+    setFormError(null)
+    setMovForm({
+      itemId: itemId ?? itens[0]?.id ?? '',
+      tipo,
+      quantidade: '1',
+      origem: '',
+      observacao: '',
+    })
+    setModalMovOpen(true)
+  }
+
+  function abrirNovoFornecedor() {
+    setFormError(null)
+    setFornecedorEditandoId(null)
+    setFornecedorForm(emptyFornecedorForm())
+    setModalFornecedorOpen(true)
+  }
+
+  function abrirEditarFornecedor(fornecedor: FornecedorRow) {
+    setFormError(null)
+    setFornecedorEditandoId(fornecedor.id)
+    setFornecedorForm({
+      nome: fornecedor.nome,
+      contato: fornecedor.contato ?? '',
+      telefone: fornecedor.telefone ?? '',
+      email: fornecedor.email ?? '',
+      prazoMedioDias: String(fornecedor.prazo_medio_dias),
+    })
+    setModalFornecedorOpen(true)
+  }
+
+  function fecharModalFornecedor() {
+    if (salvandoFornecedor) return
+    setModalFornecedorOpen(false)
+    setFornecedorEditandoId(null)
+    setFornecedorForm(emptyFornecedorForm())
+    setFormError(null)
+  }
+
+  async function handleExcluirFornecedor(fornecedor: FornecedorRow) {
+    if (
+      !window.confirm(
+        `Excluir o fornecedor "${fornecedor.nome}"?\n\nItens vinculados ficarão sem fornecedor.`,
+      )
+    ) {
+      return
+    }
+    setExcluindoFornecedorId(fornecedor.id)
+    setFormError(null)
+    try {
+      await excluirFornecedor(fornecedor.id)
+      await carregarDados()
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Erro ao excluir fornecedor.')
+    } finally {
+      setExcluindoFornecedorId(null)
+    }
+  }
+
+  async function handleSalvarFornecedor(e: React.FormEvent) {
+    e.preventDefault()
+    setFormError(null)
+    if (!activeStoreId) {
+      setFormError('Selecione uma loja no topo da tela.')
+      return
+    }
+    const nome = fornecedorForm.nome.trim()
+    if (!nome) {
+      setFormError('Nome do fornecedor é obrigatório.')
+      return
+    }
+
+    const prazo = Number(fornecedorForm.prazoMedioDias)
+    if (!Number.isFinite(prazo) || prazo < 0) {
+      setFormError('Prazo médio inválido.')
+      return
+    }
+
+    const payload = {
+      nome,
+      contato: fornecedorForm.contato.trim() || null,
+      telefone: fornecedorForm.telefone.trim() || null,
+      email: fornecedorForm.email.trim() || null,
+      prazo_medio_dias: Math.round(prazo),
+    }
+
+    setSalvandoFornecedor(true)
+    try {
+      if (fornecedorEditandoId) {
+        await atualizarFornecedor(fornecedorEditandoId, payload)
+      } else {
+        await criarFornecedor({
+          company_id: companyId,
+          store_id: activeStoreId,
+          ...payload,
+        })
+      }
+      await carregarDados()
+      fecharModalFornecedor()
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Erro ao salvar fornecedor.')
+    } finally {
+      setSalvandoFornecedor(false)
+    }
+  }
+
+  const reservarSkuParaFormulario = useCallback(async () => {
+    setItemSkuLoading(true)
+    try {
+      const sku = await reservarProximoSkuEstoque(companyId, activeStoreId || null)
+      setFormError(null)
+      setItemForm((prev) => ({ ...prev, sku }))
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Erro ao gerar SKU.')
+    } finally {
+      setItemSkuLoading(false)
+    }
+  }, [companyId, activeStoreId])
+
+  const modalNovoItemAbertoRef = useRef(false)
+
+  const itemSelecionado = useMemo(
+    () => (itemSelecionadoId ? itens.find((i) => i.id === itemSelecionadoId) ?? null : null),
+    [itens, itemSelecionadoId],
+  )
+
+  const itemFormImagemPreview = useMemo(() => {
+    const link = itemForm.imagemLink.trim()
+    return link && isHttpUrl(link) ? link : null
+  }, [itemForm.imagemLink])
+
+  useEffect(() => {
+    if (!itemSelecionado?.imagem_url) {
+      setItemPreviewUrl(null)
+      setItemPreviewLoading(false)
+      return
+    }
+    let cancel = false
+    setItemPreviewLoading(true)
+    void obterUrlImagemItem(itemSelecionado.imagem_url)
+      .then((url) => {
+        if (!cancel) setItemPreviewUrl(url)
+      })
+      .finally(() => {
+        if (!cancel) setItemPreviewLoading(false)
+      })
+    return () => {
+      cancel = true
+    }
+  }, [itemSelecionado?.id, itemSelecionado?.imagem_url])
+
+  useEffect(() => {
+    const eraNovoAberto = modalNovoItemAbertoRef.current
+    modalNovoItemAbertoRef.current = Boolean(modalItemOpen && !itemEditandoId)
+    if (!modalItemOpen || itemEditandoId) return
+    if (!eraNovoAberto) return
+    void reservarSkuParaFormulario()
+  }, [activeStoreId, modalItemOpen, itemEditandoId, reservarSkuParaFormulario])
+
+  function abrirNovoItem() {
+    setFormError(null)
+    setItemEditandoId(null)
+    setItemEditandoStoreId(null)
+    setModalItemAba('dados')
+    setItemForm(emptyItemForm())
+    setModalItemOpen(true)
+    void reservarSkuParaFormulario()
+  }
+
+  function abrirEditarItem(item: EstoqueItemComLocal) {
+    setFormError(null)
+    setItemSkuLoading(false)
+    setItemEditandoId(item.id)
+    setItemEditandoStoreId(item.store_id)
+    setModalItemAba('dados')
+    const custo = item.custo_medio
+    const pv = item.preco_varejo ?? 0
+    const pa = item.preco_atacado ?? 0
+    setItemForm({
+      sku: item.sku,
+      nome: item.nome,
+      imagemLink: imagemLinkFromItem(item.imagem_url),
+      descricao: item.descricao?.trim() ?? '',
+      categoria: toCategoriaEstoque(item.categoria),
+      unidade: item.unidade,
+      fornecedorId: item.fornecedor_id ?? '',
+      quantidadeInicial: String(item.saldo_atual),
+      estoqueMinimo: String(item.estoque_minimo),
+      custoMedio: String(item.custo_medio),
+      precoVarejo: String(item.preco_varejo ?? 0),
+      precoAtacado: String(item.preco_atacado ?? 0),
+      markupVarejo: markupPctFromCostAndPrice(custo, pv),
+      markupAtacado: markupPctFromCostAndPrice(custo, pa),
+    })
+    setModalItemOpen(true)
+  }
+
+  function fecharModalItem() {
+    setModalItemOpen(false)
+    setItemEditandoId(null)
+    setItemEditandoStoreId(null)
+    setModalItemAba('dados')
+    setFormError(null)
+    setItemSkuLoading(false)
+  }
+
+  function selecionarItem(item: EstoqueItemComLocal) {
+    setItemSelecionadoId((prev) => (prev === item.id ? null : item.id))
+  }
+
+  async function handleExcluirItem(item: EstoqueItemComLocal) {
+    const ok = window.confirm(
+      `Excluir "${item.nome}" do estoque?\n\nO item será desativado e não aparecerá mais nas listagens.`,
+    )
+    if (!ok) return
+    setExcluindoItem(true)
+    setErro(null)
+    try {
+      await excluirItemEstoque(item.id)
+      if (itemSelecionadoId === item.id) setItemSelecionadoId(null)
+      await carregarDados()
+    } catch (err: unknown) {
+      setErro(err instanceof Error ? err.message : 'Erro ao excluir item.')
+    } finally {
+      setExcluindoItem(false)
+    }
+  }
+
+  async function handleSalvarItem(e: React.FormEvent) {
+    e.preventDefault()
+    setFormError(null)
+
+    const sku = itemForm.sku.trim()
+    const nome = itemForm.nome.trim()
+    const quantidadeInicial = Number(itemForm.quantidadeInicial)
+    const estoqueMinimo = Number(itemForm.estoqueMinimo)
+    const custoMedio = Number(itemForm.custoMedio)
+    const precoVarejo = Number(itemForm.precoVarejo)
+    const precoAtacado = Number(itemForm.precoAtacado)
+
+    const imagemLink = itemForm.imagemLink.trim()
+    const descricao = itemForm.descricao.trim()
+    let imagemUrl: string | null = imagemLink || null
+    if (itemEditandoId && !imagemLink) {
+      const emEdicao = itens.find((i) => i.id === itemEditandoId)
+      const refLegada = emEdicao?.imagem_url?.trim()
+      if (refLegada && !/^https?:\/\//i.test(refLegada)) {
+        imagemUrl = refLegada
+      }
+    }
+
+    if (!nome) {
+      setFormError('Nome do item é obrigatório.')
+      return
+    }
+    if (imagemLink && !isHttpUrl(imagemLink)) {
+      setFormError('Informe um link válido para a foto (http ou https).')
+      setModalItemAba('detalhes')
+      return
+    }
+    if (!itemEditandoId && !sku) {
+      setFormError('Aguarde a geração do SKU (verifique a conexão e o script SQL no Supabase).')
+      return
+    }
+    if (
+      [estoqueMinimo, custoMedio, precoVarejo, precoAtacado].some((v) => !Number.isFinite(v) || v < 0) ||
+      (itemEditandoId === null &&
+        (!Number.isFinite(quantidadeInicial) || quantidadeInicial < 0))
+    ) {
+      setFormError('Quantidade, mínimo, custo e preços devem ser números válidos e não negativos.')
+      return
+    }
+
+    setSalvandoItem(true)
+    try {
+      if (itemEditandoId) {
+        await atualizarItemEstoque(itemEditandoId, {
+          nome,
+          categoria: itemForm.categoria,
+          unidade: itemForm.unidade.trim() || 'un',
+          store_id: itemEditandoStoreId,
+          fornecedor_id: itemForm.fornecedorId || null,
+          estoque_minimo: estoqueMinimo,
+          custo_medio: custoMedio,
+          preco_varejo: precoVarejo,
+          preco_atacado: precoAtacado,
+          imagem_url: imagemUrl,
+          descricao: descricao || null,
+        })
+      } else {
+        await criarItemEstoque({
+          company_id: companyId,
+          sku,
+          nome,
+          categoria: itemForm.categoria,
+          unidade: itemForm.unidade.trim() || 'un',
+          store_id: activeStoreId,
+          fornecedor_id: itemForm.fornecedorId || null,
+          saldo_atual: quantidadeInicial,
+          estoque_minimo: estoqueMinimo,
+          custo_medio: custoMedio,
+          preco_varejo: precoVarejo,
+          preco_atacado: precoAtacado,
+          imagem_url: imagemUrl,
+          descricao: descricao || null,
+        })
+      }
+
+      await carregarDados()
+      fecharModalItem()
+      setItemForm(emptyItemForm())
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Erro ao salvar item.')
+    } finally {
+      setSalvandoItem(false)
+    }
+  }
+
+  async function handleSalvarMovimentacao(e: React.FormEvent) {
+    e.preventDefault()
+    setFormError(null)
+    if (!movForm.itemId) {
+      setFormError('Selecione um item para movimentar.')
+      return
+    }
+
+    const quantidade = Number(movForm.quantidade)
+    if (!Number.isFinite(quantidade)) {
+      setFormError('Quantidade inválida.')
+      return
+    }
+    if (movForm.tipo === 'ajuste' && quantidade === 0) {
+      setFormError('Ajuste não pode ser zero.')
+      return
+    }
+    if ((movForm.tipo === 'entrada' || movForm.tipo === 'saida') && quantidade <= 0) {
+      setFormError('Entrada/saída exigem quantidade maior que zero.')
+      return
+    }
+
+    setSalvandoMov(true)
+    try {
+      await criarMovimentacaoEstoque({
+        company_id: companyId,
+        item_id: movForm.itemId,
+        tipo: movForm.tipo,
+        quantidade,
+        origem: movForm.origem.trim() || null,
+        observacao: movForm.observacao.trim() || null,
+      })
+      await carregarDados()
+      setModalMovOpen(false)
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Erro ao salvar movimentação.')
+    } finally {
+      setSalvandoMov(false)
+    }
+  }
+
+  function abrirCadastroKit() {
+    setFormError(null)
+    setKitForm({
+      sku: '',
+      nome: '',
+      itemResultanteId: '',
+      componente1ItemId: '',
+      componente1Qtd: '1',
+      componente2ItemId: '',
+      componente2Qtd: '1',
+    })
+    setModalKitOpen(true)
+  }
+
+  function abrirMontagemKit() {
+    setFormError(null)
+    setMontagemForm({
+      kitId: kits[0]?.id ?? '',
+      quantidade: '1',
+      origem: '',
+    })
+    setModalMontagemOpen(true)
+  }
+
+  async function handleSalvarKit(e: React.FormEvent) {
+    e.preventDefault()
+    setFormError(null)
+
+    const sku = kitForm.sku.trim()
+    const nome = kitForm.nome.trim()
+    const itemResultanteId = kitForm.itemResultanteId
+    const c1 = kitForm.componente1ItemId
+    const c2 = kitForm.componente2ItemId
+    const c1q = Number(kitForm.componente1Qtd)
+    const c2q = Number(kitForm.componente2Qtd)
+
+    if (!sku || !nome || !itemResultanteId || !c1 || !c2) {
+      setFormError('Preencha SKU, nome, item resultante e dois componentes.')
+      return
+    }
+    if (c1 === c2) {
+      setFormError('Selecione componentes diferentes para o kit.')
+      return
+    }
+    if (itemResultanteId === c1 || itemResultanteId === c2) {
+      setFormError('Item resultante não pode ser também componente.')
+      return
+    }
+    if (!Number.isFinite(c1q) || c1q <= 0 || !Number.isFinite(c2q) || c2q <= 0) {
+      setFormError('Quantidades dos componentes devem ser maiores que zero.')
+      return
+    }
+
+    setSalvandoKit(true)
+    try {
+      await criarKitComComponentes({
+        companyId,
+        sku,
+        nome,
+        itemResultanteId,
+        componentes: [
+          { componenteItemId: c1, quantidade: c1q },
+          { componenteItemId: c2, quantidade: c2q },
+        ],
+      })
+      await carregarDados()
+      setModalKitOpen(false)
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Erro ao salvar kit.')
+    } finally {
+      setSalvandoKit(false)
+    }
+  }
+
+  async function handleMontarKit(e: React.FormEvent) {
+    e.preventDefault()
+    setFormError(null)
+
+    if (!montagemForm.kitId) {
+      setFormError('Selecione um kit para montar.')
+      return
+    }
+
+    const quantidade = Number(montagemForm.quantidade)
+    if (!Number.isFinite(quantidade) || quantidade <= 0) {
+      setFormError('Quantidade de montagem inválida.')
+      return
+    }
+
+    setSalvandoMontagem(true)
+    try {
+      await montarKit({
+        companyId,
+        kitId: montagemForm.kitId,
+        quantidade,
+        origem: montagemForm.origem.trim() || undefined,
+      })
+      await carregarDados()
+      setModalMontagemOpen(false)
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Erro ao montar kit.')
+    } finally {
+      setSalvandoMontagem(false)
+    }
+  }
 
   return (
     <div className="st-page">
-      <header className="st-head">
-        <div>
-          <h1 className="st-head__title">Estoque</h1>
-          <p className="st-head__tag">
-            Operação por loja e oficina, com foco em giro, reposição e baixa automática por OS.
-          </p>
-        </div>
-        <span className="st-head__tenant" title={companyId}>
-          Tenant ativo
-        </span>
-      </header>
-
       <section className="st-kpi-grid" aria-label="Resumo do estoque">
         <article className="st-kpi st-kpi--teal">
           <span className="st-kpi__label">SKUs ativos</span>
@@ -220,7 +778,7 @@ export function EstoquePage({ companyId }: EstoquePageProps) {
           <strong className="st-kpi__value">{resumo.reposicao}</strong>
         </article>
         <article className="st-kpi st-kpi--blue">
-          <span className="st-kpi__label">Valor em estoque</span>
+          <span className="st-kpi__label">Valor em estoque (custo)</span>
           <strong className="st-kpi__value st-kpi__value--currency">{formatBRL(resumo.valorEstoque)}</strong>
         </article>
       </section>
@@ -228,6 +786,52 @@ export function EstoquePage({ companyId }: EstoquePageProps) {
       <div className="st-layout">
         <section className="st-main" aria-label="Itens de estoque">
           <div className="st-toolbar">
+            <div className="st-toolbar__actions">
+              <button type="button" className="st-primary-btn" onClick={abrirNovoItem}>
+                Novo item
+              </button>
+              <button
+                type="button"
+                className="st-primary-btn st-primary-btn--soft"
+                onClick={() => setModalImportOpen(true)}
+                disabled={!activeStoreId}
+                title={!activeStoreId ? 'Selecione uma loja no topo' : undefined}
+              >
+                Importar planilha
+              </button>
+              <button
+                type="button"
+                className="st-primary-btn st-primary-btn--soft"
+                onClick={() => abrirMovimentacao('saida')}
+                disabled={itens.length === 0}
+              >
+                Movimentar
+              </button>
+              <button
+                type="button"
+                className="st-primary-btn st-primary-btn--soft"
+                onClick={() => { setFormError(null); setModalFornecedorOpen(true) }}
+              >
+                Fornecedor
+              </button>
+              <button
+                type="button"
+                className="st-primary-btn st-primary-btn--soft"
+                onClick={abrirCadastroKit}
+                disabled={itens.length < 3}
+              >
+                Novo kit
+              </button>
+              <button
+                type="button"
+                className="st-primary-btn st-primary-btn--soft"
+                onClick={abrirMontagemKit}
+                disabled={kits.length === 0}
+              >
+                Montar kit
+              </button>
+            </div>
+
             <label className="st-search-wrap" htmlFor="st-busca">
               <span className="cp-sr-only">Buscar item de estoque</span>
               <input
@@ -271,7 +875,20 @@ export function EstoquePage({ companyId }: EstoquePageProps) {
           </div>
 
           <div className="st-list-wrap">
-            {itensFiltrados.length === 0 ? (
+            {loading ? (
+              <div className="st-empty">
+                <p className="st-empty__title">Carregando estoque...</p>
+                <p className="st-empty__hint">Buscando dados da sua empresa no Supabase.</p>
+              </div>
+            ) : erro ? (
+              <div className="st-empty st-empty--error" role="alert">
+                <p className="st-empty__title">Falha ao carregar estoque</p>
+                <p className="st-empty__hint">{erro}</p>
+                <button type="button" className="st-retry-btn" onClick={() => void carregarDados()}>
+                  Tentar novamente
+                </button>
+              </div>
+            ) : itensFiltrados.length === 0 ? (
               <div className="st-empty">
                 <p className="st-empty__title">Nenhum item encontrado</p>
                 <p className="st-empty__hint">Ajuste os filtros ou revise o termo da busca.</p>
@@ -281,34 +898,72 @@ export function EstoquePage({ companyId }: EstoquePageProps) {
                 {itensFiltrados.map((item) => {
                   const st = statusItem(item)
                   return (
-                    <li key={item.id} className="st-row">
+                    <li
+                      key={item.id}
+                      className={
+                        itemSelecionadoId === item.id ? 'st-row st-row--selected' : 'st-row'
+                      }
+                      onClick={() => selecionarItem(item)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          selecionarItem(item)
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      aria-pressed={itemSelecionadoId === item.id}
+                    >
                       <div className="st-row__main">
                         <div className="st-row__identity">
                           <strong className="st-row__name">{item.nome}</strong>
                           <span className="st-row__sku">{item.sku}</span>
                         </div>
-                        <div className="st-row__meta">
-                          <span>{categoriaLabel(item.categoria)}</span>
-                          <span className="st-dot" aria-hidden>
-                            •
-                          </span>
-                          <span>{item.local}</span>
-                        </div>
+                        {item.fornecedorNome && (
+                          <div className="st-row__meta">
+                            <span>{item.fornecedorNome}</span>
+                          </div>
+                        )}
                       </div>
 
                       <div className="st-row__stock">
-                        <span className="st-row__stock-value">{item.saldo}</span>
-                        <span className="st-row__stock-label">mín. {item.minimo}</span>
+                        <span className="st-row__stock-value">{formatQuantidade(item.saldo_atual)}</span>
+                        <span className="st-row__stock-label">mín. {formatQuantidade(item.estoque_minimo)}</span>
                       </div>
 
                       <div className="st-row__status">
                         <span className={`st-badge st-badge--${st}`}>{statusLabel(st)}</span>
-                        <span className="st-row__cost">{formatBRL(item.custoMedio)}</span>
+                        <div className="st-row__prices">
+                          <span className="st-row__price-item">
+                            <span className="st-row__price-label">Custo</span>
+                            <span className="st-row__price-value">{formatBRL(item.custo_medio)}</span>
+                          </span>
+                          <span className="st-row__price-item">
+                            <span className="st-row__price-label">Var.</span>
+                            <span className="st-row__price-value">{formatBRL(item.preco_varejo)}</span>
+                          </span>
+                        </div>
                       </div>
 
-                      <button type="button" className="st-row__action">
-                        Repor
-                      </button>
+                      <div className="st-row__actions" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          className="st-row__action st-row__action--icon"
+                          aria-label={`Editar ${item.nome}`}
+                          onClick={() => abrirEditarItem(item)}
+                        >
+                          <IconPencil />
+                        </button>
+                        <button
+                          type="button"
+                          className="st-row__action st-row__action--icon st-row__action--danger"
+                          aria-label={`Excluir ${item.nome}`}
+                          onClick={() => void handleExcluirItem(item)}
+                          disabled={excluindoItem}
+                        >
+                          <IconX />
+                        </button>
+                      </div>
                     </li>
                   )
                 })}
@@ -318,23 +973,102 @@ export function EstoquePage({ companyId }: EstoquePageProps) {
         </section>
 
         <aside className="st-side" aria-label="Contexto operacional do estoque">
-          <section className="st-panel">
-            <h2 className="st-panel__title">Movimentações de hoje</h2>
-            <ul className="st-mov-list">
-              {MOVIMENTACOES_MOCK.map((mov) => (
-                <li key={mov.id} className="st-mov">
-                  <div className="st-mov__head">
-                    <span className={`st-mov__type st-mov__type--${mov.tipo}`}>{mov.tipo}</span>
-                    <span className="st-mov__time">{mov.horario}</span>
+          <div className="st-side__upper">
+            {itemSelecionado ? (
+              <article className="st-item-detail" aria-label={`Detalhes de ${itemSelecionado.nome}`}>
+                <button
+                  type="button"
+                  className="st-item-detail__close"
+                  onClick={() => setItemSelecionadoId(null)}
+                  aria-label="Fechar detalhe do item"
+                >
+                  ×
+                </button>
+                <div className="st-item-detail__media">
+                  {itemPreviewLoading ? (
+                    <span className="st-item-detail__placeholder">Carregando foto…</span>
+                  ) : itemPreviewUrl ? (
+                    <img src={itemPreviewUrl} alt={itemSelecionado.nome} className="st-item-detail__img" />
+                  ) : (
+                    <span className="st-item-detail__placeholder" aria-hidden>
+                      {itemSelecionado.nome.charAt(0).toUpperCase()}
+                    </span>
+                  )}
+                </div>
+                <div className="st-item-detail__body">
+                  <h3 className="st-item-detail__name">{itemSelecionado.nome}</h3>
+                  <p className="st-item-detail__sku">{itemSelecionado.sku}</p>
+                  {itemSelecionado.descricao?.trim() && (
+                    <p className="st-item-detail__desc">{itemSelecionado.descricao.trim()}</p>
+                  )}
+                  <dl className="st-item-detail__facts">
+                    <div>
+                      <dt>Saldo</dt>
+                      <dd>{formatQuantidade(itemSelecionado.saldo_atual)}</dd>
+                    </div>
+                    <div>
+                      <dt>Custo</dt>
+                      <dd>{formatBRL(itemSelecionado.custo_medio)}</dd>
+                    </div>
+                    <div>
+                      <dt>Varejo</dt>
+                      <dd>{formatBRL(itemSelecionado.preco_varejo)}</dd>
+                    </div>
+                    <div>
+                      <dt>SKU fornecedor</dt>
+                      <dd>{itemSelecionado.sku_fornecedor?.trim() || '—'}</dd>
+                    </div>
+                  </dl>
+                  <div className="st-item-detail__actions">
+                    <button
+                      type="button"
+                      className="st-row__action st-row__action--icon"
+                      aria-label={`Editar ${itemSelecionado.nome}`}
+                      onClick={() => abrirEditarItem(itemSelecionado)}
+                    >
+                      <IconPencil />
+                    </button>
+                    <button
+                      type="button"
+                      className="st-row__action st-row__action--icon st-row__action--danger"
+                      aria-label={`Excluir ${itemSelecionado.nome}`}
+                      onClick={() => void handleExcluirItem(itemSelecionado)}
+                      disabled={excluindoItem}
+                    >
+                      <IconX />
+                    </button>
                   </div>
-                  <strong className="st-mov__item">{mov.item}</strong>
-                  <span className="st-mov__meta">
-                    {mov.quantidade > 0 ? '+' : ''}
-                    {mov.quantidade} un · {mov.origem}
-                  </span>
-                </li>
-              ))}
-            </ul>
+                </div>
+              </article>
+            ) : (
+              <>
+            <section className="st-panel">
+              <h2 className="st-panel__title">Movimentações de hoje</h2>
+            {loading ? (
+              <p className="st-panel__hint">Carregando movimentações...</p>
+            ) : movimentacoes.length === 0 ? (
+              <p className="st-panel__hint">Sem movimentações hoje.</p>
+            ) : (
+              <ul className="st-mov-list">
+                {movimentacoes.map((mov) => {
+                  const tipo = toTipoMovimentacao(mov.tipo)
+                  return (
+                    <li key={mov.id} className="st-mov">
+                      <div className="st-mov__head">
+                        <span className={`st-mov__type st-mov__type--${tipo}`}>{tipo}</span>
+                        <span className="st-mov__time">{horaMovimentacao(mov.created_at)}</span>
+                      </div>
+                      <strong className="st-mov__item">{mov.itemNome}</strong>
+                      <span className="st-mov__meta">
+                        {mov.quantidade > 0 ? '+' : ''}
+                        {formatQuantidade(mov.quantidade)} un
+                        {mov.origem ? ` · ${mov.origem}` : ''}
+                      </span>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
           </section>
 
           <section className="st-panel">
@@ -345,8 +1079,809 @@ export function EstoquePage({ companyId }: EstoquePageProps) {
               <li>Criar alerta por loja quando saldo ficar abaixo de 50% do mínimo.</li>
             </ul>
           </section>
+              </>
+            )}
+          </div>
+
+          <section className="st-panel">
+            <div className="st-panel__head">
+              <h2 className="st-panel__title">Fornecedores</h2>
+              <button
+                type="button"
+                className="st-link-btn"
+                onClick={abrirNovoFornecedor}
+                disabled={!activeStoreId}
+                title={!activeStoreId ? 'Selecione uma loja no topo' : undefined}
+              >
+                Novo
+              </button>
+            </div>
+            {!activeStoreId ? (
+              <p className="st-panel__hint">Selecione uma loja no topo da tela.</p>
+            ) : fornecedores.length === 0 ? (
+              <p className="st-panel__hint">Nenhum fornecedor cadastrado.</p>
+            ) : (
+              <ul className="st-sup-list">
+                {fornecedores.slice(0, 6).map((fornecedor) => (
+                  <li key={fornecedor.id} className="st-sup-item">
+                    <div className="st-sup-item__body">
+                      <strong>{fornecedor.nome}</strong>
+                      <span>
+                        {fornecedor.contato ?? 'Sem contato'} · prazo {fornecedor.prazo_medio_dias}d
+                      </span>
+                    </div>
+                    <div className="st-sup-item__actions">
+                      <button
+                        type="button"
+                        className="st-row__action st-row__action--icon"
+                        aria-label={`Editar ${fornecedor.nome}`}
+                        onClick={() => abrirEditarFornecedor(fornecedor)}
+                        disabled={excluindoFornecedorId === fornecedor.id}
+                      >
+                        <IconPencil />
+                      </button>
+                      <button
+                        type="button"
+                        className="st-row__action st-row__action--icon st-row__action--danger"
+                        aria-label={`Excluir ${fornecedor.nome}`}
+                        onClick={() => void handleExcluirFornecedor(fornecedor)}
+                        disabled={excluindoFornecedorId === fornecedor.id}
+                      >
+                        <IconX />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="st-panel">
+            <div className="st-panel__head">
+              <h2 className="st-panel__title">Kits montáveis</h2>
+              <button
+                type="button"
+                className="st-link-btn"
+                onClick={abrirCadastroKit}
+                disabled={itens.length < 3}
+              >
+                Novo
+              </button>
+            </div>
+            {kits.length === 0 ? (
+              <p className="st-panel__hint">Nenhum kit cadastrado.</p>
+            ) : (
+              <ul className="st-sup-list">
+                {kits.slice(0, 6).map((kit) => (
+                  <li key={kit.id} className="st-sup-item">
+                    <strong>{kit.nome}</strong>
+                    <span>
+                      {kit.componentes.length} componentes · saída automática + entrada em{' '}
+                      {kit.itemResultanteNome ?? 'item resultante'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         </aside>
       </div>
+
+      {modalFornecedorOpen && (
+        <div className="st-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="st-fornecedor-title">
+          <div className="st-modal">
+            <div className="st-modal__head">
+              <h2 id="st-fornecedor-title" className="st-modal__title">
+                {fornecedorEditandoId ? 'Editar fornecedor' : 'Novo fornecedor'}
+              </h2>
+              <button type="button" className="st-modal__close" onClick={fecharModalFornecedor}>
+                ×
+              </button>
+            </div>
+            <form className="st-form" onSubmit={handleSalvarFornecedor}>
+              <label className="st-field">
+                <span>Nome *</span>
+                <input
+                  className="st-input"
+                  value={fornecedorForm.nome}
+                  onChange={(e) => setFornecedorForm((prev) => ({ ...prev, nome: e.target.value }))}
+                  required
+                />
+              </label>
+              <label className="st-field">
+                <span>Contato</span>
+                <input
+                  className="st-input"
+                  value={fornecedorForm.contato}
+                  onChange={(e) => setFornecedorForm((prev) => ({ ...prev, contato: e.target.value }))}
+                />
+              </label>
+              <div className="st-form-grid">
+                <label className="st-field">
+                  <span>Telefone</span>
+                  <input
+                    className="st-input"
+                    value={fornecedorForm.telefone}
+                    onChange={(e) => setFornecedorForm((prev) => ({ ...prev, telefone: e.target.value }))}
+                  />
+                </label>
+                <label className="st-field">
+                  <span>Prazo (dias)</span>
+                  <input
+                    className="st-input"
+                    type="number"
+                    min={0}
+                    value={fornecedorForm.prazoMedioDias}
+                    onChange={(e) => setFornecedorForm((prev) => ({ ...prev, prazoMedioDias: e.target.value }))}
+                  />
+                </label>
+              </div>
+              <label className="st-field">
+                <span>E-mail</span>
+                <input
+                  className="st-input"
+                  type="email"
+                  value={fornecedorForm.email}
+                  onChange={(e) => setFornecedorForm((prev) => ({ ...prev, email: e.target.value }))}
+                />
+              </label>
+              {formError && <p className="st-form-error">{formError}</p>}
+              <div className="st-form-actions">
+                <button type="button" className="st-ghost-btn" onClick={fecharModalFornecedor}>
+                  Cancelar
+                </button>
+                <button type="submit" className="st-primary-btn" disabled={salvandoFornecedor}>
+                  {salvandoFornecedor
+                    ? 'Salvando...'
+                    : fornecedorEditandoId
+                      ? 'Salvar alterações'
+                      : 'Salvar fornecedor'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {modalItemOpen && (
+        <div className="st-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="st-item-title">
+          <div className="st-modal st-modal--lg">
+            <div className="st-modal__head">
+              <h2 id="st-item-title" className="st-modal__title">
+                {itemEditandoId ? 'Editar item de estoque' : 'Novo item de estoque'}
+              </h2>
+              <button type="button" className="st-modal__close" onClick={fecharModalItem}>
+                ×
+              </button>
+            </div>
+            <form className="st-form" onSubmit={handleSalvarItem}>
+              <div className="st-modal-tabs" role="tablist" aria-label="Seções do cadastro">
+                <button
+                  type="button"
+                  role="tab"
+                  id="st-item-tab-dados"
+                  aria-selected={modalItemAba === 'dados'}
+                  aria-controls="st-item-panel-dados"
+                  className={`st-modal-tabs__btn${modalItemAba === 'dados' ? ' is-active' : ''}`}
+                  onClick={() => setModalItemAba('dados')}
+                >
+                  Dados do item
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  id="st-item-tab-detalhes"
+                  aria-selected={modalItemAba === 'detalhes'}
+                  aria-controls="st-item-panel-detalhes"
+                  className={`st-modal-tabs__btn${modalItemAba === 'detalhes' ? ' is-active' : ''}`}
+                  onClick={() => setModalItemAba('detalhes')}
+                >
+                  Foto e descrição
+                </button>
+              </div>
+
+              <div
+                id="st-item-panel-dados"
+                role="tabpanel"
+                aria-labelledby="st-item-tab-dados"
+                hidden={modalItemAba !== 'dados'}
+                className="st-modal-tabpanel"
+              >
+              <div className="st-form-grid">
+                <label className="st-field">
+                  <span>SKU</span>
+                  <input
+                    className="st-input"
+                    value={itemSkuLoading && !itemEditandoId ? '' : itemForm.sku}
+                    placeholder={itemSkuLoading && !itemEditandoId ? 'Gerando…' : undefined}
+                    readOnly
+                    aria-readonly="true"
+                    aria-busy={itemSkuLoading && !itemEditandoId}
+                  />
+                </label>
+                <label className="st-field">
+                  <span>Nome *</span>
+                  <input
+                    className="st-input"
+                    value={itemForm.nome}
+                    onChange={(e) => setItemForm((prev) => ({ ...prev, nome: e.target.value }))}
+                    required
+                  />
+                </label>
+              </div>
+              <div className="st-form-grid">
+                <label className="st-field">
+                  <span>Categoria</span>
+                  <select
+                    className="st-input"
+                    value={itemForm.categoria}
+                    onChange={(e) =>
+                      setItemForm((prev) => ({ ...prev, categoria: e.target.value as CategoriaEstoque }))
+                    }
+                  >
+                    <option value="peca">Peça</option>
+                    <option value="bike">Bike</option>
+                    <option value="acessorio">Acessórios</option>
+                  </select>
+                </label>
+                <label className="st-field">
+                  <span>Unidade</span>
+                  <input
+                    className="st-input"
+                    value={itemForm.unidade}
+                    onChange={(e) => setItemForm((prev) => ({ ...prev, unidade: e.target.value }))}
+                  />
+                </label>
+              </div>
+              <div className="st-form-grid">
+                <label className="st-field">
+                  <span>Fornecedor</span>
+                  <select
+                    className="st-input"
+                    value={itemForm.fornecedorId}
+                    onChange={(e) => setItemForm((prev) => ({ ...prev, fornecedorId: e.target.value }))}
+                  >
+                    <option value="">Sem fornecedor</option>
+                    {fornecedores.map((fornecedor) => (
+                      <option key={fornecedor.id} value={fornecedor.id}>
+                        {fornecedor.nome}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="st-field">
+                  <span title="Custo pago ao fornecedor">Custo (R$)</span>
+                  <input
+                    className="st-input"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={itemForm.custoMedio}
+                    onChange={(e) => {
+                      const raw = e.target.value
+                      setItemForm((prev) => {
+                        const custo = parseDecimalInput(raw)
+                        const next = { ...prev, custoMedio: raw }
+                        if (!(custo > 0)) {
+                          return next
+                        }
+                        let nv = next
+                        const mv = parseDecimalInput(prev.markupVarejo)
+                        if (prev.markupVarejo.trim() !== '' && Number.isFinite(mv)) {
+                          nv = { ...nv, precoVarejo: priceFromCostAndMarkup(custo, mv) }
+                        } else {
+                          const pv = parseDecimalInput(prev.precoVarejo)
+                          if (Number.isFinite(pv)) {
+                            nv = { ...nv, markupVarejo: markupPctFromCostAndPrice(custo, pv) }
+                          }
+                        }
+                        const ma = parseDecimalInput(prev.markupAtacado)
+                        if (prev.markupAtacado.trim() !== '' && Number.isFinite(ma)) {
+                          nv = { ...nv, precoAtacado: priceFromCostAndMarkup(custo, ma) }
+                        } else {
+                          const pa = parseDecimalInput(prev.precoAtacado)
+                          if (Number.isFinite(pa)) {
+                            nv = { ...nv, markupAtacado: markupPctFromCostAndPrice(custo, pa) }
+                          }
+                        }
+                        return nv
+                      })
+                    }}
+                  />
+                </label>
+              </div>
+              <div className="st-form-grid">
+                <label className="st-field">
+                  <span>
+                    Quantidade {itemEditandoId ? 'em estoque' : 'inicial'}
+                    {itemEditandoId && (
+                      <span className="st-field__hint"> — ajuste fino pela movimentação</span>
+                    )}
+                  </span>
+                  <input
+                    className="st-input"
+                    type="number"
+                    min={0}
+                    step="0.001"
+                    value={itemForm.quantidadeInicial}
+                    onChange={(e) =>
+                      setItemForm((prev) => ({ ...prev, quantidadeInicial: e.target.value }))
+                    }
+                    readOnly={!!itemEditandoId}
+                    aria-readonly={itemEditandoId ? true : undefined}
+                  />
+                </label>
+                <label className="st-field">
+                  <span>Estoque mínimo</span>
+                  <input
+                    className="st-input"
+                    type="number"
+                    min={0}
+                    step="0.001"
+                    value={itemForm.estoqueMinimo}
+                    onChange={(e) =>
+                      setItemForm((prev) => ({ ...prev, estoqueMinimo: e.target.value }))
+                    }
+                  />
+                </label>
+              </div>
+
+              <p className="st-pricing-hint">
+                Preços de venda: informe o valor em reais ou o markup (%) sobre o custo — um atualiza o
+                outro automaticamente.
+              </p>
+              <div className="st-form-grid st-form-grid--precos">
+                <label className="st-field">
+                  <span>Preço varejo (R$)</span>
+                  <input
+                    className="st-input"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={itemForm.precoVarejo}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setItemForm((prev) => {
+                        const custo = parseDecimalInput(prev.custoMedio)
+                        const preco = parseDecimalInput(val)
+                        const markup =
+                          custo > 0 && Number.isFinite(preco)
+                            ? markupPctFromCostAndPrice(custo, preco)
+                            : ''
+                        return { ...prev, precoVarejo: val, markupVarejo: markup }
+                      })
+                    }}
+                  />
+                </label>
+                <label className="st-field">
+                  <span>Markup varejo (%)</span>
+                  <input
+                    className="st-input"
+                    type="number"
+                    step="0.01"
+                    value={itemForm.markupVarejo}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setItemForm((prev) => {
+                        const custo = parseDecimalInput(prev.custoMedio)
+                        const m = parseDecimalInput(val)
+                        const preco =
+                          custo >= 0 && Number.isFinite(m)
+                            ? priceFromCostAndMarkup(custo, m)
+                            : prev.precoVarejo
+                        return { ...prev, markupVarejo: val, precoVarejo: preco }
+                      })
+                    }}
+                  />
+                </label>
+              </div>
+              <div className="st-form-grid st-form-grid--precos">
+                <label className="st-field">
+                  <span>Preço atacado (R$)</span>
+                  <input
+                    className="st-input"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={itemForm.precoAtacado}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setItemForm((prev) => {
+                        const custo = parseDecimalInput(prev.custoMedio)
+                        const preco = parseDecimalInput(val)
+                        const markup =
+                          custo > 0 && Number.isFinite(preco)
+                            ? markupPctFromCostAndPrice(custo, preco)
+                            : ''
+                        return { ...prev, precoAtacado: val, markupAtacado: markup }
+                      })
+                    }}
+                  />
+                </label>
+                <label className="st-field">
+                  <span>Markup atacado (%)</span>
+                  <input
+                    className="st-input"
+                    type="number"
+                    step="0.01"
+                    value={itemForm.markupAtacado}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setItemForm((prev) => {
+                        const custo = parseDecimalInput(prev.custoMedio)
+                        const m = parseDecimalInput(val)
+                        const preco =
+                          custo >= 0 && Number.isFinite(m)
+                            ? priceFromCostAndMarkup(custo, m)
+                            : prev.precoAtacado
+                        return { ...prev, markupAtacado: val, precoAtacado: preco }
+                      })
+                    }}
+                  />
+                </label>
+              </div>
+              </div>
+
+              <div
+                id="st-item-panel-detalhes"
+                role="tabpanel"
+                aria-labelledby="st-item-tab-detalhes"
+                hidden={modalItemAba !== 'detalhes'}
+                className="st-modal-tabpanel"
+              >
+                <label className="st-field">
+                  <span>Link da foto (opcional)</span>
+                  <input
+                    className="st-input"
+                    type="url"
+                    inputMode="url"
+                    placeholder="https://exemplo.com/imagem.jpg"
+                    value={itemForm.imagemLink}
+                    onChange={(e) =>
+                      setItemForm((prev) => ({ ...prev, imagemLink: e.target.value }))
+                    }
+                  />
+                  <p className="st-field__hint">
+                    Cole a URL pública da imagem (http ou https). Deixe em branco para remover a foto.
+                  </p>
+                </label>
+                {itemFormImagemPreview ? (
+                  <div className="st-item-form-preview">
+                    <img src={itemFormImagemPreview} alt="Prévia da foto" className="st-item-form-preview__img" />
+                  </div>
+                ) : (
+                  <div className="st-item-form-preview st-item-form-preview--empty" aria-hidden>
+                    <span>Prévia da foto</span>
+                  </div>
+                )}
+                {itemEditandoId &&
+                  (() => {
+                    const emEdicao = itens.find((i) => i.id === itemEditandoId)
+                    const ref = emEdicao?.imagem_url?.trim()
+                    if (ref && !/^https?:\/\//i.test(ref) && !itemForm.imagemLink.trim()) {
+                      return (
+                        <p className="st-field__hint">
+                          Este item possui foto armazenada no sistema legado. Informe um link para
+                          substituir ou salve em branco para manter o arquivo atual.
+                        </p>
+                      )
+                    }
+                    return null
+                  })()}
+                <label className="st-field">
+                  <span>Descrição do produto (opcional)</span>
+                  <textarea
+                    className="st-input st-textarea"
+                    rows={5}
+                    placeholder="Detalhes técnicos, composição, observações para venda…"
+                    value={itemForm.descricao}
+                    onChange={(e) =>
+                      setItemForm((prev) => ({ ...prev, descricao: e.target.value }))
+                    }
+                  />
+                </label>
+              </div>
+
+              {formError && <p className="st-form-error">{formError}</p>}
+              <div className="st-form-actions">
+                <button type="button" className="st-ghost-btn" onClick={fecharModalItem}>
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="st-primary-btn"
+                  disabled={
+                    salvandoItem || (!itemEditandoId && (itemSkuLoading || !itemForm.sku.trim()))
+                  }
+                >
+                  {salvandoItem ? 'Salvando...' : itemEditandoId ? 'Salvar alterações' : 'Salvar item'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {modalMovOpen && (
+        <div className="st-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="st-mov-title">
+          <div className="st-modal st-modal--lg">
+            <div className="st-modal__head">
+              <h2 id="st-mov-title" className="st-modal__title">Nova movimentação</h2>
+              <button type="button" className="st-modal__close" onClick={() => setModalMovOpen(false)}>
+                ×
+              </button>
+            </div>
+            <form className="st-form" onSubmit={handleSalvarMovimentacao}>
+              <div className="st-form-grid">
+                <label className="st-field">
+                  <span>Item *</span>
+                  <select
+                    className="st-input"
+                    value={movForm.itemId}
+                    onChange={(e) => setMovForm((prev) => ({ ...prev, itemId: e.target.value }))}
+                    required
+                  >
+                    <option value="">Selecione...</option>
+                    {itens.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.nome} ({item.sku})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="st-field">
+                  <span>Tipo *</span>
+                  <select
+                    className="st-input"
+                    value={movForm.tipo}
+                    onChange={(e) => setMovForm((prev) => ({ ...prev, tipo: e.target.value as TipoMovimentacao }))}
+                  >
+                    <option value="entrada">Entrada</option>
+                    <option value="saida">Saída</option>
+                    <option value="ajuste">Ajuste</option>
+                  </select>
+                </label>
+                <label className="st-field">
+                  <span>Quantidade *</span>
+                  <input
+                    className="st-input"
+                    type="number"
+                    step="0.001"
+                    value={movForm.quantidade}
+                    onChange={(e) => setMovForm((prev) => ({ ...prev, quantidade: e.target.value }))}
+                    required
+                  />
+                </label>
+              </div>
+              <div className="st-form-grid">
+                <label className="st-field">
+                  <span>Origem</span>
+                  <input
+                    className="st-input"
+                    value={movForm.origem}
+                    onChange={(e) => setMovForm((prev) => ({ ...prev, origem: e.target.value }))}
+                    placeholder="NF, OS, ajuste manual..."
+                  />
+                </label>
+                <label className="st-field">
+                  <span>Observação</span>
+                  <input
+                    className="st-input"
+                    value={movForm.observacao}
+                    onChange={(e) => setMovForm((prev) => ({ ...prev, observacao: e.target.value }))}
+                  />
+                </label>
+              </div>
+              {formError && <p className="st-form-error">{formError}</p>}
+              <div className="st-form-actions">
+                <button type="button" className="st-ghost-btn" onClick={() => setModalMovOpen(false)}>
+                  Cancelar
+                </button>
+                <button type="submit" className="st-primary-btn" disabled={salvandoMov}>
+                  {salvandoMov ? 'Salvando...' : 'Salvar movimentação'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {modalKitOpen && (
+        <div className="st-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="st-kit-title">
+          <div className="st-modal st-modal--lg">
+            <div className="st-modal__head">
+              <h2 id="st-kit-title" className="st-modal__title">Novo kit composto</h2>
+              <button type="button" className="st-modal__close" onClick={() => setModalKitOpen(false)}>
+                ×
+              </button>
+            </div>
+            <form className="st-form" onSubmit={handleSalvarKit}>
+              <div className="st-form-grid">
+                <label className="st-field">
+                  <span>SKU do kit *</span>
+                  <input
+                    className="st-input"
+                    value={kitForm.sku}
+                    onChange={(e) => setKitForm((prev) => ({ ...prev, sku: e.target.value }))}
+                    required
+                  />
+                </label>
+                <label className="st-field">
+                  <span>Nome do kit *</span>
+                  <input
+                    className="st-input"
+                    value={kitForm.nome}
+                    onChange={(e) => setKitForm((prev) => ({ ...prev, nome: e.target.value }))}
+                    required
+                  />
+                </label>
+              </div>
+              <label className="st-field">
+                <span>Item resultante (entrada) *</span>
+                <select
+                  className="st-input"
+                  value={kitForm.itemResultanteId}
+                  onChange={(e) => setKitForm((prev) => ({ ...prev, itemResultanteId: e.target.value }))}
+                  required
+                >
+                  <option value="">Selecione...</option>
+                  {itens.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.nome} ({item.sku})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="st-form-grid">
+                <label className="st-field">
+                  <span>Componente 1 *</span>
+                  <select
+                    className="st-input"
+                    value={kitForm.componente1ItemId}
+                    onChange={(e) => setKitForm((prev) => ({ ...prev, componente1ItemId: e.target.value }))}
+                    required
+                  >
+                    <option value="">Selecione...</option>
+                    {itens.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.nome} ({item.sku})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="st-field">
+                  <span>Qtd. comp. 1 *</span>
+                  <input
+                    className="st-input"
+                    type="number"
+                    step="0.001"
+                    min={0.001}
+                    value={kitForm.componente1Qtd}
+                    onChange={(e) => setKitForm((prev) => ({ ...prev, componente1Qtd: e.target.value }))}
+                    required
+                  />
+                </label>
+              </div>
+              <div className="st-form-grid">
+                <label className="st-field">
+                  <span>Componente 2 *</span>
+                  <select
+                    className="st-input"
+                    value={kitForm.componente2ItemId}
+                    onChange={(e) => setKitForm((prev) => ({ ...prev, componente2ItemId: e.target.value }))}
+                    required
+                  >
+                    <option value="">Selecione...</option>
+                    {itens.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.nome} ({item.sku})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="st-field">
+                  <span>Qtd. comp. 2 *</span>
+                  <input
+                    className="st-input"
+                    type="number"
+                    step="0.001"
+                    min={0.001}
+                    value={kitForm.componente2Qtd}
+                    onChange={(e) => setKitForm((prev) => ({ ...prev, componente2Qtd: e.target.value }))}
+                    required
+                  />
+                </label>
+              </div>
+              {formError && <p className="st-form-error">{formError}</p>}
+              <div className="st-form-actions">
+                <button type="button" className="st-ghost-btn" onClick={() => setModalKitOpen(false)}>
+                  Cancelar
+                </button>
+                <button type="submit" className="st-primary-btn" disabled={salvandoKit}>
+                  {salvandoKit ? 'Salvando...' : 'Salvar kit'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {modalMontagemOpen && (
+        <div
+          className="st-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="st-montagem-title"
+        >
+          <div className="st-modal">
+            <div className="st-modal__head">
+              <h2 id="st-montagem-title" className="st-modal__title">Montar kit</h2>
+              <button type="button" className="st-modal__close" onClick={() => setModalMontagemOpen(false)}>
+                ×
+              </button>
+            </div>
+            <form className="st-form" onSubmit={handleMontarKit}>
+              <label className="st-field">
+                <span>Kit *</span>
+                <select
+                  className="st-input"
+                  value={montagemForm.kitId}
+                  onChange={(e) => setMontagemForm((prev) => ({ ...prev, kitId: e.target.value }))}
+                  required
+                >
+                  <option value="">Selecione...</option>
+                  {kits.map((kit) => (
+                    <option key={kit.id} value={kit.id}>
+                      {kit.nome}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="st-form-grid">
+                <label className="st-field">
+                  <span>Quantidade *</span>
+                  <input
+                    className="st-input"
+                    type="number"
+                    step="0.001"
+                    min={0.001}
+                    value={montagemForm.quantidade}
+                    onChange={(e) => setMontagemForm((prev) => ({ ...prev, quantidade: e.target.value }))}
+                    required
+                  />
+                </label>
+                <label className="st-field">
+                  <span>Origem</span>
+                  <input
+                    className="st-input"
+                    value={montagemForm.origem}
+                    onChange={(e) => setMontagemForm((prev) => ({ ...prev, origem: e.target.value }))}
+                    placeholder="Ex.: OS #1234"
+                  />
+                </label>
+              </div>
+              {formError && <p className="st-form-error">{formError}</p>}
+              <div className="st-form-actions">
+                <button type="button" className="st-ghost-btn" onClick={() => setModalMontagemOpen(false)}>
+                  Cancelar
+                </button>
+                <button type="submit" className="st-primary-btn" disabled={salvandoMontagem}>
+                  {salvandoMontagem ? 'Processando...' : 'Montar kit'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <EstoqueImportModal
+        open={modalImportOpen}
+        companyId={companyId}
+        activeStoreId={activeStoreId}
+        fornecedores={fornecedores}
+        onClose={() => setModalImportOpen(false)}
+        onImported={carregarDados}
+      />
     </div>
   )
 }
