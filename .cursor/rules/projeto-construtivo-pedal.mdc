@@ -1,0 +1,485 @@
+---
+description: 
+alwaysApply: true
+---
+
+# Construtivo Pedal
+
+- Projeto **novo e independente**. **Não** confundir com "Pedal Construtivo" nem com `pedalconstrutivo`.
+- Repositório Git: https://github.com/appconstrutivo/construtivoPedal
+- Arquitetura: **online**; banco de dados e backend em **Supabase** (criação do projeto no painel ainda será definida). **Não** planejar fluxo offline-first nem persistência local como fonte de verdade.
+
+- Supabase: usar MCP do Cursor (token configurado em `~/.cursor/mcp.json`). Não commitar tokens nem secrets.
+
+- Responder em **pt-BR**.
+
+# VISÃO DO PRODUTO
+
+Este projeto é um ERP especializado para lojas e oficinas de bicicletas.
+
+O objetivo NÃO é criar apenas um PDV ou sistema genérico de estoque.
+O objetivo é criar uma plataforma moderna, intuitiva e altamente integrada para gestão completa de bicicletarias, oficinas e relacionamento com clientes.
+
+O sistema deve resolver problemas reais do dia a dia operacional de uma loja de bikes.
+
+A prioridade é:
+- simplicidade operacional,
+- velocidade,
+- automação,
+- experiência do usuário,
+- integração entre setores,
+- fidelização de clientes,
+- gestão inteligente da oficina.
+
+---
+
+# FILOSOFIA DO SISTEMA
+
+O sistema deve ser:
+- moderno,
+- rápido,
+- visualmente limpo,
+- mobile-first,
+- intuitivo,
+- eficiente para uso diário intenso.
+
+Evitar:
+- telas poluídas,
+- excesso de cliques,
+- fluxos burocráticos,
+- cadastros complexos,
+- UX antiga estilo ERP legado.
+
+Toda funcionalidade deve priorizar:
+1. produtividade,
+2. clareza visual,
+3. automação,
+4. redução de erros humanos.
+
+---
+
+# DIFERENCIAL PRINCIPAL
+
+O diferencial do sistema NÃO será apenas emissão de vendas.
+
+O diferencial será:
+- oficina inteligente,
+- histórico completo da bicicleta,
+- pós-venda,
+- CRM,
+- revisões programadas,
+- automações,
+- fidelização,
+- integração operacional total.
+
+O sistema deve tratar cada bicicleta como um ativo vivo do cliente.
+
+---
+
+# CONCEITOS IMPORTANTES
+
+## CLIENTE
+O cliente possui:
+- dados pessoais,
+- histórico de compras,
+- histórico financeiro,
+- bicicletas cadastradas,
+- revisões,
+- serviços executados,
+- upgrades realizados,
+- preferências,
+- observações técnicas.
+
+O relacionamento com o cliente é prioridade estratégica.
+
+---
+
+## BICICLETA
+Cada bicicleta deve possuir:
+- marca,
+- modelo,
+- aro,
+- quadro,
+- número de série,
+- componentes,
+- histórico de manutenção,
+- revisões futuras,
+- upgrades,
+- fotos,
+- quilometragem,
+- observações técnicas.
+
+A bicicleta deve funcionar como uma entidade central do sistema.
+
+---
+
+## OFICINA
+A oficina é um dos módulos mais importantes.
+
+A ordem de serviço deve:
+- ser rápida de abrir,
+- possuir checklist,
+- fotos,
+- peças utilizadas,
+- mão de obra,
+- status,
+- aprovação do cliente,
+- integração com estoque,
+- comunicação automatizada.
+
+A oficina deve ser integrada ao estoque em tempo real.
+
+---
+
+## ESTOQUE
+O estoque deve:
+- controlar peças,
+- controlar bikes completas,
+- controlar componentes,
+- permitir kits e montagem,
+- possuir movimentação rastreável,
+- funcionar integrado à oficina e vendas.
+
+Baixas automáticas devem ocorrer sempre que possível.
+
+---
+
+## MONTAGEM DE BICICLETAS
+O sistema deve permitir:
+- montar bicicletas a partir de componentes,
+- calcular custo final,
+- rastrear peças utilizadas,
+- controlar margem,
+- desmontagem e reversão.
+
+A montagem deve funcionar como estrutura de composição de produto.
+
+---
+
+## PDV
+O PDV deve ser:
+- extremamente rápido,
+- simples,
+- otimizado para balcão,
+- integrado ao financeiro e estoque.
+
+Evitar telas lentas ou excesso de etapas.
+
+---
+
+## CRM E PÓS-VENDA
+O sistema deve priorizar:
+- fidelização,
+- relacionamento,
+- recorrência,
+- automações.
+
+Exemplos:
+- revisão programada,
+- lembrete automático,
+- campanhas,
+- aniversários,
+- cliente inativo,
+- promoções personalizadas,
+- comunicação via WhatsApp.
+
+---
+
+# AUTOMAÇÕES
+
+O sistema deve automatizar o máximo possível:
+- envio de mensagens,
+- alertas,
+- revisões futuras,
+- atualização de status,
+- consumo de estoque,
+- notificações internas,
+- cobranças,
+- aprovações.
+
+Sempre sugerir automação quando fizer sentido.
+
+---
+
+# INTELIGÊNCIA DO SISTEMA
+
+O sistema deve evoluir para possuir:
+- sugestões automáticas,
+- indicadores inteligentes,
+- análise de recorrência,
+- previsão de manutenção,
+- alertas estratégicos,
+- IA aplicada à oficina e vendas.
+
+A IA deve ajudar o operador e não atrapalhar o fluxo.
+
+---
+
+# DIRETRIZES DE UX/UI
+
+Priorizar:
+- interface limpa,
+- poucas cores,
+- hierarquia visual clara,
+- responsividade,
+- uso confortável em celular,
+- uso rápido em tablet,
+- uso eficiente no desktop.
+
+Evitar:
+- excesso de modais,
+- formulários gigantes,
+- menus complexos,
+- excesso de informação simultânea.
+
+---
+
+# PADRÕES DE DESENVOLVIMENTO
+
+Toda implementação deve:
+- ser escalável,
+- modular,
+- organizada,
+- reutilizável,
+- performática,
+- segura.
+
+Evitar:
+- código duplicado,
+- acoplamento excessivo,
+- lógica espalhada,
+- componentes gigantes.
+
+---
+
+# PADRÃO DE RESPOSTA DA IA
+
+Ao sugerir funcionalidades:
+- priorizar simplicidade,
+- pensar no fluxo real da bicicletaria,
+- evitar soluções genéricas de ERP tradicional,
+- considerar operação de oficina,
+- considerar experiência do atendente e mecânico,
+- considerar uso rápido no dia a dia.
+
+Sempre pensar:
+“Isso realmente melhora a operação da bicicletaria?”
+
+---
+
+# OBJETIVO FINAL
+
+Criar o ERP de bicicletaria mais moderno, inteligente e operacionalmente eficiente do mercado.
+
+O sistema deve unir:
+- gestão,
+- oficina,
+- vendas,
+- estoque,
+- relacionamento,
+- automação,
+- inteligência operacional,
+em uma experiência simples e extremamente eficiente.
+
+# MULTIEMPRESA / SAAS
+
+Este sistema deve ser desenvolvido com arquitetura SaaS (Software as a Service), preparado para comercialização por assinatura para múltiplas empresas.
+
+O sistema NÃO será feito apenas para uso interno.
+Ele deve ser escalável e preparado para atender diversas bicicletarias simultaneamente.
+
+---
+
+# ISOLAMENTO TOTAL DE DADOS
+
+Cada empresa (tenant) deve possuir isolamento completo de dados.
+
+Uma empresa:
+- NÃO pode visualizar dados de outra,
+- NÃO pode acessar estoque de outra,
+- NÃO pode acessar clientes de outra,
+- NÃO pode acessar relatórios de outra,
+- NÃO pode acessar usuários de outra.
+
+Todo o sistema deve ser construído com mentalidade multi-tenant desde o início.
+
+---
+
+# MULTI-TENANT
+
+O sistema deve suportar:
+- múltiplas empresas,
+- múltiplas lojas por empresa,
+- múltiplos usuários,
+- permissões por usuário,
+- separação lógica de dados,
+- escalabilidade horizontal.
+
+Toda entidade do sistema deve estar vinculada a:
+- tenant_id,
+- company_id,
+- store_id (quando aplicável).
+
+---
+
+# SEGURANÇA
+
+A segurança é prioridade absoluta.
+
+Implementar:
+- isolamento rígido por tenant,
+- autenticação segura,
+- autorização por perfil,
+- controle de permissões,
+- proteção contra vazamento de dados,
+- validação de acesso em backend,
+- auditoria de ações importantes.
+
+Nunca confiar apenas no frontend para controle de acesso.
+
+Toda regra de segurança deve ser validada no backend.
+
+---
+
+# ESCALABILIDADE
+
+A arquitetura deve ser preparada para:
+- milhares de empresas,
+- milhares de usuários simultâneos,
+- crescimento contínuo,
+- módulos independentes,
+- alta performance.
+
+Evitar:
+- queries pesadas desnecessárias,
+- dependências acopladas,
+- lógica monolítica difícil de escalar.
+
+Priorizar:
+- modularização,
+- serviços reutilizáveis,
+- filas assíncronas,
+- cache,
+- otimização de banco.
+
+---
+
+# ESTRUTURA SAAS
+
+O sistema deve possuir:
+- onboarding automatizado,
+- criação automática de empresa,
+- período de teste,
+- planos de assinatura,
+- cobrança recorrente,
+- gestão de limites por plano,
+- suspensão automática por inadimplência,
+- painel administrativo SaaS.
+
+---
+
+# PERSONALIZAÇÃO POR EMPRESA
+
+Cada empresa deve poder configurar:
+- logo,
+- cores,
+- dados fiscais,
+- regras de oficina,
+- mensagens automáticas,
+- usuários,
+- permissões,
+- integrações.
+
+As personalizações nunca devem afetar outras empresas.
+
+---
+
+# CONTROLE DE PLANOS
+
+O sistema deve suportar:
+- planos diferentes,
+- recursos liberados por plano,
+- limites por quantidade,
+- upgrades automáticos,
+- módulos premium.
+
+Exemplo:
+- limite de usuários,
+- limite de OS,
+- limite de lojas,
+- recursos avançados.
+
+---
+
+# BACKEND
+
+O backend deve ser desenvolvido com foco em:
+- segurança,
+- escalabilidade,
+- multi-tenant,
+- organização,
+- separação de responsabilidades.
+
+Toda consulta ao banco deve respeitar tenant_id automaticamente.
+
+Evitar qualquer endpoint sem proteção multi-tenant.
+
+---
+
+# BANCO DE DADOS
+
+A modelagem deve considerar:
+- multi-tenant desde o início,
+- índices otimizados,
+- rastreabilidade,
+- auditoria,
+- integridade relacional.
+
+Nunca criar tabelas sem vínculo com tenant.
+
+---
+
+# ARQUITETURA
+
+Priorizar arquitetura:
+- limpa,
+- modular,
+- desacoplada,
+- escalável,
+- orientada a domínio.
+
+O sistema deve ser preparado para:
+- API pública futura,
+- aplicativo mobile,
+- integrações externas,
+- microsserviços futuramente.
+
+---
+
+# EXPERIÊNCIA DO CLIENTE SAAS
+
+O onboarding deve ser extremamente simples.
+
+Uma bicicletaria deve conseguir:
+- criar conta,
+- configurar empresa,
+- cadastrar produtos,
+- começar a vender rapidamente.
+
+Priorizar:
+- baixa curva de aprendizado,
+- ativação rápida,
+- retenção.
+
+---
+
+# VISÃO ESTRATÉGICA
+
+O objetivo é criar uma plataforma SaaS moderna para bicicletarias, com:
+- recorrência mensal,
+- escalabilidade,
+- retenção alta,
+- forte integração operacional,
+- foco em oficina e relacionamento.
+
+O sistema deve ser pensado desde o início para crescimento nacional.

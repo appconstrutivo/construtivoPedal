@@ -1,68 +1,235 @@
-import { isSupabaseConfigured } from './lib/supabaseClient'
+import { useEffect, useState } from 'react'
+import type { Session } from '@supabase/supabase-js'
+import { AppShell, type NavKey } from './layout/AppShell'
+import { DashboardHome } from './pages/DashboardHome'
+import { ClientesPage } from './pages/ClientesPage'
+import { EstoquePage } from './pages/EstoquePage'
+import { AuthPages } from './pages/AuthPages'
+import { isSupabaseConfigured, supabase } from './lib/supabaseClient'
 
-export default function App() {
+function hasSessionChanged(previous: Session | null, next: Session | null): boolean {
+  if (!previous && !next) return false
+  if (!previous || !next) return true
+
+  return previous.user.id !== next.user.id || previous.access_token !== next.access_token
+}
+
+function PlaceholderPage({ title, hint }: { title: string; hint: string }) {
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="border-b border-[var(--border)] bg-[var(--surface-card)]/90 backdrop-blur-md sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--accent)]">
-              Construtivo Pedal
-            </p>
-            <h1 className="text-lg sm:text-xl font-bold tracking-tight">PDV — em construção</h1>
-          </div>
-          <StatusBadge configured={isSupabaseConfigured} />
-        </div>
+    <div className="cp-page cp-page--dash">
+      <header className="cp-dash-head cp-dash-head--simple">
+        <h1 className="cp-dash-head__title">{title}</h1>
+        <p className="cp-dash-head__tag">{hint}</p>
       </header>
-
-      <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-10 sm:py-14">
-        <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface-card)] p-6 sm:p-10 shadow-sm">
-          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Projeto novo, do zero</h2>
-          <p className="mt-3 text-[var(--text-muted)] max-w-2xl leading-relaxed">
-            Sistema de ponto de venda offline-first, com layout moderno e preparado para
-            sincronização futura com Supabase. Projeto independente, sem vínculo com outros
-            produtos da Construtivo.
-          </p>
-
-          <ul className="mt-8 grid gap-3 sm:grid-cols-2 text-sm">
-            <Feature title="Offline-first" description="Operação local com persistência no dispositivo." />
-            <Feature
-              title="Supabase (futuro)"
-              description="Configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no .env.local."
-            />
-            <Feature title="React + Vite" description="Base TypeScript para evolução modular do PDV." />
-            <Feature title="Repositório" description="github.com/appconstrutivo/construtivoPedal" />
-          </ul>
-        </section>
-      </main>
-
-      <footer className="border-t border-[var(--border)] py-4 text-center text-xs text-[var(--text-muted)]">
-        Construtivo Pedal © {new Date().getFullYear()}
-      </footer>
+      <div className="cp-panel cp-panel--muted">
+        <p className="cp-panel__hint">Módulo em desenvolvimento — em breve integrado ao Supabase.</p>
+      </div>
     </div>
   )
 }
 
-function StatusBadge({ configured }: { configured: boolean }) {
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
-        configured
-          ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
-          : 'bg-amber-50 text-amber-800 ring-1 ring-amber-200'
-      }`}
-    >
-      <span className={`h-1.5 w-1.5 rounded-full ${configured ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-      Supabase {configured ? 'configurado' : 'pendente'}
-    </span>
-  )
-}
+export default function App() {
+  const [activeNav, setActiveNav] = useState<NavKey>('inicio')
+  const [session, setSession] = useState<Session | null>(null)
+  const [checkingSession, setCheckingSession] = useState(true)
+  const [tenantLoading, setTenantLoading] = useState(false)
+  const [tenantError, setTenantError] = useState<string | null>(null)
+  const [tenant, setTenant] = useState<{
+    companyId: string
+    companyName: string
+    role: string
+  } | null>(null)
 
-function Feature({ title, description }: { title: string; description: string }) {
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      setCheckingSession(false)
+      return
+    }
+
+    let mounted = true
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (mounted) {
+          setSession((previous) => (hasSessionChanged(previous, data.session) ? data.session : previous))
+          setCheckingSession(false)
+        }
+      })
+      .catch(() => {
+        if (mounted) setCheckingSession(false)
+      })
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, authSession) => {
+      setSession((previous) => (hasSessionChanged(previous, authSession) ? authSession : previous))
+    })
+
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  async function handleSignOut() {
+    await supabase.auth.signOut()
+  }
+
+  const sessionUserId = session?.user.id ?? null
+
+  useEffect(() => {
+    if (!sessionUserId) {
+      setTenant(null)
+      setTenantError(null)
+      return
+    }
+
+    let mounted = true
+    setTenantLoading(true)
+    setTenantError(null)
+
+    async function loadTenant(): Promise<
+      { companyId: string; role: string; companyName: string } | null
+    > {
+      // TODO: substituir por seleção explícita de empresa no onboarding.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any)
+        .from('company_memberships')
+        .select('company_id, role, companies(name)')
+        .eq('user_id', sessionUserId)
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle()
+
+      if (error) throw new Error(error.message ?? 'Erro ao carregar vínculo da empresa.')
+      if (data) {
+        return {
+          companyId: data.company_id,
+          role: data.role,
+          companyName: data.companies?.name ?? 'Empresa',
+        }
+      }
+
+      // Fallback para usuários antigos que possuem company_id em user_profiles
+      // e ainda não foram migrados para company_memberships.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: profile, error: profileError } = await (supabase as any)
+        .from('user_profiles')
+        .select('company_id, role, companies(name)')
+        .eq('id', sessionUserId)
+        .maybeSingle()
+
+      if (profileError) throw new Error(profileError.message ?? 'Erro ao carregar perfil da empresa.')
+      if (profile?.company_id) {
+        return {
+          companyId: profile.company_id,
+          role: profile.role ?? 'owner',
+          companyName: profile.companies?.name ?? 'Empresa',
+        }
+      }
+
+      return null
+    }
+
+    loadTenant()
+      .then(async (loaded) => {
+        if (!mounted) return
+
+        if (loaded) {
+          setTenant(loaded)
+          return
+        }
+
+        // Auto-recuperação de onboarding para usuários sem tenant.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error: repairError } = await (supabase as any).rpc('ensure_current_user_tenant')
+        if (repairError) {
+          throw new Error(
+            repairError.message ?? 'Falha ao auto-reparar vínculo da empresa para o usuário.',
+          )
+        }
+
+        const repaired = await loadTenant()
+        if (!mounted) return
+        setTenant(repaired)
+      })
+      .catch((err: unknown) => {
+        if (!mounted) return
+        setTenantError(err instanceof Error ? err.message : 'Erro ao carregar contexto da empresa.')
+        setTenant(null)
+      })
+      .finally(() => {
+        if (mounted) setTenantLoading(false)
+      })
+
+    return () => {
+      mounted = false
+    }
+  }, [sessionUserId])
+
+  if (checkingSession) {
+    return (
+      <div className="cp-auth-loading" role="status" aria-live="polite">
+        <span className="cp-auth-loading__spinner" aria-hidden />
+        <span>Carregando sessão...</span>
+      </div>
+    )
+  }
+
+  if (!session) {
+    return <AuthPages supabaseEnabled={isSupabaseConfigured} />
+  }
+
+  if (tenantLoading) {
+    return (
+      <div className="cp-auth-loading" role="status" aria-live="polite">
+        <span className="cp-auth-loading__spinner" aria-hidden />
+        <span>Carregando contexto da empresa...</span>
+      </div>
+    )
+  }
+
+  if (!tenant) {
+    return (
+      <div className="cp-auth-loading cp-auth-loading--blocked" role="status" aria-live="polite">
+        <div className="cp-auth-loading__panel">
+          <span className="cp-auth-loading__spinner" aria-hidden />
+          <span>
+            {tenantError
+              ? `Falha ao carregar empresa: ${tenantError}`
+              : 'Usuário sem empresa vinculada. Rode os scripts 001/002/003/005 no Supabase e tente novamente.'}
+          </span>
+          <div className="cp-auth-loading__actions">
+            <button type="button" className="cp-auth__link" onClick={() => window.location.reload()}>
+              Recarregar
+            </button>
+            <button type="button" className="cp-auth__submit" onClick={handleSignOut}>
+              Sair e voltar ao login
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <li className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
-      <p className="font-semibold text-[var(--text)]">{title}</p>
-      <p className="mt-1 text-[var(--text-muted)]">{description}</p>
-    </li>
+    <AppShell
+      activeNav={activeNav}
+      onNavigate={setActiveNav}
+      companyName={tenant.companyName}
+      userEmail={session.user.email}
+      onSignOut={handleSignOut}
+    >
+      {activeNav === 'inicio' && <DashboardHome activeNav={activeNav} />}
+      {activeNav === 'clientes' && <ClientesPage companyId={tenant.companyId} />}
+      {activeNav === 'oficina' && (
+        <PlaceholderPage title="Oficina" hint="OS, checklist, fotos e baixa de peças." />
+      )}
+      {activeNav === 'pdv' && <PlaceholderPage title="PDV" hint="Balcão rápido com vínculo à bike." />}
+      {activeNav === 'estoque' && <EstoquePage companyId={tenant.companyId} />}
+      {activeNav === 'mais' && (
+        <PlaceholderPage title="Mais" hint="Equipe, plano e preferências da empresa." />
+      )}
+    </AppShell>
   )
 }
