@@ -4,6 +4,7 @@ import {
   parsePlanilhaEstoque,
   type LinhaPlanilhaEstoque,
 } from '../lib/estoque-import-planilha'
+import { formatQuantidadeInteira } from '../lib/quantidade'
 import {
   importarItensPlanilhaEstoque,
   type FornecedorRow,
@@ -22,13 +23,6 @@ type EstoqueImportModalProps = {
 function formatBRL(v: number) {
   const n = Number.isFinite(v) ? v : 0
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n)
-}
-
-function formatQuantidade(v: number) {
-  return new Intl.NumberFormat('pt-BR', {
-    maximumFractionDigits: 3,
-    minimumFractionDigits: Number.isInteger(v) ? 0 : 2,
-  }).format(v)
 }
 
 export function EstoqueImportModal({
@@ -236,7 +230,7 @@ export function EstoqueImportModal({
                         <td>{linha.skuFornecedor}</td>
                         <td>{linha.nome.length > 40 ? `${linha.nome.slice(0, 40)}…` : linha.nome}</td>
                         <td>{formatBRL(linha.custo)}</td>
-                        <td>{formatQuantidade(linha.quantidade)}</td>
+                        <td>{formatQuantidadeInteira(linha.quantidade)}</td>
                         <td>
                           {formatBRL(
                             calcularPrecoComMarkup(

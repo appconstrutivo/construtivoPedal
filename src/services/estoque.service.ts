@@ -2,6 +2,7 @@ import {
   calcularPrecoComMarkup,
   type LinhaPlanilhaEstoque,
 } from '../lib/estoque-import-planilha'
+import { MSG_QUANTIDADE_INTEIRA, ehQuantidadeInteiraPositiva } from '../lib/quantidade'
 import { supabase } from '../lib/supabaseClient'
 import type { Tables, TablesInsert, TablesUpdate } from '../lib/database.types'
 
@@ -385,9 +386,34 @@ export async function reservarProximoSkuEstoque(
   return data.trim()
 }
 
+/** Próximo SKU de kit (KIT-000001…), por empresa — RPC `proximo_sku_estoque_kit`. */
+export async function reservarProximoSkuKit(companyId: string): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any).rpc('proximo_sku_estoque_kit', {
+    p_company_id: companyId,
+  })
+  if (error) {
+    const msg = (error as { message?: string }).message ?? ''
+    if (/function public\.proximo_sku_estoque_kit|não consegui encontrar a função|does not exist|schema cache/i.test(msg)) {
+      throw new Error(
+        'Função de SKU de kit não encontrada no banco. Execute supabase/sql/028_estoque_kit_sku_sequencial.sql no Supabase.',
+      )
+    }
+    throw new Error(msg || 'Erro ao gerar SKU do kit.')
+  }
+  if (data == null || typeof data !== 'string' || !data.trim()) {
+    throw new Error('Resposta inválida ao gerar SKU do kit.')
+  }
+  return data.trim()
+}
+
 export async function criarMovimentacaoEstoque(
   payload: TablesInsert<'estoque_movimentacoes'>,
 ): Promise<EstoqueMovimentacaoRow> {
+  const qtd = Number(payload.quantidade)
+  if (!Number.isFinite(qtd) || !Number.isInteger(qtd)) {
+    throw new Error(MSG_QUANTIDADE_INTEIRA)
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('estoque_movimentacoes')
@@ -461,6 +487,12 @@ export async function criarKitComComponentes(params: {
 }): Promise<void> {
   const { companyId, sku, nome, itemResultanteId, componentes } = params
 
+  for (const comp of componentes) {
+    if (!ehQuantidadeInteiraPositiva(comp.quantidade)) {
+      throw new Error(MSG_QUANTIDADE_INTEIRA)
+    }
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: kitData, error: kitError } = await (supabase as any)
     .from('estoque_kits')
@@ -498,6 +530,9 @@ export async function montarKit(params: {
   origem?: string
 }): Promise<void> {
   const { companyId, kitId, quantidade, origem } = params
+  if (!ehQuantidadeInteiraPositiva(quantidade)) {
+    throw new Error(MSG_QUANTIDADE_INTEIRA)
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any).rpc('registrar_montagem_kit', {
     p_company_id: companyId,

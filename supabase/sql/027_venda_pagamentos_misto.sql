@@ -1,86 +1,25 @@
--- PDV: vendas de balcão com baixa automática de estoque e histórico do cliente.
--- Execute após 009..023.
+-- Pagamento misto no PDV: múltiplas formas por venda.
 
-create table if not exists public.vendas (
-  id uuid primary key default gen_random_uuid(),
-  company_id uuid not null references public.companies (id) on delete cascade,
-  store_id uuid not null references public.stores (id) on delete restrict,
-  numero integer not null,
-  cliente_id uuid references public.clientes (id) on delete set null,
-  bicicleta_id uuid references public.bicicletas (id) on delete set null,
-  status text not null default 'finalizada',
-  forma_pagamento text not null default 'dinheiro',
-  subtotal numeric(12,2) not null default 0,
-  desconto numeric(12,2) not null default 0,
-  total numeric(12,2) not null default 0,
-  observacao text,
-  vendedor_id uuid references auth.users (id) on delete set null,
-  created_at timestamptz not null default timezone('utc', now()),
-  constraint vendas_status_check check (status in ('finalizada', 'cancelada')),
-  constraint vendas_forma_pagamento_check
-    check (forma_pagamento in ('dinheiro', 'pix', 'credito', 'debito', 'outro')),
-  constraint vendas_subtotal_non_negative check (subtotal >= 0),
-  constraint vendas_desconto_non_negative check (desconto >= 0),
-  constraint vendas_total_non_negative check (total >= 0),
-  constraint vendas_numero_unique_per_company unique (company_id, numero)
-);
+alter table public.vendas drop constraint if exists vendas_forma_pagamento_check;
+alter table public.vendas add constraint vendas_forma_pagamento_check
+  check (forma_pagamento in ('dinheiro', 'pix', 'credito', 'debito', 'outro', 'misto'));
 
-create index if not exists idx_vendas_company_store_created
-  on public.vendas (company_id, store_id, created_at desc);
-
-create index if not exists idx_vendas_cliente
-  on public.vendas (cliente_id)
-  where cliente_id is not null;
-
-create table if not exists public.venda_itens (
+create table if not exists public.venda_pagamentos (
   id uuid primary key default gen_random_uuid(),
   company_id uuid not null references public.companies (id) on delete cascade,
   venda_id uuid not null references public.vendas (id) on delete cascade,
-  estoque_item_id uuid references public.estoque_itens (id) on delete set null,
-  descricao text not null,
-  quantidade numeric(12,3) not null default 1,
-  preco_unitario numeric(12,2) not null default 0,
-  movimentacao_id uuid references public.estoque_movimentacoes (id) on delete set null,
+  forma_pagamento text not null,
+  valor numeric(12,2) not null,
   created_at timestamptz not null default timezone('utc', now()),
-  constraint venda_itens_qtd_positive check (quantidade > 0),
-  constraint venda_itens_preco_non_negative check (preco_unitario >= 0)
+  constraint venda_pagamentos_forma_check
+    check (forma_pagamento in ('dinheiro', 'pix', 'credito', 'debito', 'outro')),
+  constraint venda_pagamentos_valor_positive check (valor > 0)
 );
 
-create index if not exists idx_venda_itens_venda
-  on public.venda_itens (venda_id);
+create index if not exists idx_venda_pagamentos_venda
+  on public.venda_pagamentos (venda_id);
 
-create or replace function public.proximo_numero_venda(p_company_id uuid)
-returns integer
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select coalesce(max(v.numero), 0) + 1
-    from public.vendas v
-   where v.company_id = p_company_id;
-$$;
-
-create or replace function public.trg_vendas_assign_numero()
-returns trigger
-language plpgsql
-as $$
-begin
-  if new.numero is null or new.numero <= 0 then
-    new.numero := public.proximo_numero_venda(new.company_id);
-  end if;
-  new.vendedor_id := coalesce(new.vendedor_id, auth.uid());
-  return new;
-end;
-$$;
-
-drop trigger if exists trg_vendas_numero on public.vendas;
-create trigger trg_vendas_numero
-before insert on public.vendas
-for each row
-execute function public.trg_vendas_assign_numero();
-
-create or replace function public.validate_venda_item_company()
+create or replace function public.validate_venda_pagamento_company()
 returns trigger
 language plpgsql
 as $$
@@ -96,13 +35,35 @@ begin
 end;
 $$;
 
-drop trigger if exists trg_venda_itens_company on public.venda_itens;
-create trigger trg_venda_itens_company
-before insert or update of company_id, venda_id on public.venda_itens
+drop trigger if exists trg_venda_pagamentos_company on public.venda_pagamentos;
+create trigger trg_venda_pagamentos_company
+before insert or update of company_id, venda_id on public.venda_pagamentos
 for each row
-execute function public.validate_venda_item_company();
+execute function public.validate_venda_pagamento_company();
 
--- Finaliza venda no balcão: grava cabeçalho, itens, baixa estoque e atividade do cliente.
+alter table public.venda_pagamentos enable row level security;
+
+drop policy if exists "venda_pagamentos_select_member" on public.venda_pagamentos;
+create policy "venda_pagamentos_select_member"
+  on public.venda_pagamentos for select to authenticated
+  using (public.is_member_of_company(company_id));
+
+drop policy if exists "venda_pagamentos_insert_member" on public.venda_pagamentos;
+create policy "venda_pagamentos_insert_member"
+  on public.venda_pagamentos for insert to authenticated
+  with check (public.is_member_of_company(company_id));
+
+-- Backfill: vendas antigas sem linhas de pagamento
+insert into public.venda_pagamentos (company_id, venda_id, forma_pagamento, valor)
+select v.company_id, v.id,
+  case when v.forma_pagamento = 'misto' then 'outro' else v.forma_pagamento end,
+  v.total
+  from public.vendas v
+ where v.status = 'finalizada'
+   and not exists (
+     select 1 from public.venda_pagamentos vp where vp.venda_id = v.id
+   );
+
 create or replace function public.pdv_finalizar_venda(
   p_company_id uuid,
   p_store_id uuid,
@@ -111,7 +72,8 @@ create or replace function public.pdv_finalizar_venda(
   p_forma_pagamento text,
   p_desconto numeric,
   p_observacao text,
-  p_itens jsonb
+  p_itens jsonb,
+  p_pagamentos jsonb default null
 )
 returns table (venda_id uuid, numero integer, total numeric)
 language plpgsql
@@ -126,6 +88,7 @@ declare
   v_desconto numeric(12,2);
   v_total numeric(12,2);
   v_item jsonb;
+  v_pay jsonb;
   v_estoque_id uuid;
   v_descricao text;
   v_qtd numeric(12,3);
@@ -134,6 +97,11 @@ declare
   v_mov_id uuid;
   v_estoque public.estoque_itens%rowtype;
   v_cliente public.clientes%rowtype;
+  v_forma_cabecalho text;
+  v_soma_pagamentos numeric(12,2) := 0;
+  v_qtd_pagamentos integer := 0;
+  v_forma_pay text;
+  v_valor_pay numeric(12,2);
 begin
   if v_user is null then
     raise exception 'Não autenticado.';
@@ -196,6 +164,40 @@ begin
 
   v_total := greatest(round(v_subtotal - v_desconto, 2), 0);
 
+  if p_pagamentos is not null
+     and jsonb_typeof(p_pagamentos) = 'array'
+     and jsonb_array_length(p_pagamentos) > 0 then
+    for v_pay in select * from jsonb_array_elements(p_pagamentos)
+    loop
+      v_forma_pay := nullif(trim(v_pay->>'forma'), '');
+      v_valor_pay := round((v_pay->>'valor')::numeric, 2);
+      if v_forma_pay is null or v_forma_pay not in ('dinheiro', 'pix', 'credito', 'debito', 'outro') then
+        raise exception 'Forma de pagamento inválida.';
+      end if;
+      if v_valor_pay is null or v_valor_pay <= 0 then
+        raise exception 'Valor de pagamento inválido.';
+      end if;
+      v_soma_pagamentos := v_soma_pagamentos + v_valor_pay;
+      v_qtd_pagamentos := v_qtd_pagamentos + 1;
+    end loop;
+    if abs(v_soma_pagamentos - v_total) > 0.01 then
+      raise exception 'A soma dos pagamentos (%) deve ser igual ao total da venda (%).', v_soma_pagamentos, v_total;
+    end if;
+    if v_qtd_pagamentos > 1 then
+      v_forma_cabecalho := 'misto';
+    else
+      v_forma_cabecalho := v_forma_pay;
+    end if;
+  else
+    v_forma_cabecalho := coalesce(nullif(trim(p_forma_pagamento), ''), 'dinheiro');
+    if v_forma_cabecalho not in ('dinheiro', 'pix', 'credito', 'debito', 'outro', 'misto') then
+      v_forma_cabecalho := 'dinheiro';
+    end if;
+    if v_forma_cabecalho = 'misto' then
+      raise exception 'Informe os valores de cada forma de pagamento.';
+    end if;
+  end if;
+
   insert into public.vendas (
     company_id,
     store_id,
@@ -215,7 +217,7 @@ begin
     p_cliente_id,
     p_bicicleta_id,
     'finalizada',
-    coalesce(nullif(trim(p_forma_pagamento), ''), 'dinheiro'),
+    v_forma_cabecalho,
     v_subtotal,
     v_desconto,
     v_total,
@@ -223,6 +225,24 @@ begin
     v_user
   )
   returning vendas.id, vendas.numero into v_venda_id, v_numero;
+
+  if p_pagamentos is not null
+     and jsonb_typeof(p_pagamentos) = 'array'
+     and jsonb_array_length(p_pagamentos) > 0 then
+    for v_pay in select * from jsonb_array_elements(p_pagamentos)
+    loop
+      insert into public.venda_pagamentos (company_id, venda_id, forma_pagamento, valor)
+      values (
+        p_company_id,
+        v_venda_id,
+        nullif(trim(v_pay->>'forma'), ''),
+        round((v_pay->>'valor')::numeric, 2)
+      );
+    end loop;
+  else
+    insert into public.venda_pagamentos (company_id, venda_id, forma_pagamento, valor)
+    values (p_company_id, v_venda_id, v_forma_cabecalho, v_total);
+  end if;
 
   for v_item in select * from jsonb_array_elements(p_itens)
   loop
@@ -324,27 +344,4 @@ begin
 end;
 $$;
 
-grant execute on function public.pdv_finalizar_venda(uuid, uuid, uuid, uuid, text, numeric, text, jsonb) to authenticated;
-
-alter table public.vendas enable row level security;
-alter table public.venda_itens enable row level security;
-
-drop policy if exists "vendas_select_member" on public.vendas;
-create policy "vendas_select_member"
-  on public.vendas for select to authenticated
-  using (public.is_member_of_company(company_id));
-
-drop policy if exists "vendas_insert_member" on public.vendas;
-create policy "vendas_insert_member"
-  on public.vendas for insert to authenticated
-  with check (public.is_member_of_company(company_id));
-
-drop policy if exists "venda_itens_select_member" on public.venda_itens;
-create policy "venda_itens_select_member"
-  on public.venda_itens for select to authenticated
-  using (public.is_member_of_company(company_id));
-
-drop policy if exists "venda_itens_insert_member" on public.venda_itens;
-create policy "venda_itens_insert_member"
-  on public.venda_itens for insert to authenticated
-  with check (public.is_member_of_company(company_id));
+grant execute on function public.pdv_finalizar_venda(uuid, uuid, uuid, uuid, text, numeric, text, jsonb, jsonb) to authenticated;

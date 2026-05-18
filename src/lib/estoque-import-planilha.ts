@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx'
+import { ehQuantidadeInteiraNaoNegativa } from './quantidade'
 
 /** Leitura local (ArrayBuffer no navegador). O arquivo .xlsx nunca é enviado ao Supabase Storage. */
 
@@ -46,9 +47,11 @@ export function parsePrecoPlanilha(val: unknown): number {
 
 export function parseQuantidadePlanilha(val: unknown): number {
   if (val == null || val === '') return Number.NaN
-  if (typeof val === 'number' && Number.isFinite(val)) return val
+  if (typeof val === 'number' && Number.isFinite(val)) {
+    return ehQuantidadeInteiraNaoNegativa(val) ? val : Number.NaN
+  }
   const n = Number(String(val).trim().replace(',', '.'))
-  return Number.isFinite(n) ? n : Number.NaN
+  return ehQuantidadeInteiraNaoNegativa(n) ? n : Number.NaN
 }
 
 export function parsePlanilhaEstoque(buffer: ArrayBuffer): ResultadoParsePlanilha {
@@ -114,7 +117,7 @@ export function parsePlanilhaEstoque(buffer: ArrayBuffer): ResultadoParsePlanilh
       continue
     }
     if (!Number.isFinite(quantidade) || quantidade < 0) {
-      erros.push(`Linha ${linhaPlanilha}: quantidade inválida.`)
+      erros.push(`Linha ${linhaPlanilha}: quantidade inválida (use número inteiro).`)
       continue
     }
 

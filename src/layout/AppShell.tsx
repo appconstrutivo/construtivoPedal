@@ -4,8 +4,11 @@ export type NavKey =
   | 'inicio'
   | 'oficina'
   | 'pdv'
+  | 'financeiro'
+  | 'lancamentos'
   | 'estoque'
   | 'clientes'
+  | 'relatorios'
   | 'mais'
 
 type NavItem = {
@@ -97,6 +100,53 @@ function IconUsers() {
   )
 }
 
+function IconChart() {
+  return (
+    <svg aria-hidden width={22} height={22} viewBox="0 0 24 24" fill="none">
+      <path
+        d="M4 20V10M10 20V4M16 20v-6M22 20H2"
+        stroke="currentColor"
+        strokeWidth={1.75}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function IconWallet() {
+  return (
+    <svg aria-hidden width={22} height={22} viewBox="0 0 24 24" fill="none">
+      <path
+        d="M4 8V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2M4 8h16v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z"
+        stroke="currentColor"
+        strokeWidth={1.75}
+        strokeLinejoin="round"
+      />
+      <path
+        d="M16 13h2a1 1 0 1 0 0-2h-2v2Z"
+        stroke="currentColor"
+        strokeWidth={1.75}
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function IconReceipt() {
+  return (
+    <svg aria-hidden width={22} height={22} viewBox="0 0 24 24" fill="none">
+      <path
+        d="M8 4h9a2 2 0 0 1 2 2v14l-2-1-2 1-2-1-2 1-2-1-2 1V6a2 2 0 0 0-2-2H8v14"
+        stroke="currentColor"
+        strokeWidth={1.75}
+        strokeLinejoin="round"
+      />
+      <path d="M10 9h6M10 13h4" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" />
+    </svg>
+  )
+}
+
 function IconGrid() {
   return (
     <svg aria-hidden width={22} height={22} viewBox="0 0 24 24" fill="none">
@@ -112,8 +162,11 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'inicio', label: 'Início', icon: <IconHome /> },
   { key: 'oficina', label: 'Oficina', icon: <IconWrench /> },
   { key: 'pdv', label: 'PDV', icon: <IconCart /> },
+  { key: 'financeiro', label: 'Financeiro', icon: <IconWallet /> },
+  { key: 'lancamentos', label: 'Lançamentos', icon: <IconReceipt /> },
   { key: 'estoque', label: 'Estoque', icon: <IconPackage /> },
   { key: 'clientes', label: 'Clientes', icon: <IconUsers /> },
+  { key: 'relatorios', label: 'Relatórios', icon: <IconChart /> },
   { key: 'mais', label: 'Mais', icon: <IconGrid /> },
 ]
 

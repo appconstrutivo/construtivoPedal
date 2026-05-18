@@ -8,6 +8,9 @@ import { ClientesPage } from './pages/ClientesPage'
 import { EstoquePage } from './pages/EstoquePage'
 import { OficinaPage } from './pages/OficinaPage'
 import { PdvPage } from './pages/PdvPage'
+import { LancamentosPage } from './pages/LancamentosPage'
+import { FinanceiroPage } from './pages/FinanceiroPage'
+import { RelatoriosPage } from './pages/RelatoriosPage'
 import { AuthPages } from './pages/AuthPages'
 import { isSupabaseConfigured, supabase } from './lib/supabaseClient'
 
@@ -320,8 +323,29 @@ export default function App() {
       {activeNav === 'pdv' && (
         <PdvPage companyId={tenant.companyId} activeStoreId={activeStoreId} />
       )}
+      {activeNav === 'financeiro' && (
+        <FinanceiroPage
+          companyId={tenant.companyId}
+          activeStoreId={activeStoreId}
+          storeName={stores.find((s) => s.id === activeStoreId)?.name}
+        />
+      )}
+      {activeNav === 'lancamentos' && (
+        <LancamentosPage
+          companyId={tenant.companyId}
+          companyName={tenant.companyName}
+          activeStoreId={activeStoreId}
+        />
+      )}
       {activeNav === 'estoque' && (
         <EstoquePage companyId={tenant.companyId} activeStoreId={activeStoreId} />
+      )}
+      {activeNav === 'relatorios' && (
+        <RelatoriosPage
+          companyId={tenant.companyId}
+          activeStoreId={activeStoreId}
+          storeName={stores.find((s) => s.id === activeStoreId)?.name}
+        />
       )}
       {activeNav === 'mais' && (
         <PlaceholderPage title="Mais" hint="Equipe, plano e preferências da empresa." />

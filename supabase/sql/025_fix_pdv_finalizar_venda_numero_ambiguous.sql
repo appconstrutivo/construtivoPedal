@@ -1,53 +1,5 @@
--- PDV: vendas de balcão com baixa automática de estoque e histórico do cliente.
--- Execute após 009..023.
-
-create table if not exists public.vendas (
-  id uuid primary key default gen_random_uuid(),
-  company_id uuid not null references public.companies (id) on delete cascade,
-  store_id uuid not null references public.stores (id) on delete restrict,
-  numero integer not null,
-  cliente_id uuid references public.clientes (id) on delete set null,
-  bicicleta_id uuid references public.bicicletas (id) on delete set null,
-  status text not null default 'finalizada',
-  forma_pagamento text not null default 'dinheiro',
-  subtotal numeric(12,2) not null default 0,
-  desconto numeric(12,2) not null default 0,
-  total numeric(12,2) not null default 0,
-  observacao text,
-  vendedor_id uuid references auth.users (id) on delete set null,
-  created_at timestamptz not null default timezone('utc', now()),
-  constraint vendas_status_check check (status in ('finalizada', 'cancelada')),
-  constraint vendas_forma_pagamento_check
-    check (forma_pagamento in ('dinheiro', 'pix', 'credito', 'debito', 'outro')),
-  constraint vendas_subtotal_non_negative check (subtotal >= 0),
-  constraint vendas_desconto_non_negative check (desconto >= 0),
-  constraint vendas_total_non_negative check (total >= 0),
-  constraint vendas_numero_unique_per_company unique (company_id, numero)
-);
-
-create index if not exists idx_vendas_company_store_created
-  on public.vendas (company_id, store_id, created_at desc);
-
-create index if not exists idx_vendas_cliente
-  on public.vendas (cliente_id)
-  where cliente_id is not null;
-
-create table if not exists public.venda_itens (
-  id uuid primary key default gen_random_uuid(),
-  company_id uuid not null references public.companies (id) on delete cascade,
-  venda_id uuid not null references public.vendas (id) on delete cascade,
-  estoque_item_id uuid references public.estoque_itens (id) on delete set null,
-  descricao text not null,
-  quantidade numeric(12,3) not null default 1,
-  preco_unitario numeric(12,2) not null default 0,
-  movimentacao_id uuid references public.estoque_movimentacoes (id) on delete set null,
-  created_at timestamptz not null default timezone('utc', now()),
-  constraint venda_itens_qtd_positive check (quantidade > 0),
-  constraint venda_itens_preco_non_negative check (preco_unitario >= 0)
-);
-
-create index if not exists idx_venda_itens_venda
-  on public.venda_itens (venda_id);
+-- Corrige ambiguidade de "numero" em pdv_finalizar_venda:
+-- colunas OUT do RETURNS TABLE conflitam com RETURNING/SELECT sem qualificação.
 
 create or replace function public.proximo_numero_venda(p_company_id uuid)
 returns integer
@@ -61,48 +13,6 @@ as $$
    where v.company_id = p_company_id;
 $$;
 
-create or replace function public.trg_vendas_assign_numero()
-returns trigger
-language plpgsql
-as $$
-begin
-  if new.numero is null or new.numero <= 0 then
-    new.numero := public.proximo_numero_venda(new.company_id);
-  end if;
-  new.vendedor_id := coalesce(new.vendedor_id, auth.uid());
-  return new;
-end;
-$$;
-
-drop trigger if exists trg_vendas_numero on public.vendas;
-create trigger trg_vendas_numero
-before insert on public.vendas
-for each row
-execute function public.trg_vendas_assign_numero();
-
-create or replace function public.validate_venda_item_company()
-returns trigger
-language plpgsql
-as $$
-declare
-  v_venda public.vendas%rowtype;
-begin
-  select * into v_venda from public.vendas where id = new.venda_id;
-  if not found then
-    raise exception 'Venda não encontrada.';
-  end if;
-  new.company_id := v_venda.company_id;
-  return new;
-end;
-$$;
-
-drop trigger if exists trg_venda_itens_company on public.venda_itens;
-create trigger trg_venda_itens_company
-before insert or update of company_id, venda_id on public.venda_itens
-for each row
-execute function public.validate_venda_item_company();
-
--- Finaliza venda no balcão: grava cabeçalho, itens, baixa estoque e atividade do cliente.
 create or replace function public.pdv_finalizar_venda(
   p_company_id uuid,
   p_store_id uuid,
@@ -325,26 +235,3 @@ end;
 $$;
 
 grant execute on function public.pdv_finalizar_venda(uuid, uuid, uuid, uuid, text, numeric, text, jsonb) to authenticated;
-
-alter table public.vendas enable row level security;
-alter table public.venda_itens enable row level security;
-
-drop policy if exists "vendas_select_member" on public.vendas;
-create policy "vendas_select_member"
-  on public.vendas for select to authenticated
-  using (public.is_member_of_company(company_id));
-
-drop policy if exists "vendas_insert_member" on public.vendas;
-create policy "vendas_insert_member"
-  on public.vendas for insert to authenticated
-  with check (public.is_member_of_company(company_id));
-
-drop policy if exists "venda_itens_select_member" on public.venda_itens;
-create policy "venda_itens_select_member"
-  on public.venda_itens for select to authenticated
-  using (public.is_member_of_company(company_id));
-
-drop policy if exists "venda_itens_insert_member" on public.venda_itens;
-create policy "venda_itens_insert_member"
-  on public.venda_itens for insert to authenticated
-  with check (public.is_member_of_company(company_id));

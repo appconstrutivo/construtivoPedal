@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { listarClientes, type ClienteComRelacoes } from '../services/clientes.service'
+import {
+  MSG_QUANTIDADE_INTEIRA,
+  filtrarInputQuantidadeInteira,
+  parseQuantidadeInteira,
+} from '../lib/quantidade'
 import { listarItensEstoque, type EstoqueItemComLocal } from '../services/estoque.service'
 import {
   finalizarVendaPdv,
+  labelPagamento,
   listarVendasRecentes,
   obterResumoVendasHoje,
   type FormaPagamento,
@@ -22,6 +28,18 @@ type CarrinhoLinha = {
   precoUnitario: number
   saldoMax: number | null
   sku: string | null
+}
+
+type PagamentoLinha = {
+  id: string
+  forma: FormaPagamento
+  valorStr: string
+}
+
+const FORMAS_PAGAMENTO: FormaPagamento[] = ['pix', 'dinheiro', 'credito', 'debito']
+
+function novaLinhaPagamento(forma: FormaPagamento = 'pix'): PagamentoLinha {
+  return { id: crypto.randomUUID(), forma, valorStr: '' }
 }
 
 function formatBRL(v: number) {
@@ -45,15 +63,18 @@ function parseMoney(s: string): number | null {
   return n
 }
 
-function labelPagamento(f: string) {
-  const map: Record<string, string> = {
-    dinheiro: 'Dinheiro',
-    pix: 'PIX',
-    credito: 'Crédito',
-    debito: 'Débito',
-    outro: 'Outro',
-  }
-  return map[f] ?? f
+function IconHistorico() {
+  return (
+    <svg aria-hidden width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <path
+        d="M12 8v4l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
 }
 
 export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
@@ -68,13 +89,15 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
   const [carrinho, setCarrinho] = useState<CarrinhoLinha[]>([])
   const [clienteId, setClienteId] = useState('')
   const [bicicletaId, setBicicletaId] = useState('')
-  const [formaPagamento, setFormaPagamento] = useState<FormaPagamento>('pix')
+  const [pagamentos, setPagamentos] = useState<PagamentoLinha[]>(() => [novaLinhaPagamento('pix')])
   const [descontoStr, setDescontoStr] = useState('')
 
   const [loading, setLoading] = useState(true)
   const [finalizando, setFinalizando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [sucesso, setSucesso] = useState<{ numero: number; total: number } | null>(null)
+  const [recentesAberto, setRecentesAberto] = useState(false)
+  const [checkoutAberto, setCheckoutAberto] = useState(false)
 
   const recarregar = useCallback(async () => {
     if (!activeStoreId) {
@@ -111,8 +134,21 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
     setBicicletaId('')
     setBusca('')
     setSucesso(null)
+    setRecentesAberto(false)
+    setCheckoutAberto(false)
     void recarregar()
   }, [recarregar])
+
+  useEffect(() => {
+    if (!recentesAberto && !checkoutAberto) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== 'Escape' || finalizando) return
+      if (checkoutAberto) setCheckoutAberto(false)
+      else if (recentesAberto) setRecentesAberto(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [recentesAberto, checkoutAberto, finalizando])
 
   const clienteSel = useMemo(
     () => clientes.find((c) => c.id === clienteId) ?? null,
@@ -139,8 +175,63 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
     [carrinho],
   )
 
+  const qtdItensCarrinho = useMemo(
+    () => carrinho.reduce((acc, l) => acc + l.quantidade, 0),
+    [carrinho],
+  )
+
   const desconto = parseMoney(descontoStr) ?? 0
   const total = Math.max(subtotal - desconto, 0)
+
+  const somaPagamentos = useMemo(
+    () =>
+      pagamentos.reduce((acc, p) => {
+        const v = parseMoney(p.valorStr)
+        return acc + (v ?? 0)
+      }, 0),
+    [pagamentos],
+  )
+
+  const restantePagamento = Math.round((total - somaPagamentos) * 100) / 100
+  const pagamentoOk = total > 0 && Math.abs(restantePagamento) < 0.01
+
+  function abrirCheckout() {
+    if (semLoja) {
+      setErro('Selecione uma loja no topo da tela.')
+      return
+    }
+    if (carrinho.length === 0) {
+      setErro('Adicione produtos ao carrinho.')
+      return
+    }
+    setErro(null)
+    setPagamentos([novaLinhaPagamento('pix')])
+    setCheckoutAberto(true)
+  }
+
+  function atualizarPagamento(id: string, patch: Partial<PagamentoLinha>) {
+    setPagamentos((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)))
+  }
+
+  function adicionarFormaPagamento() {
+    const usadas = new Set(pagamentos.map((p) => p.forma))
+    const proxima = FORMAS_PAGAMENTO.find((f) => !usadas.has(f)) ?? 'pix'
+    setPagamentos((prev) => [...prev, novaLinhaPagamento(proxima)])
+  }
+
+  function removerFormaPagamento(id: string) {
+    setPagamentos((prev) => (prev.length <= 1 ? prev : prev.filter((p) => p.id !== id)))
+  }
+
+  function preencherRestantePagamento(id: string) {
+    const linha = pagamentos.find((p) => p.id === id)
+    if (!linha) return
+    const outros = pagamentos
+      .filter((p) => p.id !== id)
+      .reduce((acc, p) => acc + (parseMoney(p.valorStr) ?? 0), 0)
+    const falta = Math.max(total - outros, 0)
+    atualizarPagamento(id, { valorStr: falta > 0 ? String(falta).replace('.', ',') : '0' })
+  }
 
   function adicionarProduto(item: EstoqueItemComLocal) {
     setSucesso(null)
@@ -182,6 +273,13 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
       prev.map((l) => {
         if (l.key !== key) return l
         const next = { ...l, ...patch }
+        if (
+          patch.quantidade != null &&
+          !Number.isFinite(parseQuantidadeInteira(String(patch.quantidade)))
+        ) {
+          setErro(MSG_QUANTIDADE_INTEIRA)
+          return l
+        }
         if (l.saldoMax != null && next.quantidade > l.saldoMax) {
           setErro(`Máximo disponível: ${l.saldoMax}`)
           return l
@@ -200,8 +298,10 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
   function limparCarrinho() {
     setCarrinho([])
     setDescontoStr('')
+    setPagamentos([novaLinhaPagamento('pix')])
     setSucesso(null)
     setErro(null)
+    setCheckoutAberto(false)
   }
 
   async function handleFinalizar() {
@@ -213,16 +313,37 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
       setErro('Adicione produtos ao carrinho.')
       return
     }
+    if (carrinho.some((l) => !Number.isInteger(l.quantidade) || l.quantidade <= 0)) {
+      setErro(MSG_QUANTIDADE_INTEIRA)
+      return
+    }
+    const linhasPag = pagamentos
+      .map((p) => ({ forma: p.forma, valor: parseMoney(p.valorStr) ?? 0 }))
+      .filter((p) => p.valor > 0)
+    if (linhasPag.length === 0) {
+      setErro('Informe o valor em ao menos uma forma de pagamento.')
+      return
+    }
+    if (!pagamentoOk) {
+      setErro(
+        restantePagamento > 0
+          ? `Falta ${formatBRL(restantePagamento)} para fechar o total.`
+          : `Pagamento excede o total em ${formatBRL(-restantePagamento)}.`,
+      )
+      return
+    }
     setFinalizando(true)
     setErro(null)
     setSucesso(null)
     try {
+      const formaPrincipal = linhasPag.length > 1 ? 'pix' : linhasPag[0].forma
       const resultado = await finalizarVendaPdv({
         companyId,
         storeId: activeStoreId,
         clienteId: clienteId || null,
         bicicletaId: bicicletaId || null,
-        formaPagamento,
+        formaPagamento: formaPrincipal,
+        pagamentos: linhasPag,
         desconto,
         observacao: '',
         itens: carrinho.map((l) => ({
@@ -233,6 +354,7 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
         })),
       })
       setSucesso({ numero: resultado.numero, total: resultado.total })
+      setCheckoutAberto(false)
       limparCarrinho()
       setClienteId('')
       setBicicletaId('')
@@ -253,20 +375,38 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
             Balcão rápido — estoque, cliente e bike na mesma venda.
           </p>
         </div>
-        <ul className="pdv-kpi-grid" aria-label="Resumo do dia">
-          <li className="pdv-kpi pdv-kpi--qty">
-            <span className="pdv-kpi__label">Vendas hoje</span>
-            <span className="pdv-kpi__value">
-              {semLoja || resumoHoje === null ? '—' : String(resumoHoje.quantidade)}
-            </span>
-          </li>
-          <li className="pdv-kpi pdv-kpi--total">
-            <span className="pdv-kpi__label">Faturamento hoje</span>
-            <span className="pdv-kpi__value pdv-kpi__value--currency">
-              {semLoja || resumoHoje === null ? '—' : formatBRL(resumoHoje.total)}
-            </span>
-          </li>
-        </ul>
+        <div className="pdv-head__aside">
+          <button
+            type="button"
+            className="pdv-recentes-trigger"
+            onClick={() => setRecentesAberto(true)}
+            disabled={semLoja}
+            aria-label="Ver vendas recentes"
+            title="Vendas recentes"
+          >
+            <IconHistorico />
+            <span className="pdv-recentes-trigger__lbl">Recentes</span>
+            {!semLoja && vendasRecentes.length > 0 && (
+              <span className="pdv-recentes-trigger__badge" aria-hidden>
+                {vendasRecentes.length}
+              </span>
+            )}
+          </button>
+          <ul className="pdv-kpi-grid" aria-label="Resumo do dia">
+            <li className="pdv-kpi pdv-kpi--qty">
+              <span className="pdv-kpi__label">Vendas hoje</span>
+              <span className="pdv-kpi__value">
+                {semLoja || resumoHoje === null ? '—' : String(resumoHoje.quantidade)}
+              </span>
+            </li>
+            <li className="pdv-kpi pdv-kpi--total">
+              <span className="pdv-kpi__label">Faturamento hoje</span>
+              <span className="pdv-kpi__value pdv-kpi__value--currency">
+                {semLoja || resumoHoje === null ? '—' : formatBRL(resumoHoje.total)}
+              </span>
+            </li>
+          </ul>
+        </div>
       </header>
 
       {semLoja && (
@@ -366,15 +506,16 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
                       <span className="pdv-field__lbl">Qtd</span>
                       <input
                         type="number"
-                        min={0.001}
+                        min={1}
                         step={1}
+                        inputMode="numeric"
                         className="pdv-input pdv-input--sm"
                         value={linha.quantidade}
-                        onChange={(e) =>
-                          atualizarLinha(linha.key, {
-                            quantidade: Number(e.target.value) || 0,
-                          })
-                        }
+                        onChange={(e) => {
+                          const qtdStr = filtrarInputQuantidadeInteira(e.target.value)
+                          const qtd = parseQuantidadeInteira(qtdStr) || 0
+                          atualizarLinha(linha.key, { quantidade: qtd })
+                        }}
                       />
                     </label>
                     <label className="pdv-field pdv-field--inline">
@@ -399,130 +540,277 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
             )}
           </ul>
 
-          <div className="pdv-checkout">
-            <div className="pdv-field">
-              <label className="pdv-field__lbl" htmlFor="pdv-cliente">
-                Cliente (opcional)
-              </label>
-              <select
-                id="pdv-cliente"
-                className="pdv-input"
-                value={clienteId}
-                onChange={(e) => {
-                  setClienteId(e.target.value)
-                  setBicicletaId('')
-                }}
-                disabled={semLoja}
-              >
-                <option value="">Consumidor / balcão</option>
-                {clientes.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nome}
-                  </option>
-                ))}
-              </select>
+          <div className="pdv-cart-bar">
+            <div className="pdv-cart-bar__summary">
+              <span className="pdv-cart-bar__qty">
+                {carrinho.length === 0
+                  ? 'Carrinho vazio'
+                  : `${qtdItensCarrinho} ${qtdItensCarrinho === 1 ? 'item' : 'itens'}`}
+              </span>
+              <span className="pdv-cart-bar__total">{formatBRL(total)}</span>
             </div>
-
-            {clienteId && bikesCliente.length > 0 && (
-              <div className="pdv-field">
-                <label className="pdv-field__lbl" htmlFor="pdv-bike">
-                  Bicicleta
-                </label>
-                <select
-                  id="pdv-bike"
-                  className="pdv-input"
-                  value={bicicletaId}
-                  onChange={(e) => setBicicletaId(e.target.value)}
-                >
-                  <option value="">Não vincular</option>
-                  {bikesCliente.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.marca} {b.modelo}
-                      {b.numero_serie ? ` · ${b.numero_serie}` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            <div className="pdv-pay-row">
-              {(['pix', 'dinheiro', 'credito', 'debito'] as const).map((fp) => (
-                <button
-                  key={fp}
-                  type="button"
-                  className={`pdv-pay-chip${formaPagamento === fp ? ' pdv-pay-chip--on' : ''}`}
-                  onClick={() => setFormaPagamento(fp)}
-                >
-                  {labelPagamento(fp)}
-                </button>
-              ))}
-            </div>
-
-            <label className="pdv-field">
-              <span className="pdv-field__lbl">Desconto (R$)</span>
-              <input
-                type="text"
-                inputMode="decimal"
-                className="pdv-input"
-                placeholder="0,00"
-                value={descontoStr}
-                onChange={(e) => setDescontoStr(e.target.value)}
-              />
-            </label>
-
-            <dl className="pdv-totals">
-              <div className="pdv-totals__row">
-                <dt>Subtotal</dt>
-                <dd>{formatBRL(subtotal)}</dd>
-              </div>
-              {desconto > 0 && (
-                <div className="pdv-totals__row pdv-totals__row--disc">
-                  <dt>Desconto</dt>
-                  <dd>− {formatBRL(desconto)}</dd>
-                </div>
-              )}
-              <div className="pdv-totals__row pdv-totals__row--total">
-                <dt>Total</dt>
-                <dd>{formatBRL(total)}</dd>
-              </div>
-            </dl>
-
             <button
               type="button"
-              className="pdv-finalize"
-              disabled={semLoja || finalizando || carrinho.length === 0}
-              onClick={() => void handleFinalizar()}
+              className="pdv-finalize pdv-finalize--bar"
+              disabled={semLoja || carrinho.length === 0}
+              onClick={abrirCheckout}
             >
-              {finalizando ? 'Finalizando…' : `Finalizar — ${formatBRL(total)}`}
+              Finalizar venda
             </button>
           </div>
         </section>
 
-        <aside className="pdv-panel pdv-panel--recent" aria-label="Vendas recentes">
-          <div className="pdv-panel__head">
-            <h2 className="pdv-panel__title">Recentes</h2>
-          </div>
-          <ul className="pdv-recent-list">
-            {loading ? (
-              <li className="pdv-recent-empty">Carregando…</li>
-            ) : vendasRecentes.length === 0 ? (
-              <li className="pdv-recent-empty">Nenhuma venda nesta loja ainda.</li>
-            ) : (
-              vendasRecentes.map((v) => (
-                <li key={v.id} className="pdv-recent-item">
-                  <span className="pdv-recent-item__num">#{v.numero}</span>
-                  <span className="pdv-recent-item__meta">
-                    {formatShortTime(v.created_at)}
-                    {v.clienteNome ? ` · ${v.clienteNome}` : ''}
-                  </span>
-                  <span className="pdv-recent-item__total">{formatBRL(Number(v.total))}</span>
-                  <span className="pdv-recent-item__pay">{labelPagamento(v.forma_pagamento)}</span>
-                </li>
-              ))
-            )}
-          </ul>
-        </aside>
       </div>
+
+      {checkoutAberto && (
+        <div
+          className="st-modal-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !finalizando) setCheckoutAberto(false)
+          }}
+        >
+          <div
+            className="st-modal pdv-checkout-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pdv-checkout-title"
+          >
+            <div className="st-modal__head">
+              <h2 id="pdv-checkout-title" className="st-modal__title">
+                Finalizar venda
+              </h2>
+              <button
+                type="button"
+                className="st-modal__close"
+                onClick={() => setCheckoutAberto(false)}
+                disabled={finalizando}
+                aria-label="Fechar"
+              >
+                ×
+              </button>
+            </div>
+            <div className="pdv-checkout-modal__body">
+              <p className="pdv-checkout-modal__hint">
+                {qtdItensCarrinho} {qtdItensCarrinho === 1 ? 'item' : 'itens'} no carrinho
+              </p>
+
+              <div className="pdv-checkout">
+                <div className="pdv-field">
+                  <label className="pdv-field__lbl" htmlFor="pdv-cliente-modal">
+                    Cliente (opcional)
+                  </label>
+                  <select
+                    id="pdv-cliente-modal"
+                    className="pdv-input"
+                    value={clienteId}
+                    onChange={(e) => {
+                      setClienteId(e.target.value)
+                      setBicicletaId('')
+                    }}
+                  >
+                    <option value="">Consumidor / balcão</option>
+                    {clientes.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nome}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {clienteId && bikesCliente.length > 0 && (
+                  <div className="pdv-field">
+                    <label className="pdv-field__lbl" htmlFor="pdv-bike-modal">
+                      Bicicleta
+                    </label>
+                    <select
+                      id="pdv-bike-modal"
+                      className="pdv-input"
+                      value={bicicletaId}
+                      onChange={(e) => setBicicletaId(e.target.value)}
+                    >
+                      <option value="">Não vincular</option>
+                      {bikesCliente.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.marca} {b.modelo}
+                          {b.numero_serie ? ` · ${b.numero_serie}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="pdv-pay-mixed">
+                  <div className="pdv-pay-mixed__head">
+                    <span className="pdv-field__lbl">Pagamento</span>
+                    <button
+                      type="button"
+                      className="pdv-link-btn"
+                      onClick={adicionarFormaPagamento}
+                      disabled={pagamentos.length >= FORMAS_PAGAMENTO.length}
+                    >
+                      + Forma
+                    </button>
+                  </div>
+                  <ul className="pdv-pay-mixed__list">
+                    {pagamentos.map((p) => (
+                      <li key={p.id} className="pdv-pay-line">
+                        <select
+                          className="pdv-input pdv-pay-line__forma"
+                          value={p.forma}
+                          onChange={(e) =>
+                            atualizarPagamento(p.id, {
+                              forma: e.target.value as FormaPagamento,
+                            })
+                          }
+                        >
+                          {FORMAS_PAGAMENTO.map((fp) => (
+                            <option key={fp} value={fp}>
+                              {labelPagamento(fp)}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          className="pdv-input pdv-pay-line__valor"
+                          placeholder="0,00"
+                          value={p.valorStr}
+                          onChange={(e) => atualizarPagamento(p.id, { valorStr: e.target.value })}
+                        />
+                        <button
+                          type="button"
+                          className="pdv-pay-line__fill"
+                          title="Preencher valor restante"
+                          onClick={() => preencherRestantePagamento(p.id)}
+                        >
+                          Restante
+                        </button>
+                        {pagamentos.length > 1 && (
+                          <button
+                            type="button"
+                            className="pdv-icon-btn"
+                            aria-label="Remover forma"
+                            onClick={() => removerFormaPagamento(p.id)}
+                          >
+                            ×
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                  <p
+                    className={`pdv-pay-mixed__hint${!pagamentoOk && somaPagamentos > 0 ? ' pdv-pay-mixed__hint--warn' : ''}`}
+                  >
+                    {pagamentoOk
+                      ? 'Valor do pagamento conferido.'
+                      : restantePagamento > 0
+                        ? `Falta ${formatBRL(restantePagamento)}`
+                        : somaPagamentos > 0
+                          ? `Excedente de ${formatBRL(-restantePagamento)}`
+                          : `Total a pagar: ${formatBRL(total)}`}
+                  </p>
+                </div>
+
+                <label className="pdv-field">
+                  <span className="pdv-field__lbl">Desconto (R$)</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    className="pdv-input"
+                    placeholder="0,00"
+                    value={descontoStr}
+                    onChange={(e) => setDescontoStr(e.target.value)}
+                  />
+                </label>
+
+                <dl className="pdv-totals">
+                  <div className="pdv-totals__row">
+                    <dt>Subtotal</dt>
+                    <dd>{formatBRL(subtotal)}</dd>
+                  </div>
+                  {desconto > 0 && (
+                    <div className="pdv-totals__row pdv-totals__row--disc">
+                      <dt>Desconto</dt>
+                      <dd>− {formatBRL(desconto)}</dd>
+                    </div>
+                  )}
+                  <div className="pdv-totals__row pdv-totals__row--total">
+                    <dt>Total</dt>
+                    <dd>{formatBRL(total)}</dd>
+                  </div>
+                </dl>
+
+                <button
+                  type="button"
+                  className="pdv-finalize"
+                  disabled={finalizando || !pagamentoOk}
+                  onClick={() => void handleFinalizar()}
+                >
+                  {finalizando ? 'Finalizando…' : `Confirmar — ${formatBRL(total)}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {recentesAberto && (
+        <div
+          className="st-modal-overlay pdv-recent-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setRecentesAberto(false)
+          }}
+        >
+          <div
+            className="pdv-recent-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pdv-recentes-title"
+          >
+            <div className="pdv-recent-modal__head">
+              <h2 id="pdv-recentes-title" className="pdv-recent-modal__title">
+                Vendas recentes
+              </h2>
+              <button
+                type="button"
+                className="st-modal__close"
+                onClick={() => setRecentesAberto(false)}
+                aria-label="Fechar"
+              >
+                ×
+              </button>
+            </div>
+            <div className="pdv-recent-modal__body">
+              <ul className="pdv-recent-list pdv-recent-list--modal">
+                {loading ? (
+                  <li className="pdv-recent-empty">Carregando…</li>
+                ) : vendasRecentes.length === 0 ? (
+                  <li className="pdv-recent-empty">Nenhuma venda nesta loja ainda.</li>
+                ) : (
+                  vendasRecentes.map((v) => (
+                    <li key={v.id} className="pdv-recent-item">
+                      <span className="pdv-recent-item__num">#{v.numero}</span>
+                      <span className="pdv-recent-item__meta">
+                        {formatShortTime(v.created_at)}
+                        {v.clienteNome ? ` · ${v.clienteNome}` : ''}
+                      </span>
+                      <span className="pdv-recent-item__total">{formatBRL(Number(v.total))}</span>
+                      <span className="pdv-recent-item__pay">{labelPagamento(v.forma_pagamento)}</span>
+                    </li>
+                  ))
+                )}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
+
+
+
+
+
+
+

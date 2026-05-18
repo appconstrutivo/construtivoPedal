@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
+import {
+  MSG_QUANTIDADE_INTEIRA,
+  filtrarInputQuantidadeInteira,
+  parseQuantidadeInteira,
+} from '../lib/quantidade'
 import { listarClientes, type ClienteComRelacoes } from '../services/clientes.service'
 import { listarItensEstoque, type EstoqueItemComLocal } from '../services/estoque.service'
 import {
@@ -347,9 +352,9 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
   async function addPeca() {
     if (!detalhe || !pecaForm.itemId) return
     const item = itensEstoque.find((x) => x.id === pecaForm.itemId)
-    const q = Number(pecaForm.qtd.replace(',', '.'))
+    const q = parseQuantidadeInteira(pecaForm.qtd)
     if (!(q > 0)) {
-      setErro('Quantidade inválida.')
+      setErro(MSG_QUANTIDADE_INTEIRA)
       return
     }
     setErro(null)
@@ -378,10 +383,10 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
 
   async function addServico() {
     if (!detalhe) return
-    const q = Number(servicoForm.qtd.replace(',', '.'))
+    const q = parseQuantidadeInteira(servicoForm.qtd)
     const p = parseMoneyInput(servicoForm.preco) ?? 0
     if (!(q > 0)) {
-      setErro('Quantidade inválida.')
+      setErro(MSG_QUANTIDADE_INTEIRA)
       return
     }
     const cat = servicoForm.catalogoId
@@ -729,9 +734,17 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
                         <span>Quantidade</span>
                         <input
                           className="os-input"
-                          inputMode="decimal"
+                          type="number"
+                          min={1}
+                          step={1}
+                          inputMode="numeric"
                           value={pecaForm.qtd}
-                          onChange={(e) => setPecaForm((f) => ({ ...f, qtd: e.target.value }))}
+                          onChange={(e) =>
+                            setPecaForm((f) => ({
+                              ...f,
+                              qtd: filtrarInputQuantidadeInteira(e.target.value),
+                            }))
+                          }
                         />
                       </label>
                       <label className="os-field">
@@ -804,9 +817,17 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
                         <span>Quantidade</span>
                         <input
                           className="os-input"
-                          inputMode="decimal"
+                          type="number"
+                          min={1}
+                          step={1}
+                          inputMode="numeric"
                           value={servicoForm.qtd}
-                          onChange={(e) => setServicoForm((f) => ({ ...f, qtd: e.target.value }))}
+                          onChange={(e) =>
+                            setServicoForm((f) => ({
+                              ...f,
+                              qtd: filtrarInputQuantidadeInteira(e.target.value),
+                            }))
+                          }
                         />
                       </label>
                       <label className="os-field">

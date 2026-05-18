@@ -4,6 +4,23 @@ import type { Tables } from '../lib/database.types'
 export type VendaRow = Tables<'vendas'>
 export type FormaPagamento = 'dinheiro' | 'pix' | 'credito' | 'debito' | 'outro'
 
+export type PagamentoVendaInput = {
+  forma: FormaPagamento
+  valor: number
+}
+
+export function labelPagamento(f: string) {
+  const map: Record<string, string> = {
+    dinheiro: 'Dinheiro',
+    pix: 'PIX',
+    credito: 'Crédito',
+    debito: 'Débito',
+    outro: 'Outro',
+    misto: 'Misto',
+  }
+  return map[f] ?? f
+}
+
 export type VendaLista = VendaRow & {
   clienteNome: string | null
   qtdItens: number
@@ -91,6 +108,7 @@ export async function finalizarVendaPdv(params: {
   clienteId: string | null
   bicicletaId: string | null
   formaPagamento: FormaPagamento
+  pagamentos?: PagamentoVendaInput[]
   desconto: number
   observacao: string
   itens: ItemFinalizarVenda[]
@@ -101,6 +119,7 @@ export async function finalizarVendaPdv(params: {
     clienteId,
     bicicletaId,
     formaPagamento,
+    pagamentos,
     desconto,
     observacao,
     itens,
@@ -116,6 +135,11 @@ export async function finalizarVendaPdv(params: {
     preco_unitario: i.preco_unitario,
   }))
 
+  const payloadPagamentos =
+    pagamentos && pagamentos.length > 0
+      ? pagamentos.map((p) => ({ forma: p.forma, valor: p.valor }))
+      : null
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any).rpc('pdv_finalizar_venda', {
     p_company_id: companyId,
@@ -126,6 +150,7 @@ export async function finalizarVendaPdv(params: {
     p_desconto: desconto,
     p_observacao: observacao || null,
     p_itens: payloadItens,
+    p_pagamentos: payloadPagamentos,
   })
 
   if (error) {
