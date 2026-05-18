@@ -2,10 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { listarFornecedores } from '../../services/estoque.service'
 import {
   cancelarContaPagar,
+  cancelarParcelasRecorrentesFuturas,
   criarContaPagar,
+  gerarVencimentosRecorrentes,
   isVencida,
   labelCategoriaContaPagar,
+  labelFrequenciaRecorrencia,
   labelStatusContaPagar,
+  nomeCredorContaPagar,
   listarContasFinanceiras,
   listarContasPagar,
   obterResumoContasPagar,
@@ -13,6 +17,7 @@ import {
   type CategoriaContaPagar,
   type ContaPagar,
   type FiltroContaPagar,
+  type FrequenciaRecorrencia,
   type ResumoContasPagar,
 } from '../../services/financeiro.service'
 
@@ -29,13 +34,28 @@ const FILTROS: { key: FiltroContaPagar; label: string }[] = [
   { key: 'todas', label: 'Todas' },
 ]
 
-const CATEGORIAS: { key: CategoriaContaPagar; label: string }[] = [
-  { key: 'fornecedor', label: 'Fornecedor' },
-  { key: 'fixa', label: 'Despesa fixa' },
-  { key: 'imposto', label: 'Imposto' },
-  { key: 'folha', label: 'Folha' },
-  { key: 'outro', label: 'Outro' },
+const CATEGORIAS: { key: CategoriaContaPagar; label: string; hint: string }[] = [
+  {
+    key: 'fixa',
+    label: 'Despesa fixa',
+    hint: 'Aluguel, luz, água, internet, condomínio, contabilidade…',
+  },
+  {
+    key: 'fornecedor',
+    label: 'Compra de insumos/peças',
+    hint: 'Pagamento a fornecedor cadastrado no estoque (opcional).',
+  },
+  { key: 'imposto', label: 'Imposto', hint: 'DAS, ISS, taxas municipais…' },
+  { key: 'folha', label: 'Folha', hint: 'Salários, pró-labore, benefícios…' },
+  { key: 'outro', label: 'Outro', hint: 'Demais despesas operacionais.' },
 ]
+
+const CREDOR_PLACEHOLDER: Partial<Record<CategoriaContaPagar, string>> = {
+  fixa: 'Ex.: CEMIG, proprietário, condomínio…',
+  imposto: 'Ex.: Receita Federal, Prefeitura…',
+  folha: 'Ex.: Funcionário, contador…',
+  outro: 'Quem recebe o pagamento',
+}
 
 function formatBRL(v: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
@@ -68,12 +88,19 @@ export function FinContasPagarTab({ companyId, storeId }: FinContasPagarTabProps
 
   const [formNova, setFormNova] = useState({
     descricao: '',
-    categoria: 'fornecedor' as CategoriaContaPagar,
+    categoria: 'fixa' as CategoriaContaPagar,
+    credorNome: '',
     valor: '',
     vencimento: '',
     fornecedorId: '',
     observacao: '',
+    recorrente: false,
+    frequencia: 'mensal' as FrequenciaRecorrencia,
+    parcelas: '12',
   })
+
+  const categoriaAtual = CATEGORIAS.find((c) => c.key === formNova.categoria)
+  const ehCompraInsumos = formNova.categoria === 'fornecedor'
   const [contaPagarId, setContaPagarId] = useState('')
   const [dataPagamento, setDataPagamento] = useState(() => new Date().toISOString().slice(0, 10))
 
@@ -105,6 +132,15 @@ export function FinContasPagarTab({ companyId, storeId }: FinContasPagarTabProps
 
   const listaFiltrada = useMemo(() => lista, [lista])
 
+  const previewRecorrencia = useMemo(() => {
+    if (!formNova.recorrente || !formNova.vencimento) return null
+    const qtd = Math.min(36, Math.max(2, parseInt(formNova.parcelas, 10) || 0))
+    if (qtd < 2) return null
+    const datas = gerarVencimentosRecorrentes(formNova.vencimento, formNova.frequencia, qtd)
+    const valor = parseValorInput(formNova.valor)
+    return { qtd: datas.length, ultima: datas[datas.length - 1], valor }
+  }, [formNova.recorrente, formNova.vencimento, formNova.frequencia, formNova.parcelas, formNova.valor])
+
   async function handleCriar(e: React.FormEvent) {
     e.preventDefault()
     const valor = parseValorInput(formNova.valor)
@@ -112,6 +148,14 @@ export function FinContasPagarTab({ companyId, storeId }: FinContasPagarTabProps
       setErro('Preencha descrição, valor e vencimento.')
       return
     }
+    const parcelasNum = formNova.recorrente
+      ? Math.min(36, Math.max(2, parseInt(formNova.parcelas, 10) || 0))
+      : 1
+    if (formNova.recorrente && parcelasNum < 2) {
+      setErro('Informe pelo menos 2 parcelas para despesa recorrente.')
+      return
+    }
+
     setErro(null)
     setSucesso(null)
     try {
@@ -122,19 +166,32 @@ export function FinContasPagarTab({ companyId, storeId }: FinContasPagarTabProps
         categoria: formNova.categoria,
         valor,
         vencimento: formNova.vencimento,
-        fornecedorId: formNova.fornecedorId || null,
+        credorNome: ehCompraInsumos ? null : formNova.credorNome,
+        fornecedorId: ehCompraInsumos ? formNova.fornecedorId || null : null,
         observacao: formNova.observacao,
+        recorrencia:
+          formNova.recorrente && parcelasNum >= 2
+            ? { frequencia: formNova.frequencia, parcelas: parcelasNum }
+            : undefined,
       })
       setModalNova(false)
       setFormNova({
         descricao: '',
-        categoria: 'fornecedor',
+        categoria: 'fixa',
+        credorNome: '',
         valor: '',
         vencimento: '',
         fornecedorId: '',
         observacao: '',
+        recorrente: false,
+        frequencia: 'mensal',
+        parcelas: '12',
       })
-      setSucesso('Conta a pagar registrada.')
+      setSucesso(
+        parcelasNum > 1
+          ? `${parcelasNum} vencimentos criados (${labelFrequenciaRecorrencia(formNova.frequencia).toLowerCase()}).`
+          : 'Conta a pagar registrada.',
+      )
       await recarregar()
     } catch (err) {
       setErro(err instanceof Error ? err.message : 'Erro ao criar.')
@@ -160,6 +217,28 @@ export function FinContasPagarTab({ companyId, storeId }: FinContasPagarTabProps
       await recarregar()
     } catch (err) {
       setErro(err instanceof Error ? err.message : 'Erro ao pagar.')
+    } finally {
+      setProcessandoId(null)
+    }
+  }
+
+  async function handleCancelarFuturas(cp: ContaPagar) {
+    if (!cp.grupo_recorrencia_id || !cp.parcela || !cp.parcelas_total) return
+    const restantes = cp.parcelas_total - cp.parcela
+    if (restantes <= 0) return
+    const ok = window.confirm(
+      `Cancelar as ${restantes} parcela(s) futuras de "${cp.descricao.replace(/\s*\(\d+\/\d+\)$/, '')}"?\n\nParcelas já pagas não serão alteradas.`,
+    )
+    if (!ok) return
+    setProcessandoId(cp.id)
+    setErro(null)
+    setSucesso(null)
+    try {
+      const qtd = await cancelarParcelasRecorrentesFuturas(companyId, storeId, cp.id)
+      setSucesso(qtd > 0 ? `${qtd} parcela(s) futura(s) cancelada(s).` : 'Nenhuma parcela futura pendente.')
+      await recarregar()
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : 'Erro ao cancelar série.')
     } finally {
       setProcessandoId(null)
     }
@@ -247,10 +326,17 @@ export function FinContasPagarTab({ companyId, storeId }: FinContasPagarTabProps
                   className={`lc-row fin-cp-row${cp.status === 'cancelado' ? ' lc-row--cancel' : ''}${vencida ? ' fin-cp-row--vencida' : ''}`}
                 >
                   <div className="lc-row__main fin-cp-row__main">
-                    <span className="lc-row__num fin-cp-row__desc">{cp.descricao}</span>
+                    <span className="lc-row__num fin-cp-row__desc">
+                      {cp.descricao}
+                      {cp.parcelas_total && cp.parcelas_total > 1 && cp.parcela ? (
+                        <span className="fin-rec-badge" title="Despesa recorrente">
+                          {cp.parcela}/{cp.parcelas_total}
+                        </span>
+                      ) : null}
+                    </span>
                     <span className="lc-row__meta">
                       Vence {formatDate(cp.vencimento)}
-                      {cp.fornecedorNome ? ` · ${cp.fornecedorNome}` : ''}
+                      {nomeCredorContaPagar(cp) ? ` · ${nomeCredorContaPagar(cp)}` : ''}
                       {' · '}
                       {labelCategoriaContaPagar(cp.categoria)}
                     </span>
@@ -284,6 +370,20 @@ export function FinContasPagarTab({ companyId, storeId }: FinContasPagarTabProps
                         >
                           Cancelar
                         </button>
+                        {cp.grupo_recorrencia_id &&
+                        cp.parcela &&
+                        cp.parcelas_total &&
+                        cp.parcela < cp.parcelas_total ? (
+                          <button
+                            type="button"
+                            className="lc-btn lc-btn--ghost fin-btn-futuras"
+                            disabled={busy}
+                            title="Cancela só as parcelas que ainda não venceram nesta série"
+                            onClick={() => void handleCancelarFuturas(cp)}
+                          >
+                            Cancelar futuras
+                          </button>
+                        ) : null}
                       </>
                     ) : cp.status === 'pago' && cp.data_pagamento ? (
                       <span className="fin-cp-pago-em">Pago em {formatDate(cp.data_pagamento)}</span>
@@ -308,22 +408,23 @@ export function FinContasPagarTab({ companyId, storeId }: FinContasPagarTabProps
             <h2 id="fin-modal-nova-titulo" className="fin-modal__title">
               Nova despesa
             </h2>
-            <label className="fin-field">
-              <span>Descrição</span>
-              <input
-                value={formNova.descricao}
-                onChange={(e) => setFormNova((p) => ({ ...p, descricao: e.target.value }))}
-                required
-                autoFocus
-              />
-            </label>
+            <p className="fin-modal__hint">
+              <strong>Categoria</strong> = tipo da despesa. <strong>Credor</strong> = quem recebe (luz,
+              aluguel…). Só use fornecedor do estoque para compra de peças/insumos.
+            </p>
             <label className="fin-field">
               <span>Categoria</span>
               <select
                 value={formNova.categoria}
-                onChange={(e) =>
-                  setFormNova((p) => ({ ...p, categoria: e.target.value as CategoriaContaPagar }))
-                }
+                onChange={(e) => {
+                  const cat = e.target.value as CategoriaContaPagar
+                  setFormNova((p) => ({
+                    ...p,
+                    categoria: cat,
+                    fornecedorId: cat === 'fornecedor' ? p.fornecedorId : '',
+                    credorNome: cat === 'fornecedor' ? '' : p.credorNome,
+                  }))
+                }}
               >
                 {CATEGORIAS.map((c) => (
                   <option key={c.key} value={c.key}>
@@ -331,7 +432,57 @@ export function FinContasPagarTab({ companyId, storeId }: FinContasPagarTabProps
                   </option>
                 ))}
               </select>
+              {categoriaAtual ? <span className="fin-field__hint">{categoriaAtual.hint}</span> : null}
             </label>
+            <label className="fin-field">
+              <span>Descrição</span>
+              <input
+                value={formNova.descricao}
+                onChange={(e) => setFormNova((p) => ({ ...p, descricao: e.target.value }))}
+                placeholder={
+                  ehCompraInsumos ? 'Ex.: Fatura peças março' : 'Ex.: Conta de luz — março/2026'
+                }
+                required
+                autoFocus
+              />
+            </label>
+            {ehCompraInsumos ? (
+              fornecedores.length > 0 ? (
+                <label className="fin-field">
+                  <span>Fornecedor do estoque (opcional)</span>
+                  <select
+                    value={formNova.fornecedorId}
+                    onChange={(e) => setFormNova((p) => ({ ...p, fornecedorId: e.target.value }))}
+                  >
+                    <option value="">— Não vincular —</option>
+                    {fornecedores.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.nome}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="fin-field__hint">
+                    Cadastro em Estoque → Fornecedores (somente quem vende peças/insumos).
+                  </span>
+                </label>
+              ) : (
+                <p className="fin-field__hint fin-field__hint--block">
+                  Sem fornecedores no estoque. Cadastre em Estoque se quiser vincular a compra de peças.
+                </p>
+              )
+            ) : (
+              <label className="fin-field">
+                <span>Credor</span>
+                <input
+                  value={formNova.credorNome}
+                  onChange={(e) => setFormNova((p) => ({ ...p, credorNome: e.target.value }))}
+                  placeholder={CREDOR_PLACEHOLDER[formNova.categoria] ?? 'Quem recebe o pagamento'}
+                />
+                <span className="fin-field__hint">
+                  Não precisa cadastrar no estoque. Ex.: concessionária, proprietário, contador.
+                </span>
+              </label>
+            )}
             <div className="fin-field-row">
               <label className="fin-field">
                 <span>Valor (R$)</span>
@@ -353,22 +504,59 @@ export function FinContasPagarTab({ companyId, storeId }: FinContasPagarTabProps
                 />
               </label>
             </div>
-            {fornecedores.length > 0 ? (
-              <label className="fin-field">
-                <span>Fornecedor (opcional)</span>
-                <select
-                  value={formNova.fornecedorId}
-                  onChange={(e) => setFormNova((p) => ({ ...p, fornecedorId: e.target.value }))}
-                >
-                  <option value="">— Nenhum —</option>
-                  {fornecedores.map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.nome}
-                    </option>
-                  ))}
-                </select>
+
+            <div className="fin-rec-block">
+              <label className="fin-rec-toggle">
+                <input
+                  type="checkbox"
+                  checked={formNova.recorrente}
+                  onChange={(e) => setFormNova((p) => ({ ...p, recorrente: e.target.checked }))}
+                />
+                <span>Despesa recorrente (vários vencimentos)</span>
               </label>
-            ) : null}
+              {formNova.recorrente ? (
+                <div className="fin-rec-fields">
+                  <label className="fin-field">
+                    <span>Repetir</span>
+                    <select
+                      value={formNova.frequencia}
+                      onChange={(e) =>
+                        setFormNova((p) => ({
+                          ...p,
+                          frequencia: e.target.value as FrequenciaRecorrencia,
+                        }))
+                      }
+                    >
+                      <option value="mensal">Mensal</option>
+                      <option value="trimestral">Trimestral</option>
+                      <option value="anual">Anual</option>
+                    </select>
+                  </label>
+                  <label className="fin-field">
+                    <span>Quantidade de parcelas</span>
+                    <input
+                      type="number"
+                      min={2}
+                      max={36}
+                      value={formNova.parcelas}
+                      onChange={(e) => setFormNova((p) => ({ ...p, parcelas: e.target.value }))}
+                    />
+                    <span className="fin-field__hint">
+                      Primeiro vencimento = campo acima. Serão criadas contas separadas (ex.: aluguel
+                      12 meses).
+                    </span>
+                  </label>
+                  {previewRecorrencia ? (
+                    <p className="fin-rec-preview" role="status">
+                      Serão criadas <strong>{previewRecorrencia.qtd}</strong> contas de{' '}
+                      {previewRecorrencia.valor ? formatBRL(previewRecorrencia.valor) : '…'} cada, até{' '}
+                      <strong>{formatDate(previewRecorrencia.ultima)}</strong>.
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+
             <label className="fin-field">
               <span>Observação</span>
               <input

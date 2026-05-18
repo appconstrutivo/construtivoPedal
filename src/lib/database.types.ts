@@ -366,6 +366,98 @@ export type Database = {
           updated_at?: string
         }
       }
+      orcamentos: {
+        Row: {
+          id: string
+          company_id: string
+          store_id: string
+          numero: number
+          cliente_id: string | null
+          bicicleta_id: string | null
+          status: string
+          resumo: string
+          observacoes: string | null
+          desconto: number
+          valido_ate: string | null
+          token_aprovacao: string | null
+          convertido_os_id: string | null
+          convertido_venda_id: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          store_id: string
+          numero?: number
+          cliente_id?: string | null
+          bicicleta_id?: string | null
+          status?: string
+          resumo?: string
+          observacoes?: string | null
+          desconto?: number
+          valido_ate?: string | null
+          token_aprovacao?: string | null
+          convertido_os_id?: string | null
+          convertido_venda_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          store_id?: string
+          numero?: number
+          cliente_id?: string | null
+          bicicleta_id?: string | null
+          status?: string
+          resumo?: string
+          observacoes?: string | null
+          desconto?: number
+          valido_ate?: string | null
+          token_aprovacao?: string | null
+          convertido_os_id?: string | null
+          convertido_venda_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      orcamento_itens: {
+        Row: {
+          id: string
+          company_id: string
+          orcamento_id: string
+          tipo: string
+          estoque_item_id: string | null
+          servico_catalogo_id: string | null
+          descricao: string
+          quantidade: number
+          preco_unitario: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          orcamento_id: string
+          tipo: string
+          estoque_item_id?: string | null
+          servico_catalogo_id?: string | null
+          descricao: string
+          quantidade?: number
+          preco_unitario?: number
+          created_at?: string
+        }
+        Update: {
+          company_id?: string
+          orcamento_id?: string
+          tipo?: string
+          estoque_item_id?: string | null
+          servico_catalogo_id?: string | null
+          descricao?: string
+          quantidade?: number
+          preco_unitario?: number
+          created_at?: string
+        }
+      }
       clientes: {
         Row: {
           company_id: string

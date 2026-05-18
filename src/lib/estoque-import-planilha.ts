@@ -131,6 +131,13 @@ export function parsePlanilhaEstoque(buffer: ArrayBuffer): ResultadoParsePlanilh
   return { linhas, erros, totalLinhasLidas: rows.length }
 }
 
+/** Acréscimo opcional no custo da planilha (impostos, cupons etc.). */
+export function calcularCustoComAdicional(custo: number, adicionalPct: number): number {
+  const a = Number(adicionalPct)
+  if (!Number.isFinite(a) || a <= 0) return custo
+  return Math.round(custo * (1 + a / 100) * 100) / 100
+}
+
 export function calcularPrecoComMarkup(custo: number, markupPct: number): number {
   const m = Number(markupPct)
   if (!Number.isFinite(m)) return custo

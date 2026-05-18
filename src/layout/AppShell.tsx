@@ -4,6 +4,7 @@ export type NavKey =
   | 'inicio'
   | 'oficina'
   | 'pdv'
+  | 'orcamentos'
   | 'financeiro'
   | 'lancamentos'
   | 'estoque'
@@ -147,6 +148,20 @@ function IconReceipt() {
   )
 }
 
+function IconQuote() {
+  return (
+    <svg aria-hidden width={22} height={22} viewBox="0 0 24 24" fill="none">
+      <path
+        d="M9 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9l-6-6Z"
+        stroke="currentColor"
+        strokeWidth={1.75}
+        strokeLinejoin="round"
+      />
+      <path d="M13 3v6h6M9 13h6M9 17h4" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" />
+    </svg>
+  )
+}
+
 function IconGrid() {
   return (
     <svg aria-hidden width={22} height={22} viewBox="0 0 24 24" fill="none">
@@ -162,6 +177,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'inicio', label: 'Início', icon: <IconHome /> },
   { key: 'oficina', label: 'Oficina', icon: <IconWrench /> },
   { key: 'pdv', label: 'PDV', icon: <IconCart /> },
+  { key: 'orcamentos', label: 'Orçamentos', icon: <IconQuote /> },
   { key: 'financeiro', label: 'Financeiro', icon: <IconWallet /> },
   { key: 'lancamentos', label: 'Lançamentos', icon: <IconReceipt /> },
   { key: 'estoque', label: 'Estoque', icon: <IconPackage /> },

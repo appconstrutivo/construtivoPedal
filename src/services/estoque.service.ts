@@ -1,4 +1,5 @@
 import {
+  calcularCustoComAdicional,
   calcularPrecoComMarkup,
   type LinhaPlanilhaEstoque,
 } from '../lib/estoque-import-planilha'
@@ -264,10 +265,13 @@ export async function importarItensPlanilhaEstoque(params: {
   storeId: string
   fornecedorId: string
   markupPct: number
+  /** Opcional: % sobre o custo da planilha (impostos, cupons etc.). */
+  custoAdicionalPct?: number
   linhas: LinhaPlanilhaEstoque[]
   onProgress?: (concluidos: number, total: number) => void
 }): Promise<ResultadoImportacaoPlanilha> {
-  const { companyId, storeId, fornecedorId, markupPct, linhas, onProgress } = params
+  const { companyId, storeId, fornecedorId, markupPct, custoAdicionalPct = 0, linhas, onProgress } =
+    params
   const erros: string[] = []
   let criados = 0
   let atualizados = 0
@@ -276,7 +280,7 @@ export async function importarItensPlanilhaEstoque(params: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: existentesRaw, error: listErr } = await (supabase as any)
     .from('estoque_itens')
-    .select('id, nome, sku_fornecedor, saldo_atual')
+    .select('id, nome, sku_fornecedor, saldo_atual, custo_medio')
     .eq('company_id', companyId)
     .eq('store_id', storeId)
     .eq('fornecedor_id', fornecedorId)
@@ -288,15 +292,26 @@ export async function importarItensPlanilhaEstoque(params: {
     )
   }
 
-  const porSkuFornecedor = new Map<string, { id: string; saldo_atual: number }>()
-  const porNome = new Map<string, { id: string; saldo_atual: number }>()
+  type RefItemImportacao = {
+    id: string
+    saldo_atual: number
+    custo_medio: number
+  }
+
+  const porSkuFornecedor = new Map<string, RefItemImportacao>()
+  const porNome = new Map<string, RefItemImportacao>()
   for (const row of (existentesRaw ?? []) as Array<{
     id: string
     nome: string
     sku_fornecedor: string | null
     saldo_atual: number
+    custo_medio: number | null
   }>) {
-    const ref = { id: row.id, saldo_atual: Number(row.saldo_atual) }
+    const ref: RefItemImportacao = {
+      id: row.id,
+      saldo_atual: Number(row.saldo_atual),
+      custo_medio: Number(row.custo_medio ?? 0),
+    }
     const skuF = String(row.sku_fornecedor ?? '').trim()
     if (skuF) porSkuFornecedor.set(skuF, ref)
     const nomeKey = row.nome.trim().toUpperCase()
@@ -306,27 +321,34 @@ export async function importarItensPlanilhaEstoque(params: {
   const total = linhas.length
   for (let i = 0; i < linhas.length; i++) {
     const linha = linhas[i]
-    const precoVenda = calcularPrecoComMarkup(linha.custo, markupPct)
     const existente =
       porSkuFornecedor.get(linha.skuFornecedor) ??
       porNome.get(linha.nome.trim().toUpperCase())
 
     try {
+      const custoPlanilha = calcularCustoComAdicional(linha.custo, custoAdicionalPct)
+
       if (existente) {
         const novoSaldo = existente.saldo_atual + linha.quantidade
+        // Coluna "Preço de Venda" da planilha = custo_medio (Custo R$) no cadastro.
+        const custoMedio = Math.max(custoPlanilha, existente.custo_medio)
+        const precoVenda = calcularPrecoComMarkup(custoMedio, markupPct)
         await atualizarItemEstoque(existente.id, {
           nome: linha.nome,
           sku_fornecedor: linha.skuFornecedor,
-          custo_medio: linha.custo,
+          custo_medio: custoMedio,
           preco_varejo: precoVenda,
           preco_atacado: precoVenda,
           saldo_atual: novoSaldo,
           fornecedor_id: fornecedorId,
         })
         existente.saldo_atual = novoSaldo
+        existente.custo_medio = custoMedio
         porSkuFornecedor.set(linha.skuFornecedor, existente)
+        porNome.set(linha.nome.trim().toUpperCase(), existente)
         atualizados += 1
       } else {
+        const precoVenda = calcularPrecoComMarkup(custoPlanilha, markupPct)
         const sku = await reservarProximoSkuEstoque(companyId, storeId)
         const criado = await criarItemEstoque({
           company_id: companyId,
@@ -339,11 +361,15 @@ export async function importarItensPlanilhaEstoque(params: {
           fornecedor_id: fornecedorId,
           saldo_atual: linha.quantidade,
           estoque_minimo: 0,
-          custo_medio: linha.custo,
+          custo_medio: custoPlanilha,
           preco_varejo: precoVenda,
           preco_atacado: precoVenda,
         })
-        const ref = { id: criado.id, saldo_atual: linha.quantidade }
+        const ref: RefItemImportacao = {
+          id: criado.id,
+          saldo_atual: linha.quantidade,
+          custo_medio: custoPlanilha,
+        }
         porSkuFornecedor.set(linha.skuFornecedor, ref)
         porNome.set(linha.nome.trim().toUpperCase(), ref)
         criados += 1

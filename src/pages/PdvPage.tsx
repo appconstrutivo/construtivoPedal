@@ -5,6 +5,12 @@ import {
   filtrarInputQuantidadeInteira,
   parseQuantidadeInteira,
 } from '../lib/quantidade'
+import { EstoqueItemThumb } from '../components/EstoqueItemThumb'
+import {
+  finalizarConversaoPdv,
+  lerPrefillPdv,
+  limparPrefillPdv,
+} from '../services/orcamento.service'
 import { listarItensEstoque, type EstoqueItemComLocal } from '../services/estoque.service'
 import {
   finalizarVendaPdv,
@@ -28,6 +34,7 @@ type CarrinhoLinha = {
   precoUnitario: number
   saldoMax: number | null
   sku: string | null
+  imagemUrl: string | null
 }
 
 type PagamentoLinha = {
@@ -138,6 +145,34 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
     setCheckoutAberto(false)
     void recarregar()
   }, [recarregar])
+
+  useEffect(() => {
+    if (loading) return
+    const prefill = lerPrefillPdv()
+    if (!prefill?.itens.length) return
+    setClienteId(prefill.clienteId)
+    setBicicletaId(prefill.bicicletaId || '')
+    setDescontoStr(
+      prefill.desconto > 0 ? String(prefill.desconto).replace('.', ',') : '',
+    )
+    setCarrinho(
+      prefill.itens.map((item) => {
+        const estoque = itensEstoque.find((e) => e.id === item.estoqueItemId)
+        return {
+          key: item.estoqueItemId,
+          estoqueItemId: item.estoqueItemId,
+          descricao: item.descricao,
+          quantidade: item.quantidade,
+          precoUnitario: item.precoUnitario,
+          saldoMax: estoque ? Number(estoque.saldo_atual) : null,
+          sku: estoque?.sku ?? null,
+          imagemUrl: item.imagemUrl ?? estoque?.imagem_url ?? null,
+        }
+      }),
+    )
+    setSucesso(null)
+    setErro(null)
+  }, [loading, itensEstoque])
 
   useEffect(() => {
     if (!recentesAberto && !checkoutAberto) return
@@ -263,6 +298,7 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
         precoUnitario: Number(item.preco_varejo) || Number(item.custo_medio) || 0,
         saldoMax: Number(item.saldo_atual),
         sku: item.sku,
+        imagemUrl: item.imagem_url,
       },
     ])
     setErro(null)
@@ -353,11 +389,16 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
           preco_unitario: l.precoUnitario,
         })),
       })
+      const prefill = lerPrefillPdv()
+      if (prefill?.orcamentoId) {
+        await finalizarConversaoPdv(prefill.orcamentoId, resultado.vendaId)
+      }
       setSucesso({ numero: resultado.numero, total: resultado.total })
       setCheckoutAberto(false)
       limparCarrinho()
       setClienteId('')
       setBicicletaId('')
+      limparPrefillPdv()
       await recarregar()
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao finalizar venda.')
@@ -459,12 +500,19 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
                       disabled={semLoja || semSaldo}
                       onClick={() => adicionarProduto(item)}
                     >
-                      <span className="pdv-prod-card__name">{item.nome}</span>
-                      <span className="pdv-prod-card__meta">
-                        SKU {item.sku} · {Number(item.saldo_atual)} {item.unidade}
-                      </span>
-                      <span className="pdv-prod-card__price">
-                        {formatBRL(Number(item.preco_varejo) || Number(item.custo_medio) || 0)}
+                      <EstoqueItemThumb
+                        imagemUrl={item.imagem_url}
+                        alt=""
+                        variant="card"
+                      />
+                      <span className="pdv-prod-card__body">
+                        <span className="pdv-prod-card__name">{item.nome}</span>
+                        <span className="pdv-prod-card__meta">
+                          SKU {item.sku} · {Number(item.saldo_atual)} {item.unidade}
+                        </span>
+                        <span className="pdv-prod-card__price">
+                          {formatBRL(Number(item.preco_varejo) || Number(item.custo_medio) || 0)}
+                        </span>
                       </span>
                       {semSaldo && <span className="pdv-prod-card__badge">Sem saldo</span>}
                     </button>
@@ -490,6 +538,12 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
             ) : (
               carrinho.map((linha) => (
                 <li key={linha.key} className="pdv-cart-line">
+                  <EstoqueItemThumb
+                    imagemUrl={linha.imagemUrl}
+                    alt={linha.descricao}
+                    variant="cart"
+                  />
+                  <div className="pdv-cart-line__main">
                   <div className="pdv-cart-line__top">
                     <span className="pdv-cart-line__name">{linha.descricao}</span>
                     <button
@@ -534,6 +588,7 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
                     <span className="pdv-cart-line__sub">
                       {formatBRL(linha.quantidade * linha.precoUnitario)}
                     </span>
+                  </div>
                   </div>
                 </li>
               ))

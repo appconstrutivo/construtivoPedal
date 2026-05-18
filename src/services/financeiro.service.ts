@@ -4,6 +4,7 @@ export type TipoContaFinanceira = 'caixa' | 'banco' | 'pix'
 export type CategoriaContaPagar = 'fornecedor' | 'fixa' | 'imposto' | 'folha' | 'outro'
 export type StatusContaPagar = 'pendente' | 'pago' | 'cancelado'
 export type FiltroContaPagar = 'todas' | 'pendentes' | 'pagas' | 'vencidas' | 'canceladas'
+export type FrequenciaRecorrencia = 'mensal' | 'trimestral' | 'anual'
 
 export type ContaFinanceira = {
   id: string
@@ -21,6 +22,7 @@ export type ContaPagar = {
   company_id: string
   store_id: string
   fornecedor_id: string | null
+  credor_nome: string | null
   descricao: string
   categoria: CategoriaContaPagar
   valor: number
@@ -29,6 +31,9 @@ export type ContaPagar = {
   conta_financeira_id: string | null
   data_pagamento: string | null
   observacao: string | null
+  grupo_recorrencia_id: string | null
+  parcela: number | null
+  parcelas_total: number | null
   created_at: string
   fornecedorNome?: string | null
 }
@@ -51,7 +56,7 @@ export type ResumoContasPagar = {
 }
 
 const CATEGORIA_LABEL: Record<CategoriaContaPagar, string> = {
-  fornecedor: 'Fornecedor',
+  fornecedor: 'Compra de insumos/peças',
   fixa: 'Despesa fixa',
   imposto: 'Imposto',
   folha: 'Folha',
@@ -76,6 +81,13 @@ export function labelStatusContaPagar(s: StatusContaPagar) {
   if (s === 'pendente') return 'Pendente'
   if (s === 'pago') return 'Pago'
   return 'Cancelado'
+}
+
+/** Nome exibido do credor: estoque (peças) ou texto livre (luz, aluguel…). */
+export function nomeCredorContaPagar(cp: Pick<ContaPagar, 'fornecedorNome' | 'credor_nome'>) {
+  if (cp.fornecedorNome?.trim()) return cp.fornecedorNome.trim()
+  if (cp.credor_nome?.trim()) return cp.credor_nome.trim()
+  return null
 }
 
 function isVencida(vencimento: string, status: StatusContaPagar) {
@@ -269,35 +281,185 @@ export async function obterResumoContasPagar(
   }
 }
 
-export async function criarContaPagar(params: {
+export type CriarContaPagarInput = {
   companyId: string
   storeId: string
   descricao: string
   categoria: CategoriaContaPagar
   valor: number
   vencimento: string
+  credorNome?: string | null
   fornecedorId?: string | null
   observacao?: string
-}): Promise<ContaPagar> {
+  recorrencia?: {
+    frequencia: FrequenciaRecorrencia
+    parcelas: number
+  }
+}
+
+const FREQUENCIA_MESES: Record<FrequenciaRecorrencia, number> = {
+  mensal: 1,
+  trimestral: 3,
+  anual: 12,
+}
+
+const FREQUENCIA_LABEL: Record<FrequenciaRecorrencia, string> = {
+  mensal: 'Mensal',
+  trimestral: 'Trimestral',
+  anual: 'Anual',
+}
+
+export function labelFrequenciaRecorrencia(f: FrequenciaRecorrencia) {
+  return FREQUENCIA_LABEL[f]
+}
+
+/** Gera datas de vencimento (YYYY-MM-DD) para despesa recorrente. */
+export function gerarVencimentosRecorrentes(
+  primeiroVencimento: string,
+  frequencia: FrequenciaRecorrencia,
+  parcelas: number,
+): string[] {
+  const partes = primeiroVencimento.split('-').map(Number)
+  if (partes.length !== 3 || parcelas < 1) return []
+
+  const [ano0, mes0, dia0] = partes
+  const salto = FREQUENCIA_MESES[frequencia]
+  const datas: string[] = []
+
+  for (let i = 0; i < parcelas; i++) {
+    const mesAbs = mes0 - 1 + i * salto
+    const ano = ano0 + Math.floor(mesAbs / 12)
+    const mes = (mesAbs % 12) + 1
+    const ultimoDia = new Date(ano, mes, 0).getDate()
+    const dia = Math.min(dia0, ultimoDia)
+    const m = String(mes).padStart(2, '0')
+    const d = String(dia).padStart(2, '0')
+    datas.push(`${ano}-${m}-${d}`)
+  }
+
+  return datas
+}
+
+function montarLinhaContaPagar(
+  params: CriarContaPagarInput,
+  vencimento: string,
+  opts?: { grupoId: string; parcela: number; parcelasTotal: number },
+) {
+  const usaFornecedorEstoque = params.categoria === 'fornecedor'
+  const total = opts?.parcelasTotal ?? 1
+  const num = opts?.parcela ?? 1
+  const descBase = params.descricao.trim()
+  const descricao = total > 1 ? `${descBase} (${num}/${total})` : descBase
+
+  return {
+    company_id: params.companyId,
+    store_id: params.storeId,
+    descricao,
+    categoria: params.categoria,
+    valor: params.valor,
+    vencimento,
+    credor_nome: usaFornecedorEstoque ? null : params.credorNome?.trim() || null,
+    fornecedor_id: usaFornecedorEstoque ? params.fornecedorId || null : null,
+    observacao: params.observacao?.trim() || null,
+    status: 'pendente' as const,
+    grupo_recorrencia_id: opts?.grupoId ?? null,
+    parcela: total > 1 ? num : null,
+    parcelas_total: total > 1 ? total : null,
+  }
+}
+
+export async function criarContaPagar(params: CriarContaPagarInput): Promise<ContaPagar> {
+  const rec = params.recorrencia
+  const parcelas = rec?.parcelas ?? 1
+
+  if (rec && parcelas > 1) {
+    const criadas = await criarContasPagarRecorrentes(params)
+    return criadas[0]
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('financeiro_contas_pagar')
-    .insert({
-      company_id: params.companyId,
-      store_id: params.storeId,
-      descricao: params.descricao.trim(),
-      categoria: params.categoria,
-      valor: params.valor,
-      vencimento: params.vencimento,
-      fornecedor_id: params.fornecedorId || null,
-      observacao: params.observacao?.trim() || null,
-      status: 'pendente',
-    })
+    .insert(montarLinhaContaPagar(params, params.vencimento))
     .select()
     .single()
 
   if (error) throw new Error(error.message ?? 'Erro ao criar conta a pagar.')
   return { ...(data as ContaPagar), valor: Number(data.valor) }
+}
+
+export async function criarContasPagarRecorrentes(params: CriarContaPagarInput): Promise<ContaPagar[]> {
+  const rec = params.recorrencia
+  if (!rec || rec.parcelas < 2) {
+    const uma = await criarContaPagar({ ...params, recorrencia: undefined })
+    return [uma]
+  }
+
+  if (rec.parcelas > 36) {
+    throw new Error('Máximo de 36 parcelas por lançamento recorrente.')
+  }
+
+  const vencimentos = gerarVencimentosRecorrentes(params.vencimento, rec.frequencia, rec.parcelas)
+  if (vencimentos.length === 0) {
+    throw new Error('Não foi possível gerar as datas de vencimento.')
+  }
+
+  const grupoId = crypto.randomUUID()
+  const linhas = vencimentos.map((venc, i) =>
+    montarLinhaContaPagar(params, venc, {
+      grupoId,
+      parcela: i + 1,
+      parcelasTotal: vencimentos.length,
+    }),
+  )
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('financeiro_contas_pagar')
+    .insert(linhas)
+    .select()
+
+  if (error) throw new Error(error.message ?? 'Erro ao criar parcelas recorrentes.')
+
+  return ((data ?? []) as ContaPagar[]).map((row) => ({
+    ...row,
+    valor: Number(row.valor),
+  }))
+}
+
+/** Cancela parcelas pendentes futuras do mesmo grupo (mantém a atual e as já pagas). */
+export async function cancelarParcelasRecorrentesFuturas(
+  companyId: string,
+  storeId: string,
+  contaPagarId: string,
+): Promise<number> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: ref, error: refErr } = await (supabase as any)
+    .from('financeiro_contas_pagar')
+    .select('grupo_recorrencia_id, parcela, vencimento')
+    .eq('id', contaPagarId)
+    .eq('company_id', companyId)
+    .eq('store_id', storeId)
+    .maybeSingle()
+
+  if (refErr) throw new Error(refErr.message ?? 'Erro ao localizar parcela.')
+  if (!ref?.grupo_recorrencia_id) {
+    throw new Error('Esta despesa não faz parte de uma série recorrente.')
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('financeiro_contas_pagar')
+    .update({ status: 'cancelado' })
+    .eq('company_id', companyId)
+    .eq('store_id', storeId)
+    .eq('grupo_recorrencia_id', ref.grupo_recorrencia_id)
+    .eq('status', 'pendente')
+    .gt('parcela', ref.parcela)
+    .select('id')
+
+  if (error) throw new Error(error.message ?? 'Erro ao cancelar parcelas futuras.')
+  return (data ?? []).length
 }
 
 export async function registrarPagamentoContaPagar(params: {

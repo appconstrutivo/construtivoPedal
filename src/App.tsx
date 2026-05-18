@@ -11,6 +11,8 @@ import { PdvPage } from './pages/PdvPage'
 import { LancamentosPage } from './pages/LancamentosPage'
 import { FinanceiroPage } from './pages/FinanceiroPage'
 import { RelatoriosPage } from './pages/RelatoriosPage'
+import { OrcamentosPage } from './pages/OrcamentosPage'
+import { OrcamentoAprovacaoPage } from './pages/OrcamentoAprovacaoPage'
 import { AuthPages } from './pages/AuthPages'
 import { isSupabaseConfigured, supabase } from './lib/supabaseClient'
 
@@ -41,7 +43,13 @@ function PlaceholderPage({ title, hint }: { title: string; hint: string }) {
   )
 }
 
+function tokenOrcamentoPublico() {
+  if (typeof window === 'undefined') return null
+  return new URLSearchParams(window.location.search).get('orcamento')
+}
+
 export default function App() {
+  const [publicOrcamentoToken] = useState(() => tokenOrcamentoPublico())
   const [activeNav, setActiveNav] = useState<NavKey>('inicio')
   const [session, setSession] = useState<Session | null>(null)
   const [checkingSession, setCheckingSession] = useState(true)
@@ -243,6 +251,10 @@ export default function App() {
     }
   }
 
+  if (publicOrcamentoToken) {
+    return <OrcamentoAprovacaoPage token={publicOrcamentoToken} />
+  }
+
   if (checkingSession) {
     return (
       <div className="cp-auth-loading" role="status" aria-live="polite">
@@ -322,6 +334,15 @@ export default function App() {
       )}
       {activeNav === 'pdv' && (
         <PdvPage companyId={tenant.companyId} activeStoreId={activeStoreId} />
+      )}
+      {activeNav === 'orcamentos' && (
+        <OrcamentosPage
+          companyId={tenant.companyId}
+          activeStoreId={activeStoreId}
+          companyName={tenant.companyName}
+          onNavigatePdv={() => setActiveNav('pdv')}
+          onNavigateOficina={() => setActiveNav('oficina')}
+        />
       )}
       {activeNav === 'financeiro' && (
         <FinanceiroPage

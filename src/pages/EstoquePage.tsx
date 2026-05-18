@@ -1736,19 +1736,13 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
               <div className="st-form-grid">
                 <label className="st-field">
                   <span>Item *</span>
-                  <select
-                    className="st-input"
+                  <EstoqueItemPicker
+                    itens={itens}
                     value={movForm.itemId}
-                    onChange={(e) => setMovForm((prev) => ({ ...prev, itemId: e.target.value }))}
+                    onChange={(itemId) => setMovForm((prev) => ({ ...prev, itemId }))}
+                    placeholder="Buscar por nome ou SKU…"
                     required
-                  >
-                    <option value="">Selecione...</option>
-                    {itens.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.nome} ({item.sku})
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </label>
                 <label className="st-field">
                   <span>Tipo *</span>

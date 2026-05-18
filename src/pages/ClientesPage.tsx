@@ -11,6 +11,12 @@ import {
   type BicicletaRow,
   type AtividadeRow,
 } from '../services/clientes.service'
+import {
+  labelStatusOrcamento,
+  listarOrcamentosPorCliente,
+  type OrcamentoLista,
+  type StatusOrcamento,
+} from '../services/orcamento.service'
 
 /* ─── helpers visuais ─────────────────────────────── */
 
@@ -561,6 +567,13 @@ function ClienteDetalhe({
   const [excluindoCliente, setExcluindoCliente] = useState(false)
   const [excluindoBikeId, setExcluindoBikeId] = useState<string | null>(null)
   const [erroAcao, setErroAcao] = useState<string | null>(null)
+  const [orcamentosCliente, setOrcamentosCliente] = useState<OrcamentoLista[]>([])
+
+  useEffect(() => {
+    void listarOrcamentosPorCliente(companyId, cliente.id)
+      .then(setOrcamentosCliente)
+      .catch(() => setOrcamentosCliente([]))
+  }, [companyId, cliente.id])
 
   async function handleExcluirCliente() {
     const nBikes = cliente.bicicletas.length
@@ -735,6 +748,30 @@ function ClienteDetalhe({
           }}
         />
       )}
+
+      <section className="cl-section" aria-labelledby="lbl-orc">
+        <div id="lbl-orc" className="cp-dash-label cp-dash-label--teal">
+          <span className="cp-dash-label__dot" aria-hidden />
+          Orçamentos recentes
+        </div>
+        {orcamentosCliente.length === 0 ? (
+          <p className="cl-empty-hint">Nenhum orçamento para este cliente.</p>
+        ) : (
+          <ul className="cl-orc-list">
+            {orcamentosCliente.map((o) => (
+              <li key={o.id} className="cl-orc-list__item">
+                <span className="cl-orc-list__num">#{o.numero}</span>
+                <span className={`cl-orc-list__status cl-orc-list__status--${o.status}`}>
+                  {labelStatusOrcamento(o.status as StatusOrcamento)}
+                </span>
+                <span className="cl-orc-list__val">
+                  {formatBRL(o.subtotal - Number(o.desconto || 0))}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section className="cl-section" aria-labelledby="lbl-hist">
         <div id="lbl-hist" className="cp-dash-label cp-dash-label--blue">

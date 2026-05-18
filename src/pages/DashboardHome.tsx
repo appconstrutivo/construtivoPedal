@@ -204,6 +204,7 @@ export function DashboardHome({ activeNav, companyId, activeStoreId, onNavigate 
     const titles: Record<Exclude<NavKey, 'inicio'>, { title: string; hint: string }> = {
       oficina: { title: 'Oficina', hint: 'OS, fotos e baixa de peças — em breve.' },
       pdv: { title: 'PDV', hint: 'Balcão rápido com vínculo à bike.' },
+      orcamentos: { title: 'Orçamentos', hint: 'Propostas comerciais para peças e serviços.' },
       financeiro: { title: 'Financeiro', hint: 'Fluxo de caixa, contas e gestão da empresa.' },
       lancamentos: { title: 'Lançamentos', hint: '2ª via de recibo e cancelamento de vendas.' },
       estoque: { title: 'Estoque', hint: 'Peças, bikes e movimentações por loja.' },
