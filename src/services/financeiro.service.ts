@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabaseClient'
+import type { FormaPagamento, PagamentoVendaInput } from './pdv.service'
 
 export type TipoContaFinanceira = 'caixa' | 'banco' | 'pix'
 export type CategoriaContaPagar = 'fornecedor' | 'fixa' | 'imposto' | 'folha' | 'outro'
@@ -45,6 +46,7 @@ export type MovimentacaoFinanceira = {
   valor: number
   descricao: string
   origem: string
+  realizada_em: string
   created_at: string
 }
 
@@ -53,6 +55,37 @@ export type ResumoContasPagar = {
   vencidas: number
   pagasMes: number
   totalPendente: number
+}
+
+export type StatusContaReceber = 'pendente' | 'recebido' | 'cancelado'
+export type FiltroContaReceber = 'todas' | 'pendentes' | 'recebidas' | 'vencidas' | 'canceladas'
+
+export type ContaReceber = {
+  id: string
+  company_id: string
+  store_id: string
+  cliente_id: string | null
+  os_id: string | null
+  venda_id: string | null
+  descricao: string
+  valor: number
+  vencimento: string
+  status: StatusContaReceber
+  forma_pagamento: FormaPagamento | 'misto' | null
+  conta_financeira_id: string | null
+  data_recebimento: string | null
+  created_at: string
+  clienteNome?: string | null
+  osNumero?: number | null
+  vendaNumero?: number | null
+}
+
+export type ResumoContasReceber = {
+  pendentes: number
+  vencidas: number
+  recebidasMes: number
+  totalPendente: number
+  recebidoMesOs: number
 }
 
 const CATEGORIA_LABEL: Record<CategoriaContaPagar, string> = {
@@ -83,11 +116,43 @@ export function labelStatusContaPagar(s: StatusContaPagar) {
   return 'Cancelado'
 }
 
+export function labelStatusContaReceber(s: StatusContaReceber) {
+  if (s === 'pendente') return 'A receber'
+  if (s === 'recebido') return 'Recebido'
+  return 'Cancelado'
+}
+
+const FORMA_RECEBIMENTO_LABEL: Record<string, string> = {
+  dinheiro: 'Dinheiro',
+  pix: 'Pix',
+  credito: 'Crédito',
+  debito: 'Débito',
+  outro: 'Outro',
+  misto: 'Misto',
+}
+
+export function labelFormaRecebimento(f: FormaPagamento | 'misto' | null | undefined) {
+  if (!f) return '—'
+  return FORMA_RECEBIMENTO_LABEL[f] ?? f
+}
+
 /** Nome exibido do credor: estoque (peças) ou texto livre (luz, aluguel…). */
 export function nomeCredorContaPagar(cp: Pick<ContaPagar, 'fornecedorNome' | 'credor_nome'>) {
   if (cp.fornecedorNome?.trim()) return cp.fornecedorNome.trim()
   if (cp.credor_nome?.trim()) return cp.credor_nome.trim()
   return null
+}
+
+/** Data local no formato YYYY-MM-DD (comparável com coluna `date` do banco). */
+export function dataLocalISO(d = new Date()): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+export function isVencendoHoje(vencimento: string, status: StatusContaPagar): boolean {
+  return status === 'pendente' && vencimento === dataLocalISO()
 }
 
 function isVencida(vencimento: string, status: StatusContaPagar) {
@@ -96,6 +161,29 @@ function isVencida(vencimento: string, status: StatusContaPagar) {
   hoje.setHours(0, 0, 0, 0)
   const venc = new Date(`${vencimento}T12:00:00`)
   return venc < hoje
+}
+
+/** Contas pendentes com vencimento na data de hoje (badge do menu Financeiro). */
+export async function contarContasPagarVencendoHoje(
+  companyId: string,
+  storeId: string,
+): Promise<number> {
+  if (!storeId) return 0
+
+  const hoje = dataLocalISO()
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { count, error } = await (supabase as any)
+    .from('financeiro_contas_pagar')
+    .select('id', { count: 'exact', head: true })
+    .eq('company_id', companyId)
+    .eq('store_id', storeId)
+    .eq('status', 'pendente')
+    .eq('vencimento', hoje)
+
+  if (error) throw new Error(error.message ?? 'Erro ao contar contas a pagar.')
+
+  return count ?? 0
 }
 
 export async function garantirContaCaixa(companyId: string, storeId: string): Promise<string> {
@@ -203,11 +291,11 @@ export async function listarMovimentacoesConta(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('financeiro_movimentacoes')
-    .select('id, conta_id, tipo, valor, descricao, origem, created_at')
+    .select('id, conta_id, tipo, valor, descricao, origem, realizada_em, created_at')
     .eq('company_id', companyId)
     .eq('store_id', storeId)
     .eq('conta_id', contaId)
-    .order('created_at', { ascending: false })
+    .order('realizada_em', { ascending: false })
     .limit(limit)
 
   if (error) throw new Error(error.message ?? 'Erro ao carregar movimentações.')
@@ -495,6 +583,162 @@ export async function cancelarContaPagar(
     .eq('status', 'pendente')
 
   if (error) throw new Error(error.message ?? 'Erro ao cancelar conta.')
+}
+
+export async function obterContaReceberPorOs(
+  companyId: string,
+  osId: string,
+): Promise<ContaReceber | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('financeiro_contas_receber')
+    .select('*, clientes(nome), ordens_servico(numero), vendas(numero)')
+    .eq('company_id', companyId)
+    .eq('os_id', osId)
+    .neq('status', 'cancelado')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) throw new Error(error.message ?? 'Erro ao carregar faturamento da OS.')
+
+  if (!data) return null
+
+  type Raw = ContaReceber & {
+    clientes?: { nome?: string | null } | null
+    ordens_servico?: { numero?: number } | null
+    vendas?: { numero?: number } | null
+  }
+  const row = data as Raw
+  return {
+    ...row,
+    valor: Number(row.valor),
+    clienteNome: row.clientes?.nome ?? null,
+    osNumero: row.ordens_servico?.numero ?? null,
+    vendaNumero: row.vendas?.numero ?? null,
+  }
+}
+
+export async function listarContasReceber(
+  companyId: string,
+  storeId: string,
+  filtro: FiltroContaReceber = 'pendentes',
+): Promise<ContaReceber[]> {
+  if (!storeId) return []
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let q = (supabase as any)
+    .from('financeiro_contas_receber')
+    .select('*, clientes(nome), ordens_servico(numero), vendas(numero)')
+    .eq('company_id', companyId)
+    .eq('store_id', storeId)
+    .order('vencimento', { ascending: true })
+    .order('created_at', { ascending: false })
+
+  if (filtro === 'pendentes') q = q.eq('status', 'pendente')
+  if (filtro === 'recebidas') q = q.eq('status', 'recebido')
+  if (filtro === 'canceladas') q = q.eq('status', 'cancelado')
+
+  const { data, error } = await q
+  if (error) throw new Error(error.message ?? 'Erro ao carregar contas a receber.')
+
+  type Raw = ContaReceber & {
+    clientes?: { nome?: string | null } | null
+    ordens_servico?: { numero?: number } | null
+    vendas?: { numero?: number } | null
+  }
+
+  let lista = ((data ?? []) as Raw[]).map((row) => ({
+    ...row,
+    valor: Number(row.valor),
+    clienteNome: row.clientes?.nome ?? null,
+    osNumero: row.ordens_servico?.numero ?? null,
+    vendaNumero: row.vendas?.numero ?? null,
+  }))
+
+  if (filtro === 'vencidas') {
+    lista = lista.filter((c) => isVencida(c.vencimento, c.status === 'pendente' ? 'pendente' : 'pago'))
+  }
+
+  return lista
+}
+
+export async function obterResumoContasReceber(
+  companyId: string,
+  storeId: string,
+): Promise<ResumoContasReceber> {
+  const todas = await listarContasReceber(companyId, storeId, 'todas')
+  const pendentes = todas.filter((c) => c.status === 'pendente')
+  const vencidas = pendentes.filter((c) => isVencida(c.vencimento, 'pendente'))
+
+  const inicioMes = new Date()
+  inicioMes.setDate(1)
+  inicioMes.setHours(0, 0, 0, 0)
+
+  const recebidasMes = todas.filter((c) => {
+    if (c.status !== 'recebido' || !c.data_recebimento) return false
+    return new Date(`${c.data_recebimento}T12:00:00`) >= inicioMes
+  })
+
+  const recebidoMesOs = recebidasMes
+    .filter((c) => c.os_id)
+    .reduce((acc, c) => acc + c.valor, 0)
+
+  return {
+    pendentes: pendentes.length,
+    vencidas: vencidas.length,
+    recebidasMes: recebidasMes.length,
+    totalPendente: pendentes.reduce((acc, c) => acc + c.valor, 0),
+    recebidoMesOs,
+  }
+}
+
+export async function faturarOs(osId: string, vencimento: string): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any).rpc('os_faturar', {
+    p_os_id: osId,
+    p_vencimento: vencimento,
+  })
+  if (error) throw new Error(error.message ?? 'Erro ao faturar OS.')
+  return data as string
+}
+
+export async function registrarRecebimentoConta(params: {
+  contaReceberId: string
+  contaFinanceiraId: string
+  formaPagamento?: FormaPagamento
+  pagamentos?: PagamentoVendaInput[]
+  dataRecebimento?: string
+}): Promise<{ vendaId: string | null; vendaNumero: number | null }> {
+  const pagamentosJson =
+    params.pagamentos && params.pagamentos.length > 0
+      ? params.pagamentos.map((p) => ({ forma: p.forma, valor: p.valor }))
+      : null
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any).rpc('financeiro_registrar_recebimento', {
+    p_conta_receber_id: params.contaReceberId,
+    p_conta_financeira_id: params.contaFinanceiraId,
+    p_forma_pagamento: pagamentosJson ? null : (params.formaPagamento ?? 'dinheiro'),
+    p_data_recebimento: params.dataRecebimento ?? null,
+    p_pagamentos: pagamentosJson,
+  })
+  if (error) throw new Error(error.message ?? 'Erro ao registrar recebimento.')
+
+  const row = Array.isArray(data) ? data[0] : data
+  if (!row) return { vendaId: null, vendaNumero: null }
+  return {
+    vendaId: row.venda_id ?? null,
+    vendaNumero: row.venda_numero != null ? Number(row.venda_numero) : null,
+  }
+}
+
+export async function cancelarContaReceber(contaReceberId: string): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).rpc('financeiro_cancelar_conta_receber', {
+    p_conta_receber_id: contaReceberId,
+  })
+  if (error) throw new Error(error.message ?? 'Erro ao cancelar faturamento.')
 }
 
 export { isVencida }

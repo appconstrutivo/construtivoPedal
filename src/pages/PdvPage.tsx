@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { listarClientes, type ClienteComRelacoes } from '../services/clientes.service'
 import {
+  formatMoneyInput,
+  maskMoneyInput,
+  parseMoneyInput,
+} from '../lib/money'
+import {
   MSG_QUANTIDADE_INTEIRA,
   filtrarInputQuantidadeInteira,
   parseQuantidadeInteira,
@@ -12,6 +17,7 @@ import {
   limparPrefillPdv,
 } from '../services/orcamento.service'
 import { listarItensEstoque, type EstoqueItemComLocal } from '../services/estoque.service'
+import { dataExibicaoVenda } from '../services/lancamentos.service'
 import {
   finalizarVendaPdv,
   labelPagamento,
@@ -60,14 +66,6 @@ function formatShortTime(iso: string) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(iso))
-}
-
-function parseMoney(s: string): number | null {
-  const t = s.trim().replace(/\s/g, '').replace(',', '.')
-  if (!t) return null
-  const n = Number(t)
-  if (!Number.isFinite(n) || n < 0) return null
-  return n
 }
 
 function IconHistorico() {
@@ -215,13 +213,13 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
     [carrinho],
   )
 
-  const desconto = parseMoney(descontoStr) ?? 0
+  const desconto = parseMoneyInput(descontoStr) ?? 0
   const total = Math.max(subtotal - desconto, 0)
 
   const somaPagamentos = useMemo(
     () =>
       pagamentos.reduce((acc, p) => {
-        const v = parseMoney(p.valorStr)
+        const v = parseMoneyInput(p.valorStr)
         return acc + (v ?? 0)
       }, 0),
     [pagamentos],
@@ -263,9 +261,9 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
     if (!linha) return
     const outros = pagamentos
       .filter((p) => p.id !== id)
-      .reduce((acc, p) => acc + (parseMoney(p.valorStr) ?? 0), 0)
+      .reduce((acc, p) => acc + (parseMoneyInput(p.valorStr) ?? 0), 0)
     const falta = Math.max(total - outros, 0)
-    atualizarPagamento(id, { valorStr: falta > 0 ? String(falta).replace('.', ',') : '0' })
+    atualizarPagamento(id, { valorStr: falta > 0 ? formatMoneyInput(falta) : '' })
   }
 
   function adicionarProduto(item: EstoqueItemComLocal) {
@@ -354,7 +352,7 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
       return
     }
     const linhasPag = pagamentos
-      .map((p) => ({ forma: p.forma, valor: parseMoney(p.valorStr) ?? 0 }))
+      .map((p) => ({ forma: p.forma, valor: parseMoneyInput(p.valorStr) ?? 0 }))
       .filter((p) => p.valor > 0)
     if (linhasPag.length === 0) {
       setErro('Informe o valor em ao menos uma forma de pagamento.')
@@ -576,11 +574,17 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
                       <span className="pdv-field__lbl">Preço</span>
                       <input
                         type="text"
-                        inputMode="decimal"
+                        inputMode="numeric"
                         className="pdv-input pdv-input--sm"
-                        value={linha.precoUnitario}
+                        placeholder="0,00"
+                        value={formatMoneyInput(linha.precoUnitario)}
                         onChange={(e) => {
-                          const n = parseMoney(e.target.value)
+                          const digits = e.target.value.replace(/\D/g, '')
+                          if (!digits) {
+                            atualizarLinha(linha.key, { precoUnitario: 0 })
+                            return
+                          }
+                          const n = parseMoneyInput(e.target.value)
                           if (n != null) atualizarLinha(linha.key, { precoUnitario: n })
                         }}
                       />
@@ -726,11 +730,13 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
                         </select>
                         <input
                           type="text"
-                          inputMode="decimal"
+                          inputMode="numeric"
                           className="pdv-input pdv-pay-line__valor"
                           placeholder="0,00"
                           value={p.valorStr}
-                          onChange={(e) => atualizarPagamento(p.id, { valorStr: e.target.value })}
+                          onChange={(e) =>
+                            atualizarPagamento(p.id, { valorStr: maskMoneyInput(e.target.value) })
+                          }
                         />
                         <button
                           type="button"
@@ -770,11 +776,11 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
                   <span className="pdv-field__lbl">Desconto (R$)</span>
                   <input
                     type="text"
-                    inputMode="decimal"
+                    inputMode="numeric"
                     className="pdv-input"
                     placeholder="0,00"
                     value={descontoStr}
-                    onChange={(e) => setDescontoStr(e.target.value)}
+                    onChange={(e) => setDescontoStr(maskMoneyInput(e.target.value))}
                   />
                 </label>
 
@@ -846,7 +852,7 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
                     <li key={v.id} className="pdv-recent-item">
                       <span className="pdv-recent-item__num">#{v.numero}</span>
                       <span className="pdv-recent-item__meta">
-                        {formatShortTime(v.created_at)}
+                        {formatShortTime(dataExibicaoVenda(v))}
                         {v.clienteNome ? ` · ${v.clienteNome}` : ''}
                       </span>
                       <span className="pdv-recent-item__total">{formatBRL(Number(v.total))}</span>

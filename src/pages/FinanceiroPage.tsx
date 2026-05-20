@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { FinCaixasTab } from '../components/financeiro/FinCaixasTab'
 import { FinContasPagarTab } from '../components/financeiro/FinContasPagarTab'
+import { FinContasReceberTab } from '../components/financeiro/FinContasReceberTab'
 import { obterResumoVendasHoje } from '../services/pdv.service'
-import { obterResumoContasPagar } from '../services/financeiro.service'
+import { obterResumoContasPagar, obterResumoContasReceber } from '../services/financeiro.service'
 import {
   obterRelatorioConsolidado,
   type PeriodoRelatorio,
@@ -13,6 +14,8 @@ type FinanceiroPageProps = {
   companyId: string
   activeStoreId: string
   storeName?: string
+  /** Atualiza badge do menu quando contas a pagar mudam (pagar, criar, cancelar). */
+  onContasPagarChange?: () => void
 }
 
 type AbaFinanceiro = 'visao' | 'fluxo' | 'receber' | 'pagar' | 'contas'
@@ -87,10 +90,12 @@ function AbaVisaoGeral({
   vendasHoje,
   dados,
   resumoPagar,
+  resumoReceber,
 }: {
   vendasHoje: { quantidade: number; total: number } | null
   dados: RelatorioConsolidado & { intervalo: { label: string } }
   resumoPagar: { pendentes: number; vencidas: number; totalPendente: number } | null
+  resumoReceber: { pendentes: number; totalPendente: number; recebidoMesOs: number } | null
 }) {
   const { vendas } = dados
 
@@ -117,6 +122,16 @@ function AbaVisaoGeral({
           hint={
             resumoPagar
               ? `${resumoPagar.pendentes} conta(s)${resumoPagar.vencidas > 0 ? ` · ${resumoPagar.vencidas} vencida(s)` : ''}`
+              : undefined
+          }
+        />
+        <KpiCard
+          tom="teal"
+          label="A receber (pendente)"
+          value={resumoReceber ? formatBRL(resumoReceber.totalPendente) : '—'}
+          hint={
+            resumoReceber
+              ? `${resumoReceber.pendentes} título(s) · ${formatBRL(resumoReceber.recebidoMesOs)} OS no mês`
               : undefined
           }
         />
@@ -208,7 +223,12 @@ function AbaFluxo({ dados }: { dados: RelatorioConsolidado }) {
   )
 }
 
-export function FinanceiroPage({ companyId, activeStoreId, storeName }: FinanceiroPageProps) {
+export function FinanceiroPage({
+  companyId,
+  activeStoreId,
+  storeName,
+  onContasPagarChange,
+}: FinanceiroPageProps) {
   const [aba, setAba] = useState<AbaFinanceiro>('visao')
   const [periodo, setPeriodo] = useState<PeriodoRelatorio>('mes')
   const [dados, setDados] = useState<(RelatorioConsolidado & { intervalo: { label: string } }) | null>(
@@ -219,6 +239,11 @@ export function FinanceiroPage({ companyId, activeStoreId, storeName }: Financei
     pendentes: number
     vencidas: number
     totalPendente: number
+  } | null>(null)
+  const [resumoReceber, setResumoReceber] = useState<{
+    pendentes: number
+    totalPendente: number
+    recebidoMesOs: number
   } | null>(null)
   const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
@@ -231,25 +256,29 @@ export function FinanceiroPage({ companyId, activeStoreId, storeName }: Financei
       setDados(null)
       setVendasHoje(null)
       setResumoPagar(null)
+      setResumoReceber(null)
       setLoading(false)
       return
     }
     setLoading(true)
     setErro(null)
     try {
-      const [relatorio, hoje, resumo] = await Promise.all([
+      const [relatorio, hoje, resumo, resumoRec] = await Promise.all([
         obterRelatorioConsolidado(companyId, activeStoreId, periodo),
         obterResumoVendasHoje(companyId, activeStoreId),
         obterResumoContasPagar(companyId, activeStoreId),
+        obterResumoContasReceber(companyId, activeStoreId),
       ])
       setDados(relatorio)
       setVendasHoje(hoje)
       setResumoPagar(resumo)
+      setResumoReceber(resumoRec)
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao carregar dados financeiros.')
       setDados(null)
       setVendasHoje(null)
       setResumoPagar(null)
+      setResumoReceber(null)
     } finally {
       setLoading(false)
     }
@@ -330,7 +359,13 @@ export function FinanceiroPage({ companyId, activeStoreId, storeName }: Financei
           </p>
         </section>
       ) : aba === 'pagar' ? (
-        <FinContasPagarTab companyId={companyId} storeId={activeStoreId} />
+        <FinContasPagarTab
+          companyId={companyId}
+          storeId={activeStoreId}
+          onListaChange={onContasPagarChange}
+        />
+      ) : aba === 'receber' ? (
+        <FinContasReceberTab companyId={companyId} storeId={activeStoreId} />
       ) : aba === 'contas' ? (
         <FinCaixasTab companyId={companyId} storeId={activeStoreId} />
       ) : loading && !dados ? (
@@ -341,15 +376,14 @@ export function FinanceiroPage({ companyId, activeStoreId, storeName }: Financei
       ) : dados ? (
         <div className={loading ? 'rl-content rl-content--loading' : 'rl-content'}>
           {aba === 'visao' && (
-            <AbaVisaoGeral vendasHoje={vendasHoje} dados={dados} resumoPagar={resumoPagar} />
-          )}
-          {aba === 'fluxo' && <AbaFluxo dados={dados} />}
-          {aba === 'receber' && (
-            <PainelEmBreve
-              titulo="Contas a receber"
-              descricao="Parcelas de vendas, OS faturadas e recebimentos de clientes, com baixa automática ao receber no caixa."
+            <AbaVisaoGeral
+              vendasHoje={vendasHoje}
+              dados={dados}
+              resumoPagar={resumoPagar}
+              resumoReceber={resumoReceber}
             />
           )}
+          {aba === 'fluxo' && <AbaFluxo dados={dados} />}
         </div>
       ) : null}
     </div>

@@ -206,7 +206,7 @@ export function DashboardHome({ activeNav, companyId, activeStoreId, onNavigate 
       pdv: { title: 'PDV', hint: 'Balcão rápido com vínculo à bike.' },
       orcamentos: { title: 'Orçamentos', hint: 'Propostas comerciais para peças e serviços.' },
       financeiro: { title: 'Financeiro', hint: 'Fluxo de caixa, contas e gestão da empresa.' },
-      lancamentos: { title: 'Lançamentos', hint: '2ª via de recibo e cancelamento de vendas.' },
+      lancamentos: { title: 'Lançamentos', hint: '2ª via, ajuste de data e cancelamento de vendas.' },
       estoque: { title: 'Estoque', hint: 'Peças, bikes e movimentações por loja.' },
       clientes: { title: 'Clientes', hint: 'CRM, bikes e revisões num só lugar.' },
       relatorios: { title: 'Relatórios', hint: 'Vendas, oficina, estoque e clientes por loja.' },

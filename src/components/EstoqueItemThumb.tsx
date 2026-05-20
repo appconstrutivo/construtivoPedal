@@ -19,8 +19,8 @@ async function resolverUrlImagem(ref: string): Promise<string | null> {
 type EstoqueItemThumbProps = {
   imagemUrl?: string | null
   alt: string
-  /** card = grade do PDV; cart = linha do carrinho */
-  variant?: 'card' | 'cart'
+  /** card = grade do PDV; cart = linha do carrinho; picker = busca/combobox */
+  variant?: 'card' | 'cart' | 'picker'
   className?: string
 }
 

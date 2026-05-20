@@ -192,6 +192,8 @@ type AppShellProps = {
   children: ReactNode
   activeNav?: NavKey
   onNavigate?: (key: NavKey) => void
+  /** Contadores exibidos no menu (ex.: aprovações de orçamento não vistas). */
+  navBadges?: Partial<Record<NavKey, number>>
   companyName?: string
   userEmail?: string
   onSignOut?: () => Promise<void> | void
@@ -207,6 +209,7 @@ export function AppShell({
   children,
   activeNav: activeNavControlled,
   onNavigate,
+  navBadges,
   companyName = 'Sua bicicletaria',
   userEmail,
   onSignOut,
@@ -389,20 +392,28 @@ export function AppShell({
       <div className="cp-body">
         <aside className="cp-sidebar" aria-label="Navegação principal">
           <nav className="cp-sidebar__nav">
-            {NAV_ITEMS.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                className={
-                  item.key === activeNav ? 'cp-navlink cp-navlink--active' : 'cp-navlink'
-                }
-                onClick={() => setNav(item.key)}
-                aria-current={item.key === activeNav ? 'page' : undefined}
-              >
-                <span className="cp-navlink__icon">{item.icon}</span>
-                <span className="cp-navlink__label">{item.label}</span>
-              </button>
-            ))}
+            {NAV_ITEMS.map((item) => {
+              const badge = navBadges?.[item.key] ?? 0
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  className={
+                    item.key === activeNav ? 'cp-navlink cp-navlink--active' : 'cp-navlink'
+                  }
+                  onClick={() => setNav(item.key)}
+                  aria-current={item.key === activeNav ? 'page' : undefined}
+                >
+                  <span className="cp-navlink__icon">{item.icon}</span>
+                  <span className="cp-navlink__label">{item.label}</span>
+                  {badge > 0 && (
+                    <span className="cp-navlink__badge" aria-label={`${badge} pendente(s)`}>
+                      {badge > 99 ? '99+' : badge}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
           </nav>
         </aside>
 
@@ -412,20 +423,30 @@ export function AppShell({
       </div>
 
       <nav className="cp-bottomnav" aria-label="Navegação rápida">
-        {NAV_ITEMS.map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            className={
-              item.key === activeNav ? 'cp-bottomnav__btn cp-bottomnav__btn--active' : 'cp-bottomnav__btn'
-            }
-            onClick={() => setNav(item.key)}
-            aria-current={item.key === activeNav ? 'page' : undefined}
-          >
-            <span className="cp-bottomnav__icon">{item.icon}</span>
-            <span className="cp-bottomnav__label">{item.label}</span>
-          </button>
-        ))}
+        {NAV_ITEMS.map((item) => {
+          const badge = navBadges?.[item.key] ?? 0
+          return (
+            <button
+              key={item.key}
+              type="button"
+              className={
+                item.key === activeNav ? 'cp-bottomnav__btn cp-bottomnav__btn--active' : 'cp-bottomnav__btn'
+              }
+              onClick={() => setNav(item.key)}
+              aria-current={item.key === activeNav ? 'page' : undefined}
+            >
+              <span className="cp-bottomnav__icon">
+                {item.icon}
+                {badge > 0 && (
+                  <span className="cp-bottomnav__badge" aria-hidden>
+                    {badge > 9 ? '9+' : badge}
+                  </span>
+                )}
+              </span>
+              <span className="cp-bottomnav__label">{item.label}</span>
+            </button>
+          )
+        })}
       </nav>
     </div>
   )

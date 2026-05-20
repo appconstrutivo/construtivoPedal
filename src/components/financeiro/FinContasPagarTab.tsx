@@ -24,6 +24,7 @@ import {
 type FinContasPagarTabProps = {
   companyId: string
   storeId: string
+  onListaChange?: () => void
 }
 
 const FILTROS: { key: FiltroContaPagar; label: string }[] = [
@@ -72,7 +73,7 @@ function parseValorInput(raw: string) {
   return Number.isFinite(n) && n > 0 ? n : null
 }
 
-export function FinContasPagarTab({ companyId, storeId }: FinContasPagarTabProps) {
+export function FinContasPagarTab({ companyId, storeId, onListaChange }: FinContasPagarTabProps) {
   const [filtro, setFiltro] = useState<FiltroContaPagar>('pendentes')
   const [lista, setLista] = useState<ContaPagar[]>([])
   const [resumo, setResumo] = useState<ResumoContasPagar | null>(null)
@@ -119,12 +120,13 @@ export function FinContasPagarTab({ companyId, storeId }: FinContasPagarTabProps
       setContas(contasFin.map((c) => ({ id: c.id, nome: c.nome })))
       setFornecedores(forns.map((f) => ({ id: f.id, nome: f.nome })))
       if (!contaPagarId && contasFin[0]) setContaPagarId(contasFin[0].id)
+      onListaChange?.()
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao carregar contas a pagar.')
     } finally {
       setLoading(false)
     }
-  }, [companyId, storeId, filtro])
+  }, [companyId, storeId, filtro, onListaChange])
 
   useEffect(() => {
     void recarregar()

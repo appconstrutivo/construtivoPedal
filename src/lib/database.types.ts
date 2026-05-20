@@ -382,6 +382,8 @@ export type Database = {
           token_aprovacao: string | null
           convertido_os_id: string | null
           convertido_venda_id: string | null
+          aprovado_cliente_em: string | null
+          aprovacao_vista_em: string | null
           created_at: string
           updated_at: string
         }
@@ -400,6 +402,8 @@ export type Database = {
           token_aprovacao?: string | null
           convertido_os_id?: string | null
           convertido_venda_id?: string | null
+          aprovado_cliente_em?: string | null
+          aprovacao_vista_em?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -417,6 +421,8 @@ export type Database = {
           token_aprovacao?: string | null
           convertido_os_id?: string | null
           convertido_venda_id?: string | null
+          aprovado_cliente_em?: string | null
+          aprovacao_vista_em?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -652,6 +658,7 @@ export type Database = {
           id: string
           numero: number
           observacao: string | null
+          realizada_em: string
           status: string
           store_id: string
           subtotal: number
@@ -668,6 +675,7 @@ export type Database = {
           id?: string
           numero?: number
           observacao?: string | null
+          realizada_em?: string
           status?: string
           store_id: string
           subtotal?: number
@@ -681,6 +689,7 @@ export type Database = {
           forma_pagamento?: string
           numero?: number
           observacao?: string | null
+          realizada_em?: string
           status?: string
           store_id?: string
           subtotal?: number

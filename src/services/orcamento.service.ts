@@ -32,8 +32,20 @@ export type OrcamentoRow = {
   token_aprovacao: string | null
   convertido_os_id: string | null
   convertido_venda_id: string | null
+  aprovado_cliente_em: string | null
+  aprovacao_vista_em: string | null
   created_at: string
   updated_at: string
+}
+
+export function orcamentoAprovacaoNaoVista(
+  row: Pick<OrcamentoRow, 'status' | 'aprovado_cliente_em' | 'aprovacao_vista_em'>,
+): boolean {
+  return (
+    row.status === 'aprovado' &&
+    row.aprovado_cliente_em != null &&
+    row.aprovacao_vista_em == null
+  )
 }
 
 export type OrcamentoItemRow = {
@@ -54,6 +66,7 @@ export type OrcamentoLista = OrcamentoRow & {
   bikeLabel: string | null
   totalItens: number
   subtotal: number
+  aprovacaoNaoVista: boolean
 }
 
 export type OrcamentoDetalhe = OrcamentoRow & {
@@ -140,8 +153,9 @@ export async function listarOrcamentos(
   return ((data ?? []) as Raw[]).map((row) => {
     const itens = row.orcamento_itens ?? []
     const subtotal = calcularSubtotalOrcamento(itens)
+    const base = row as OrcamentoRow
     return {
-      ...row,
+      ...base,
       clienteNome: nomeClienteOrcamento(row.clientes?.nome),
       bikeLabel: bikeLabel(
         row.bicicletas
@@ -150,8 +164,35 @@ export async function listarOrcamentos(
       ),
       totalItens: itens.length,
       subtotal,
+      aprovacaoNaoVista: orcamentoAprovacaoNaoVista(base),
     }
   })
+}
+
+export async function contarOrcamentosAprovacaoNaoVista(
+  companyId: string,
+  storeId: string,
+): Promise<number> {
+  if (!storeId) return 0
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any).rpc('contar_orcamentos_aprovacao_nao_vista', {
+    p_company_id: companyId,
+    p_store_id: storeId,
+  })
+  if (error) throw new Error(error.message ?? 'Erro ao contar aprovações.')
+  return Number(data ?? 0)
+}
+
+export async function marcarAprovacaoOrcamentoVista(orcamentoId: string): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from('orcamentos')
+    .update({ aprovacao_vista_em: new Date().toISOString() })
+    .eq('id', orcamentoId)
+    .eq('status', 'aprovado')
+    .not('aprovado_cliente_em', 'is', null)
+    .is('aprovacao_vista_em', null)
+  if (error) throw new Error(error.message ?? 'Erro ao marcar aprovação como vista.')
 }
 
 export async function listarOrcamentosPorCliente(
@@ -178,8 +219,9 @@ export async function listarOrcamentosPorCliente(
 
   return ((data ?? []) as Raw[]).map((row) => {
     const itens = row.orcamento_itens ?? []
+    const base = row as OrcamentoRow
     return {
-      ...row,
+      ...base,
       clienteNome: nomeClienteOrcamento(row.clientes?.nome),
       bikeLabel: bikeLabel(
         row.bicicletas
@@ -188,6 +230,7 @@ export async function listarOrcamentosPorCliente(
       ),
       totalItens: itens.length,
       subtotal: calcularSubtotalOrcamento(itens),
+      aprovacaoNaoVista: orcamentoAprovacaoNaoVista(base),
     }
   })
 }

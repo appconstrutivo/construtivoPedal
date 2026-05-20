@@ -25,9 +25,11 @@ import {
   excluirOrcamentoItem,
   labelStatusOrcamento,
   listarOrcamentos,
+  marcarAprovacaoOrcamentoVista,
   marcarOrcamentoAprovado,
   marcarOrcamentoRecusado,
   montarTextoWhatsappOrcamento,
+  orcamentoAprovacaoNaoVista,
   ORCAMENTO_CLIENTE_BALCAO,
   urlAprovacaoOrcamento,
   type OrcamentoDetalhe,
@@ -42,6 +44,7 @@ type OrcamentosPageProps = {
   companyName: string
   onNavigatePdv: () => void
   onNavigateOficina: (osId?: string) => void
+  onAprovacoesPendentesChange?: () => void
 }
 
 type FiltroLista = 'todos' | 'rascunho' | 'enviado' | 'aprovado' | 'outros'
@@ -99,6 +102,7 @@ export function OrcamentosPage({
   companyName,
   onNavigatePdv,
   onNavigateOficina,
+  onAprovacoesPendentesChange,
 }: OrcamentosPageProps) {
   const semLoja = !activeStoreId
   const [lista, setLista] = useState<OrcamentoLista[]>([])
@@ -169,9 +173,34 @@ export function OrcamentosPage({
   }, [carregarLista, carregarContexto, activeStoreId])
 
   useEffect(() => {
+    if (!activeStoreId) return
+    const intervalo = window.setInterval(() => void carregarLista(), 45_000)
+    return () => window.clearInterval(intervalo)
+  }, [activeStoreId, carregarLista])
+
+  useEffect(() => {
     if (!selectedId) { setDetalhe(null); return }
     void recarregarDetalhe(selectedId)
   }, [selectedId, recarregarDetalhe])
+
+  useEffect(() => {
+    if (!detalhe || !orcamentoAprovacaoNaoVista(detalhe)) return
+    void marcarAprovacaoOrcamentoVista(detalhe.id)
+      .then(() => {
+        onAprovacoesPendentesChange?.()
+        return carregarLista()
+      })
+      .then(() => recarregarDetalhe(detalhe.id))
+      .catch(() => {})
+  }, [
+    detalhe?.id,
+    detalhe?.status,
+    detalhe?.aprovado_cliente_em,
+    detalhe?.aprovacao_vista_em,
+    onAprovacoesPendentesChange,
+    carregarLista,
+    recarregarDetalhe,
+  ])
 
   const listaFiltrada = useMemo(() => {
     let rows = lista
@@ -423,9 +452,25 @@ export function OrcamentosPage({
             {loadingLista ? <p className="orc-muted">Carregando…</p>
               : !listaFiltrada.length ? <p className="orc-muted">Nenhum orçamento neste filtro.</p>
               : listaFiltrada.map((r) => (
-                <button key={r.id} type="button" role="listitem"
-                  className={selectedId === r.id ? 'orc-list-item orc-list-item--active' : 'orc-list-item'}
-                  onClick={() => setSelectedId(r.id)}>
+                <button
+                  key={r.id}
+                  type="button"
+                  role="listitem"
+                  className={[
+                    'orc-list-item',
+                    selectedId === r.id ? 'orc-list-item--active' : '',
+                    r.aprovacaoNaoVista ? 'orc-list-item--notify' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  onClick={() => setSelectedId(r.id)}
+                >
+                  {r.aprovacaoNaoVista && (
+                    <span
+                      className="orc-list-item__dot"
+                      aria-label="Cliente aprovou — clique para ver"
+                    />
+                  )}
                   <div className="orc-list-item__top">
                     <span className="orc-list-item__num">#{r.numero}</span>
                     <span className={statusChipClass(r.status)}>{labelStatusOrcamento(r.status)}</span>

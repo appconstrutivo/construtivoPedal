@@ -1,0 +1,102 @@
+create or replace function public.financeiro_registrar_recebimento(
+  p_conta_receber_id uuid,
+  p_conta_financeira_id uuid,
+  p_forma_pagamento text,
+  p_data_recebimento date default current_date
+)
+returns table (venda_id uuid, venda_numero integer)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user uuid := auth.uid();
+  v_cr public.financeiro_contas_receber%rowtype;
+  v_conta public.financeiro_contas%rowtype;
+  v_os public.ordens_servico%rowtype;
+  v_mov_id uuid;
+  v_venda_id uuid;
+  v_numero integer;
+  v_item public.os_itens%rowtype;
+  v_forma text;
+begin
+  if v_user is null then
+    raise exception 'Não autenticado.';
+  end if;
+
+  v_forma := coalesce(nullif(trim(p_forma_pagamento), ''), 'dinheiro');
+  if v_forma not in ('dinheiro', 'pix', 'credito', 'debito', 'outro') then
+    raise exception 'Forma de pagamento inválida.';
+  end if;
+
+  select * into v_cr from public.financeiro_contas_receber where id = p_conta_receber_id for update;
+  if not found then raise exception 'Conta a receber não encontrada.'; end if;
+  if not public.is_member_of_company(v_cr.company_id) then raise exception 'Sem permissão para esta empresa.'; end if;
+  if v_cr.status <> 'pendente' then raise exception 'Somente contas pendentes podem ser recebidas.'; end if;
+
+  select * into v_conta from public.financeiro_contas
+  where id = p_conta_financeira_id and company_id = v_cr.company_id and store_id = v_cr.store_id and ativo = true for update;
+  if not found then raise exception 'Conta financeira não encontrada.'; end if;
+
+  if v_cr.os_id is not null then
+    select * into v_os from public.ordens_servico where id = v_cr.os_id;
+    if not found then raise exception 'OS vinculada não encontrada.'; end if;
+  end if;
+
+  insert into public.financeiro_movimentacoes (company_id, store_id, conta_id, tipo, valor, descricao, origem, origem_id)
+  values (v_cr.company_id, v_cr.store_id, p_conta_financeira_id, 'entrada', v_cr.valor, 'Recebimento: ' || v_cr.descricao, 'conta_receber', p_conta_receber_id)
+  returning id into v_mov_id;
+
+  update public.financeiro_contas set saldo_atual = saldo_atual + v_cr.valor where id = p_conta_financeira_id;
+
+  if v_cr.os_id is not null then
+    insert into public.vendas (company_id, store_id, cliente_id, bicicleta_id, os_id, status, forma_pagamento, subtotal, desconto, total, observacao, vendedor_id, realizada_em)
+    values (v_cr.company_id, v_cr.store_id, v_os.cliente_id, v_os.bicicleta_id, v_cr.os_id, 'finalizada', v_forma, v_cr.valor, 0, v_cr.valor, format('Faturamento OS #%s', v_os.numero), v_user, coalesce(p_data_recebimento, current_date)::timestamptz)
+    returning vendas.id, vendas.numero into v_venda_id, v_numero;
+
+    insert into public.venda_pagamentos (company_id, venda_id, forma_pagamento, valor)
+    values (v_cr.company_id, v_venda_id, v_forma, v_cr.valor);
+
+    for v_item in select * from public.os_itens where os_id = v_cr.os_id order by created_at loop
+      insert into public.venda_itens (company_id, venda_id, estoque_item_id, descricao, quantidade, preco_unitario, movimentacao_id)
+      values (v_cr.company_id, v_venda_id, v_item.estoque_item_id, v_item.descricao, v_item.quantidade, v_item.preco_unitario, null);
+    end loop;
+
+    if v_os.cliente_id is not null then
+      insert into public.atividades (company_id, cliente_id, bicicleta_id, tipo, descricao, valor, data_registro)
+      values (v_cr.company_id, v_os.cliente_id, v_os.bicicleta_id, 'venda', format('OS #%s recebida — venda #%s', v_os.numero, v_numero), v_cr.valor, coalesce(p_data_recebimento, current_date));
+    end if;
+  end if;
+
+  update public.financeiro_contas_receber
+  set status = 'recebido', forma_pagamento = v_forma, conta_financeira_id = p_conta_financeira_id,
+      data_recebimento = coalesce(p_data_recebimento, current_date), movimentacao_id = v_mov_id, venda_id = v_venda_id
+  where id = p_conta_receber_id;
+
+  return query select v_venda_id, v_numero;
+end;
+$$;
+
+grant execute on function public.financeiro_registrar_recebimento(uuid, uuid, text, date) to authenticated;
+
+create or replace function public.financeiro_cancelar_conta_receber(p_conta_receber_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_cr public.financeiro_contas_receber%rowtype;
+begin
+  select * into v_cr from public.financeiro_contas_receber where id = p_conta_receber_id for update;
+  if not found then raise exception 'Conta a receber não encontrada.'; end if;
+  if not public.is_member_of_company(v_cr.company_id) then raise exception 'Sem permissão.'; end if;
+  if v_cr.status <> 'pendente' then raise exception 'Somente contas pendentes podem ser canceladas.'; end if;
+  update public.financeiro_contas_receber set status = 'cancelado' where id = p_conta_receber_id;
+end;
+$$;
+
+grant execute on function public.financeiro_cancelar_conta_receber(uuid) to authenticated;
+
+alter table public.financeiro_contas_receber enable row level security;
+drop policy if exists "financeiro_contas_receber_select" on public.financeiro_contas_receber;
+create policy "financeiro_contas_receber_select" on public.financeiro_contas_receber for select to authenticated using (public.is_member_of_company(company_id));
+drop policy if exists "financeiro_contas_receber_insert" on public.financeiro_contas_receber;
+create policy "financeiro_contas_receber_insert" on public.financeiro_contas_receber for insert to authenticated with check (public.is_member_of_company(company_id));
+drop policy if exists "financeiro_contas_receber_update" on public.financeiro_contas_receber;
+create policy "financeiro_contas_receber_update" on public.financeiro_contas_receber for update to authenticated using (public.is_member_of_company(company_id)) with check (public.is_member_of_company(company_id));

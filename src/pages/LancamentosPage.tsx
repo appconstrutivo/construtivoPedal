@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { imprimirReciboVenda } from '../components/VendaReciboPrint'
 import {
+  ajustarDataVenda,
   cancelarVenda,
+  dataExibicaoVenda,
   resumoPagamentosVenda,
   labelStatusVenda,
   listarVendasLancamentos,
@@ -37,6 +39,12 @@ function formatShortDate(iso: string) {
   }).format(new Date(iso))
 }
 
+function toDatetimeLocalValue(iso: string) {
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 export function LancamentosPage({ companyId, companyName, activeStoreId }: LancamentosPageProps) {
   const semLoja = !activeStoreId
 
@@ -47,6 +55,9 @@ export function LancamentosPage({ companyId, companyName, activeStoreId }: Lanca
   const [erro, setErro] = useState<string | null>(null)
   const [sucesso, setSucesso] = useState<string | null>(null)
   const [processandoId, setProcessandoId] = useState<string | null>(null)
+  const [vendaDataModal, setVendaDataModal] = useState<VendaLancamentoLista | null>(null)
+  const [dataVendaLocal, setDataVendaLocal] = useState('')
+  const [salvandoData, setSalvandoData] = useState(false)
 
   const recarregar = useCallback(async () => {
     if (!activeStoreId) {
@@ -98,6 +109,38 @@ export function LancamentosPage({ companyId, companyName, activeStoreId }: Lanca
     }
   }
 
+  function abrirAjusteData(v: VendaLancamentoLista) {
+    if (semLoja) return
+    setVendaDataModal(v)
+    setDataVendaLocal(toDatetimeLocalValue(dataExibicaoVenda(v)))
+    setErro(null)
+  }
+
+  function fecharAjusteData() {
+    if (salvandoData) return
+    setVendaDataModal(null)
+    setDataVendaLocal('')
+  }
+
+  async function handleSalvarData() {
+    if (!vendaDataModal || semLoja || !dataVendaLocal) return
+    setSalvandoData(true)
+    setErro(null)
+    setSucesso(null)
+    try {
+      await ajustarDataVenda(companyId, activeStoreId, vendaDataModal.id, dataVendaLocal)
+      const num = vendaDataModal.numero
+      setVendaDataModal(null)
+      setDataVendaLocal('')
+      setSucesso(`Data da venda #${num} atualizada.`)
+      await recarregar()
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Erro ao ajustar data.')
+    } finally {
+      setSalvandoData(false)
+    }
+  }
+
   async function handleCancelar(v: VendaLancamentoLista) {
     if (semLoja || v.status !== 'finalizada') return
     const ok = window.confirm(
@@ -124,7 +167,9 @@ export function LancamentosPage({ companyId, companyName, activeStoreId }: Lanca
       <header className="lc-head">
         <div>
           <h1 className="lc-head__title">Lançamentos</h1>
-          <p className="lc-head__sub">Recibo de venda e cancelamento de vendas do balcão.</p>
+          <p className="lc-head__sub">
+            Recibo de venda, ajuste de data e cancelamento de vendas do balcão.
+          </p>
         </div>
       </header>
 
@@ -188,7 +233,7 @@ export function LancamentosPage({ companyId, companyName, activeStoreId }: Lanca
                   <div className="lc-row__main">
                     <span className="lc-row__num">#{v.numero}</span>
                     <span className="lc-row__meta">
-                      {formatShortDate(v.created_at)}
+                      {formatShortDate(dataExibicaoVenda(v))}
                       {v.clienteNome ? ` · ${v.clienteNome}` : ' · Balcão'}
                       {' · '}
                       {resumoPagamentosVenda(v.forma_pagamento, v.pagamentos)}
@@ -202,6 +247,15 @@ export function LancamentosPage({ companyId, companyName, activeStoreId }: Lanca
                     <span className="lc-row__total">{formatBRL(Number(v.total))}</span>
                   </div>
                   <div className="lc-row__actions">
+                    <button
+                      type="button"
+                      className="lc-btn lc-btn--ghost"
+                      disabled={semLoja || busy}
+                      title="Corrigir data/hora da venda"
+                      onClick={() => abrirAjusteData(v)}
+                    >
+                      Data
+                    </button>
                     <button
                       type="button"
                       className="lc-btn lc-btn--ghost"
@@ -226,6 +280,71 @@ export function LancamentosPage({ companyId, companyName, activeStoreId }: Lanca
           </ul>
         )}
       </section>
+
+      {vendaDataModal && (
+        <div
+          className="st-modal-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !salvandoData) fecharAjusteData()
+          }}
+        >
+          <div
+            className="st-modal lc-data-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="lc-data-modal-title"
+          >
+            <div className="st-modal__head">
+              <h2 id="lc-data-modal-title" className="st-modal__title">
+                Ajustar data da venda #{vendaDataModal.numero}
+              </h2>
+              <button
+                type="button"
+                className="st-modal__close"
+                onClick={fecharAjusteData}
+                disabled={salvandoData}
+                aria-label="Fechar"
+              >
+                ×
+              </button>
+            </div>
+            <div className="lc-data-modal__body">
+              <p className="lc-data-modal__hint">
+                Use quando a venda foi registrada em outro dia. Relatórios, recibo e resumo do PDV
+                passam a considerar esta data.
+              </p>
+              <label className="lc-data-field">
+                <span className="lc-data-field__lbl">Data e hora da venda</span>
+                <input
+                  type="datetime-local"
+                  className="lc-input-datetime"
+                  value={dataVendaLocal}
+                  onChange={(e) => setDataVendaLocal(e.target.value)}
+                  disabled={salvandoData}
+                />
+              </label>
+              <div className="lc-data-modal__actions">
+                <button
+                  type="button"
+                  className="lc-btn lc-btn--ghost"
+                  onClick={fecharAjusteData}
+                  disabled={salvandoData}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="lc-btn lc-btn--primary"
+                  disabled={salvandoData || !dataVendaLocal}
+                  onClick={() => void handleSalvarData()}
+                >
+                  {salvandoData ? 'Salvando…' : 'Salvar data'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

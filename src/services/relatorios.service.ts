@@ -59,6 +59,10 @@ export function intervaloPeriodo(preset: PeriodoRelatorio): IntervaloRelatorio {
 export type RelatorioVendas = {
   quantidade: number
   faturamento: number
+  faturamentoBalcao: number
+  faturamentoOficina: number
+  quantidadeBalcao: number
+  quantidadeOficina: number
   ticketMedio: number
   descontos: number
   porFormaPagamento: Array<{ forma: FormaPagamento; label: string; quantidade: number; total: number }>
@@ -71,7 +75,9 @@ export type RelatorioOficina = {
   criadasNoPeriodo: number
   entreguesNoPeriodo: number
   canceladasNoPeriodo: number
-  faturamentoItens: number
+  recebidasNoPeriodo: number
+  faturamentoItensCriadas: number
+  faturamentoRecebido: number
 }
 
 export type RelatorioEstoque = {
@@ -112,6 +118,10 @@ export async function obterRelatorioVendas(
   const vazio: RelatorioVendas = {
     quantidade: 0,
     faturamento: 0,
+    faturamentoBalcao: 0,
+    faturamentoOficina: 0,
+    quantidadeBalcao: 0,
+    quantidadeOficina: 0,
     ticketMedio: 0,
     descontos: 0,
     porFormaPagamento: FORMAS_PAGAMENTO.map((forma) => ({
@@ -127,16 +137,22 @@ export async function obterRelatorioVendas(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: vendas, error } = await (supabase as any)
     .from('vendas')
-    .select('id, total, desconto, forma_pagamento')
+    .select('id, total, desconto, forma_pagamento, os_id')
     .eq('company_id', companyId)
     .eq('store_id', storeId)
     .eq('status', 'finalizada')
-    .gte('created_at', intervalo.desde)
-    .lte('created_at', intervalo.ate)
+    .gte('realizada_em', intervalo.desde)
+    .lte('realizada_em', intervalo.ate)
 
   if (error) throw new Error((error as { message?: string }).message ?? 'Erro ao carregar vendas.')
 
-  type VendaRaw = { id: string; total: number; desconto: number; forma_pagamento: string }
+  type VendaRaw = {
+    id: string
+    total: number
+    desconto: number
+    forma_pagamento: string
+    os_id: string | null
+  }
   const rows = (vendas ?? []) as VendaRaw[]
 
   const porForma = new Map<FormaPagamento, { quantidade: number; total: number }>()
@@ -169,11 +185,22 @@ export async function obterRelatorioVendas(
   }
 
   let faturamento = 0
+  let faturamentoBalcao = 0
+  let faturamentoOficina = 0
+  let quantidadeBalcao = 0
+  let quantidadeOficina = 0
   let descontos = 0
   for (const v of rows) {
     const total = Number(v.total)
     faturamento += total
     descontos += Number(v.desconto)
+    if (v.os_id) {
+      faturamentoOficina += total
+      quantidadeOficina += 1
+    } else {
+      faturamentoBalcao += total
+      quantidadeBalcao += 1
+    }
 
     const pagamentos = pagamentosPorVenda.get(v.id)
     if (pagamentos && pagamentos.length > 0) {
@@ -229,6 +256,10 @@ export async function obterRelatorioVendas(
   return {
     quantidade,
     faturamento,
+    faturamentoBalcao: round2(faturamentoBalcao),
+    faturamentoOficina: round2(faturamentoOficina),
+    quantidadeBalcao,
+    quantidadeOficina,
     ticketMedio: quantidade > 0 ? round2(faturamento / quantidade) : 0,
     descontos,
     porFormaPagamento: FORMAS_PAGAMENTO.map((forma) => {
@@ -253,7 +284,9 @@ export async function obterRelatorioOficina(
     criadasNoPeriodo: 0,
     entreguesNoPeriodo: 0,
     canceladasNoPeriodo: 0,
-    faturamentoItens: 0,
+    recebidasNoPeriodo: 0,
+    faturamentoItensCriadas: 0,
+    faturamentoRecebido: 0,
   }
   if (!storeId) return vazio
 
@@ -308,7 +341,7 @@ export async function obterRelatorioOficina(
     }
   }
 
-  let faturamentoItens = 0
+  let faturamentoItensCriadas = 0
   if (osIdsPeriodo.length > 0) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: itens, error: itErr } = await (supabase as any)
@@ -320,10 +353,33 @@ export async function obterRelatorioOficina(
     if (itErr) throw new Error((itErr as { message?: string }).message ?? 'Erro ao carregar itens da OS.')
 
     for (const i of (itens ?? []) as Array<{ quantidade: number; preco_unitario: number }>) {
-      faturamentoItens += Number(i.quantidade) * Number(i.preco_unitario)
+      faturamentoItensCriadas += Number(i.quantidade) * Number(i.preco_unitario)
     }
-    faturamentoItens = round2(faturamentoItens)
+    faturamentoItensCriadas = round2(faturamentoItensCriadas)
   }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: vendasOs, error: vendasOsErr } = await (supabase as any)
+    .from('vendas')
+    .select('total')
+    .eq('company_id', companyId)
+    .eq('store_id', storeId)
+    .eq('status', 'finalizada')
+    .not('os_id', 'is', null)
+    .gte('realizada_em', intervalo.desde)
+    .lte('realizada_em', intervalo.ate)
+
+  if (vendasOsErr) {
+    throw new Error(
+      (vendasOsErr as { message?: string }).message ?? 'Erro ao carregar vendas da oficina.',
+    )
+  }
+
+  let faturamentoRecebido = 0
+  for (const v of (vendasOs ?? []) as Array<{ total: number }>) {
+    faturamentoRecebido += Number(v.total)
+  }
+  faturamentoRecebido = round2(faturamentoRecebido)
 
   const porStatus = [...statusCount.entries()]
     .map(([status, quantidade]) => ({
@@ -339,7 +395,9 @@ export async function obterRelatorioOficina(
     criadasNoPeriodo,
     entreguesNoPeriodo,
     canceladasNoPeriodo,
-    faturamentoItens,
+    recebidasNoPeriodo: (vendasOs ?? []).length,
+    faturamentoItensCriadas,
+    faturamentoRecebido,
   }
 }
 

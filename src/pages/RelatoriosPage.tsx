@@ -89,7 +89,16 @@ function AbaGeral({ dados }: { dados: RelatorioConsolidado }) {
   return (
     <>
       <div className="rl-kpi-grid">
-        <KpiCard tom="teal" label="Faturamento PDV" value={formatBRL(vendas.faturamento)} hint={`${vendas.quantidade} vendas`} />
+        <KpiCard
+          tom="teal"
+          label="Faturamento PDV"
+          value={formatBRL(vendas.faturamento)}
+          hint={
+            vendas.quantidade > 0
+              ? `${vendas.quantidade} vendas · balcão ${formatBRL(vendas.faturamentoBalcao)} · oficina ${formatBRL(vendas.faturamentoOficina)}`
+              : 'Balcão + OS recebidas no período'
+          }
+        />
         <KpiCard tom="blue" label="Ticket médio" value={formatBRL(vendas.ticketMedio)} />
         <KpiCard tom="violet" label="OS abertas" value={String(oficina.abertasAgora)} hint={`${oficina.entreguesNoPeriodo} entregues no período`} />
         <KpiCard tom="amber" label="Estoque crítico" value={String(estoque.criticos)} hint={`${estoque.reposicao} em reposição`} />
@@ -103,8 +112,12 @@ function AbaGeral({ dados }: { dados: RelatorioConsolidado }) {
               <strong>{oficina.criadasNoPeriodo}</strong>
             </li>
             <li>
-              <span>Oficina — valor itens</span>
-              <strong>{formatBRL(oficina.faturamentoItens)}</strong>
+              <span>Oficina — recebido no período</span>
+              <strong>{formatBRL(oficina.faturamentoRecebido)}</strong>
+            </li>
+            <li>
+              <span>Oficina — valor itens (OS criadas)</span>
+              <strong>{formatBRL(oficina.faturamentoItensCriadas)}</strong>
             </li>
             <li>
               <span>Estoque — valor em custo</span>
@@ -233,7 +246,11 @@ function AbaOficina({ dados }: { dados: RelatorioConsolidado }) {
         </section>
         <section className="rl-card">
           <SecaoTitulo>Receita de peças e serviços</SecaoTitulo>
-          <p className="rl-highlight">{formatBRL(oficina.faturamentoItens)}</p>
+          <p className="rl-highlight">{formatBRL(oficina.faturamentoRecebido)}</p>
+          <p className="rl-kpi__hint">Recebido no período ({oficina.recebidasNoPeriodo} OS)</p>
+          <p className="rl-kpi__hint" style={{ marginTop: '0.75rem' }}>
+            Valor itens em OS criadas: {formatBRL(oficina.faturamentoItensCriadas)}
+          </p>
           <p className="rl-card__hint">
             Soma dos itens lançados nas OS criadas no período (peças e mão de obra).
           </p>

@@ -241,7 +241,7 @@ export function FinCaixasTab({ companyId, storeId }: FinCaixasTabProps) {
                 <li key={m.id} className={`fin-mov-row fin-mov-row--${m.tipo}`}>
                   <div>
                     <span className="fin-mov-row__desc">{m.descricao}</span>
-                    <span className="fin-mov-row__meta">{formatShortDate(m.created_at)}</span>
+                    <span className="fin-mov-row__meta">{formatShortDate(m.realizada_em ?? m.created_at)}</span>
                   </div>
                   <strong className={m.tipo === 'entrada' ? 'fin-valor--entrada' : 'fin-valor--saida'}>
                     {m.tipo === 'entrada' ? '+' : '−'} {formatBRL(m.valor)}

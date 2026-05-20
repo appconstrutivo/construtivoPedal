@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
+import { EstoqueItemPicker } from '../components/EstoqueItemPicker'
+import { PagamentoMistoFields, validarPagamentoMisto } from '../components/PagamentoMistoFields'
+import { novaLinhaPagamento, type PagamentoLinha } from '../lib/pagamento-misto'
 import {
   MSG_QUANTIDADE_INTEIRA,
   filtrarInputQuantidadeInteira,
@@ -27,6 +30,17 @@ import {
   uploadAnexoOs,
 } from '../services/oficina.service'
 import { listarCatalogoServicos, type CatalogoServicoRow } from '../services/catalogo-servicos.service'
+import {
+  cancelarContaReceber,
+  faturarOs,
+  garantirContaCaixa,
+  labelFormaRecebimento,
+  labelStatusContaReceber,
+  listarContasFinanceiras,
+  obterContaReceberPorOs,
+  registrarRecebimentoConta,
+  type ContaReceber,
+} from '../services/financeiro.service'
 import { ServicosCatalogoPage } from './ServicosCatalogoPage'
 
 type FiltroLista = 'todas' | 'abertas' | 'encerradas'
@@ -123,17 +137,29 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
     preco: '0',
   })
   const [busyItemId, setBusyItemId] = useState<string | null>(null)
+  const [contaReceberOs, setContaReceberOs] = useState<ContaReceber | null>(null)
+  const [busyFinanceiro, setBusyFinanceiro] = useState(false)
+  const [modalFaturar, setModalFaturar] = useState(false)
+  const [modalReceberOs, setModalReceberOs] = useState(false)
+  const [faturarVencimento, setFaturarVencimento] = useState(() => new Date().toISOString().slice(0, 10))
+  const [receberContaId, setReceberContaId] = useState('')
+  const [pagamentosReceber, setPagamentosReceber] = useState<PagamentoLinha[]>(() => [novaLinhaPagamento('pix')])
+  const [receberData, setReceberData] = useState(() => new Date().toISOString().slice(0, 10))
+  const [faturarEReceber, setFaturarEReceber] = useState(false)
+  const [contasFinOpts, setContasFinOpts] = useState<{ id: string; nome: string }[]>([])
 
-  const carregarLista = useCallback(async () => {
-    setLoadingLista(true)
-    setErro(null)
+  const carregarLista = useCallback(async (opts?: { silencioso?: boolean }) => {
+    if (!opts?.silencioso) {
+      setLoadingLista(true)
+      setErro(null)
+    }
     try {
       const rows = await listarOrdensServico(companyId, activeStoreId)
       setLista(rows)
     } catch (e: unknown) {
       setErro(e instanceof Error ? e.message : 'Erro ao carregar OS.')
     } finally {
-      setLoadingLista(false)
+      if (!opts?.silencioso) setLoadingLista(false)
     }
   }, [companyId, activeStoreId])
 
@@ -159,10 +185,24 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
     void carregarContexto()
   }, [carregarLista, carregarContexto])
 
-  const recarregarDetalhe = useCallback(
+  const carregarFaturamentoOs = useCallback(
     async (osId: string) => {
-      setLoadingDetalhe(true)
-      setErro(null)
+      try {
+        const cr = await obterContaReceberPorOs(companyId, osId)
+        setContaReceberOs(cr)
+      } catch {
+        setContaReceberOs(null)
+      }
+    },
+    [companyId],
+  )
+
+  const recarregarDetalhe = useCallback(
+    async (osId: string, opts?: { silencioso?: boolean }) => {
+      if (!opts?.silencioso) {
+        setLoadingDetalhe(true)
+        setErro(null)
+      }
       try {
         const d = await carregarOrdemDetalhe(companyId, osId)
         setDetalhe(d)
@@ -173,19 +213,23 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
             diagnostico: d.diagnostico ?? '',
             observacoes: d.observacoes_internas ?? '',
           })
+          void carregarFaturamentoOs(d.id)
+        } else {
+          setContaReceberOs(null)
         }
       } catch (e: unknown) {
         setErro(e instanceof Error ? e.message : 'Erro ao carregar detalhe.')
       } finally {
-        setLoadingDetalhe(false)
+        if (!opts?.silencioso) setLoadingDetalhe(false)
       }
     },
-    [companyId],
+    [companyId, carregarFaturamentoOs],
   )
 
   useEffect(() => {
     if (!selectedId) {
       setDetalhe(null)
+      setContaReceberOs(null)
       return
     }
     void recarregarDetalhe(selectedId)
@@ -221,6 +265,12 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
     )
   }, [detalhe?.itens])
 
+  const podeFaturarOs =
+    !!detalhe &&
+    (detalhe.status === 'pronta' || detalhe.status === 'entregue') &&
+    totalOsValor > 0 &&
+    !contaReceberOs
+
   useEffect(() => {
     if (listaFiltrada.length === 0) {
       if (selectedId !== null) setSelectedId(null)
@@ -247,12 +297,94 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
             ? detalhe.closed_at ?? new Date().toISOString()
             : null,
       })
-      await carregarLista()
-      await recarregarDetalhe(detalhe.id)
+      if (formDetalhe.status === 'cancelada' && contaReceberOs?.status === 'pendente') {
+        await cancelarContaReceber(contaReceberOs.id)
+      }
+      await carregarLista({ silencioso: true })
+      await recarregarDetalhe(detalhe.id, { silencioso: true })
     } catch (e: unknown) {
       setErro(e instanceof Error ? e.message : 'Erro ao salvar.')
     } finally {
       setSalvandoCabecalho(false)
+    }
+  }
+
+  async function abrirModalReceberOs() {
+    if (!detalhe || !contaReceberOs || contaReceberOs.status !== 'pendente') return
+    setErro(null)
+    try {
+      await garantirContaCaixa(companyId, activeStoreId)
+      const contas = await listarContasFinanceiras(companyId, activeStoreId)
+      setContasFinOpts(contas.map((c) => ({ id: c.id, nome: c.nome })))
+      const caixa = contas.find((c) => c.tipo === 'caixa') ?? contas[0]
+      if (caixa) setReceberContaId(caixa.id)
+      setPagamentosReceber([novaLinhaPagamento('pix')])
+      setReceberData(new Date().toISOString().slice(0, 10))
+      setModalReceberOs(true)
+    } catch (e: unknown) {
+      setErro(e instanceof Error ? e.message : 'Erro ao preparar recebimento.')
+    }
+  }
+
+  async function handleConfirmarFaturar(e: React.FormEvent) {
+    e.preventDefault()
+    if (!detalhe || !activeStoreId) return
+    setBusyFinanceiro(true)
+    setErro(null)
+    try {
+      const crId = await faturarOs(detalhe.id, faturarVencimento)
+      if (faturarEReceber) {
+        const { ok, parsed } = validarPagamentoMisto(totalOsValor, pagamentosReceber)
+        if (!ok) throw new Error('Confira os valores de cada forma de pagamento.')
+        await garantirContaCaixa(companyId, activeStoreId)
+        const contas = await listarContasFinanceiras(companyId, activeStoreId)
+        const caixaId =
+          receberContaId || contas.find((c) => c.tipo === 'caixa')?.id || contas[0]?.id
+        if (!caixaId) throw new Error('Cadastre uma conta de caixa no Financeiro.')
+        if (!receberContaId) setReceberContaId(caixaId)
+        await registrarRecebimentoConta({
+          contaReceberId: crId,
+          contaFinanceiraId: caixaId,
+          pagamentos: parsed,
+          dataRecebimento: receberData,
+        })
+      }
+      setModalFaturar(false)
+      setFaturarEReceber(false)
+      await recarregarDetalhe(detalhe.id, { silencioso: true })
+    } catch (err: unknown) {
+      setErro(err instanceof Error ? err.message : 'Erro ao faturar OS.')
+    } finally {
+      setBusyFinanceiro(false)
+    }
+  }
+
+  async function handleConfirmarReceberOs(e: React.FormEvent) {
+    e.preventDefault()
+    if (!detalhe || !contaReceberOs || !receberContaId) return
+    const { ok, parsed } = validarPagamentoMisto(contaReceberOs.valor, pagamentosReceber)
+    if (!ok) {
+      setErro('Confira os valores de cada forma de pagamento.')
+      return
+    }
+    setBusyFinanceiro(true)
+    setErro(null)
+    try {
+      const res = await registrarRecebimentoConta({
+        contaReceberId: contaReceberOs.id,
+        contaFinanceiraId: receberContaId,
+        pagamentos: parsed,
+        dataRecebimento: receberData,
+      })
+      setModalReceberOs(false)
+      if (res.vendaNumero) {
+        setErro(null)
+      }
+      await recarregarDetalhe(detalhe.id, { silencioso: true })
+    } catch (err: unknown) {
+      setErro(err instanceof Error ? err.message : 'Erro ao registrar recebimento.')
+    } finally {
+      setBusyFinanceiro(false)
     }
   }
 
@@ -320,8 +452,8 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
         ordem,
       })
       setCheckNovoRotulo('')
-      await recarregarDetalhe(detalhe.id)
-      await carregarLista()
+      await recarregarDetalhe(detalhe.id, { silencioso: true })
+      await carregarLista({ silencioso: true })
     } catch (e: unknown) {
       setErro(e instanceof Error ? e.message : 'Erro ao adicionar checklist.')
     }
@@ -332,8 +464,8 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
     setErro(null)
     try {
       await atualizarChecklistItem(i.id, { concluido: !i.concluido })
-      await recarregarDetalhe(detalhe.id)
-      await carregarLista()
+      await recarregarDetalhe(detalhe.id, { silencioso: true })
+      await carregarLista({ silencioso: true })
     } catch (e: unknown) {
       setErro(e instanceof Error ? e.message : 'Erro ao atualizar checklist.')
     }
@@ -343,10 +475,24 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
     if (!detalhe) return
     try {
       await excluirChecklistItem(id)
-      await recarregarDetalhe(detalhe.id)
+      await recarregarDetalhe(detalhe.id, { silencioso: true })
     } catch (e: unknown) {
       setErro(e instanceof Error ? e.message : 'Erro ao remover.')
     }
+  }
+
+  function precoVendaPeca(item: EstoqueItemComLocal) {
+    return Number(item.preco_varejo) || Number(item.custo_medio) || 0
+  }
+
+  function selecionarPecaEstoque(id: string) {
+    const it = id ? itensEstoque.find((x) => x.id === id) : undefined
+    setPecaForm((f) => ({
+      ...f,
+      itemId: id,
+      descricao: it?.nome ?? '',
+      preco: it ? String(precoVendaPeca(it)) : '',
+    }))
   }
 
   async function addPeca() {
@@ -362,7 +508,9 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
     const precoUnit =
       precoExplicito !== null
         ? precoExplicito
-        : Number(item?.custo_medio ?? 0)
+        : item
+          ? precoVendaPeca(item)
+          : 0
     try {
       await adicionarOsItem({
         company_id: companyId,
@@ -374,8 +522,8 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
         preco_unitario: precoUnit,
       })
       setPecaForm({ itemId: '', qtd: '1', descricao: '', preco: '' })
-      await recarregarDetalhe(detalhe.id)
-      await carregarLista()
+      await recarregarDetalhe(detalhe.id, { silencioso: true })
+      await carregarLista({ silencioso: true })
     } catch (e: unknown) {
       setErro(e instanceof Error ? e.message : 'Erro ao adicionar peça.')
     }
@@ -410,8 +558,8 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
         preco_unitario: p,
       })
       setServicoForm({ catalogoId: '', desc: '', qtd: '1', preco: '0' })
-      await recarregarDetalhe(detalhe.id)
-      await carregarLista()
+      await recarregarDetalhe(detalhe.id, { silencioso: true })
+      await carregarLista({ silencioso: true })
     } catch (e: unknown) {
       setErro(e instanceof Error ? e.message : 'Erro ao adicionar serviço.')
     }
@@ -423,8 +571,8 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
     setErro(null)
     try {
       await baixarPecaNaOs(row.id)
-      await recarregarDetalhe(detalhe.id)
-      await carregarLista()
+      await recarregarDetalhe(detalhe.id, { silencioso: true })
+      await carregarLista({ silencioso: true })
     } catch (e: unknown) {
       setErro(e instanceof Error ? e.message : 'Erro na baixa de estoque.')
     } finally {
@@ -436,7 +584,7 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
     if (!detalhe) return
     try {
       await excluirOsItem(row)
-      await recarregarDetalhe(detalhe.id)
+      await recarregarDetalhe(detalhe.id, { silencioso: true })
     } catch (e: unknown) {
       setErro(e instanceof Error ? e.message : 'Erro ao remover item.')
     }
@@ -449,7 +597,7 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
     try {
       await uploadAnexoOs(companyId, detalhe.id, file)
       ev.target.value = ''
-      await recarregarDetalhe(detalhe.id)
+      await recarregarDetalhe(detalhe.id, { silencioso: true })
     } catch (e: unknown) {
       setErro(e instanceof Error ? e.message : 'Erro no upload.')
     }
@@ -458,7 +606,7 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
   async function removerFoto(anexo: OrdemServicoDetalhe['anexos'][0]) {
     try {
       await excluirAnexoOs(anexo)
-      if (detalhe) await recarregarDetalhe(detalhe.id)
+      if (detalhe) await recarregarDetalhe(detalhe.id, { silencioso: true })
     } catch (e: unknown) {
       setErro(e instanceof Error ? e.message : 'Erro ao remover foto.')
     }
@@ -708,28 +856,11 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
                   <div className="os-split-2">
                     <div>
                       <p className="os-mini-title">Peça (estoque)</p>
-                      <select
-                        className="os-input"
+                      <EstoqueItemPicker
+                        itens={itensEstoque}
                         value={pecaForm.itemId}
-                        onChange={(e) => {
-                          const id = e.target.value
-                          const it = itensEstoque.find((x) => x.id === id)
-                          const cm = it != null ? Number(it.custo_medio) : 0
-                          setPecaForm((f) => ({
-                            ...f,
-                            itemId: id,
-                            descricao: it?.nome ?? '',
-                            preco: it ? String(cm) : '',
-                          }))
-                        }}
-                      >
-                        <option value="">Selecione…</option>
-                        {itensEstoque.map((it) => (
-                          <option key={it.id} value={it.id}>
-                            {it.nome} — saldo {it.saldo_atual} {it.unidade}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={selecionarPecaEstoque}
+                      />
                       <label className="os-field">
                         <span>Quantidade</span>
                         <input
@@ -914,6 +1045,66 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
                   </table>
                 </div>
 
+                <div className="os-card os-card--wide os-finance">
+                  <h3 className="os-card__title">Faturamento</h3>
+                  <p className="os-hint">
+                    Gera conta a receber no Financeiro. Ao receber, o valor entra no caixa e aparece em
+                    Lançamentos (venda vinculada à OS).
+                  </p>
+                  {contaReceberOs ? (
+                    <div className="os-finance__status">
+                      <span
+                        className={
+                          contaReceberOs.status === 'recebido'
+                            ? 'os-chip os-chip--done'
+                            : 'os-chip os-chip--wait'
+                        }
+                      >
+                        {labelStatusContaReceber(contaReceberOs.status)}
+                      </span>
+                      <strong>{formatBRL(contaReceberOs.valor)}</strong>
+                      {contaReceberOs.status === 'pendente' ? (
+                        <span className="os-finance__meta">
+                          Vencimento {formatShortDate(contaReceberOs.vencimento)}
+                        </span>
+                      ) : null}
+                      {contaReceberOs.status === 'recebido' ? (
+                        <span className="os-finance__meta">
+                          {labelFormaRecebimento(contaReceberOs.forma_pagamento)}
+                          {contaReceberOs.vendaNumero ? ` · Venda #${contaReceberOs.vendaNumero}` : ''}
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="os-muted">OS ainda não faturada.</p>
+                  )}
+                  <div className="os-finance__actions">
+                    {podeFaturarOs ? (
+                      <button
+                        type="button"
+                        className="st-primary-btn"
+                        onClick={() => {
+                          setFaturarVencimento(new Date().toISOString().slice(0, 10))
+                          setFaturarEReceber(false)
+                          setPagamentosReceber([novaLinhaPagamento('pix')])
+                          setModalFaturar(true)
+                        }}
+                      >
+                        Faturar OS
+                      </button>
+                    ) : null}
+                    {contaReceberOs?.status === 'pendente' ? (
+                      <button
+                        type="button"
+                        className="st-primary-btn"
+                        onClick={() => void abrirModalReceberOs()}
+                      >
+                        Registrar recebimento
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+
                 <div className="os-card os-card--wide">
                   <h3 className="os-card__title">Fotos</h3>
                   <p className="os-hint">Imagens ficam no Storage privado (`os-fotos`), isoladas por empresa.</p>
@@ -953,6 +1144,91 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
       </div>
     </>
       )}
+
+      {modalFaturar && detalhe ? (
+        <div className="fin-modal-backdrop" role="presentation" onClick={() => setModalFaturar(false)}>
+          <form
+            className="fin-modal"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={(e) => void handleConfirmarFaturar(e)}
+          >
+            <h2 className="fin-modal__title">Faturar OS #{detalhe.numero}</h2>
+            <p className="fin-modal__hint">Total: {formatBRL(totalOsValor)}</p>
+            <label className="fin-field">
+              <span>Vencimento</span>
+              <input type="date" value={faturarVencimento} onChange={(e) => setFaturarVencimento(e.target.value)} required />
+            </label>
+            <label className="fin-rec-toggle">
+              <input type="checkbox" checked={faturarEReceber} onChange={(e) => setFaturarEReceber(e.target.checked)} />
+              <span>Receber agora (à vista)</span>
+            </label>
+            {faturarEReceber ? (
+              <>
+                <PagamentoMistoFields
+                  total={totalOsValor}
+                  linhas={pagamentosReceber}
+                  onChange={setPagamentosReceber}
+                />
+                <label className="fin-field">
+                  <span>Data do recebimento</span>
+                  <input type="date" value={receberData} onChange={(e) => setReceberData(e.target.value)} required />
+                </label>
+              </>
+            ) : null}
+            <div className="fin-modal__actions">
+              <button type="button" className="st-ghost-btn" onClick={() => setModalFaturar(false)}>Cancelar</button>
+              <button
+                type="submit"
+                className="st-primary-btn"
+                disabled={
+                  busyFinanceiro ||
+                  (faturarEReceber && !validarPagamentoMisto(totalOsValor, pagamentosReceber).ok)
+                }
+              >
+                {busyFinanceiro ? '…' : faturarEReceber ? 'Faturar e receber' : 'Faturar'}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
+      {modalReceberOs && contaReceberOs ? (
+        <div className="fin-modal-backdrop" role="presentation" onClick={() => setModalReceberOs(false)}>
+          <form className="fin-modal" role="dialog" onClick={(e) => e.stopPropagation()} onSubmit={(e) => void handleConfirmarReceberOs(e)}>
+            <h2 className="fin-modal__title">Receber {formatBRL(contaReceberOs.valor)}</h2>
+            <label className="fin-field">
+              <span>Conta / caixa</span>
+              <select value={receberContaId} onChange={(e) => setReceberContaId(e.target.value)} required>
+                {contasFinOpts.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nome}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <PagamentoMistoFields
+              total={contaReceberOs.valor}
+              linhas={pagamentosReceber}
+              onChange={setPagamentosReceber}
+            />
+            <label className="fin-field">
+              <span>Data do recebimento</span>
+              <input type="date" value={receberData} onChange={(e) => setReceberData(e.target.value)} required />
+            </label>
+            <div className="fin-modal__actions">
+              <button type="button" className="st-ghost-btn" onClick={() => setModalReceberOs(false)}>Voltar</button>
+              <button
+                type="submit"
+                className="st-primary-btn"
+                disabled={busyFinanceiro || !validarPagamentoMisto(contaReceberOs.valor, pagamentosReceber).ok}
+              >
+                Confirmar
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
 
       {modalNovaOpen ? (
         <div className="st-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="os-nova-title">

@@ -58,7 +58,7 @@ export async function listarVendasRecentes(
     .eq('company_id', companyId)
     .eq('store_id', storeId)
     .eq('status', 'finalizada')
-    .order('created_at', { ascending: false })
+    .order('realizada_em', { ascending: false })
     .limit(limit)
 
   if (error) throw new Error((error as { message?: string }).message ?? 'Erro ao carregar vendas.')
@@ -91,7 +91,7 @@ export async function obterResumoVendasHoje(
     .eq('company_id', companyId)
     .eq('store_id', storeId)
     .eq('status', 'finalizada')
-    .gte('created_at', inicioDia.toISOString())
+    .gte('realizada_em', inicioDia.toISOString())
 
   if (error) throw new Error((error as { message?: string }).message ?? 'Erro ao resumir vendas.')
 

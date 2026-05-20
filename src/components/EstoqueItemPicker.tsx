@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { EstoqueItemThumb } from './EstoqueItemThumb'
 import type { EstoqueItemComLocal } from '../services/estoque.service'
 
 function rotuloItem(item: EstoqueItemComLocal) {
@@ -25,6 +26,8 @@ type EstoqueItemPickerProps = {
   disabled?: boolean
   required?: boolean
   id?: string
+  /** Exibe miniatura do produto na lista e no campo (padrão: true). */
+  comImagem?: boolean
 }
 
 export function EstoqueItemPicker({
@@ -35,6 +38,7 @@ export function EstoqueItemPicker({
   disabled = false,
   required = false,
   id,
+  comImagem = true,
 }: EstoqueItemPickerProps) {
   const [aberto, setAberto] = useState(false)
   const [busca, setBusca] = useState('')
@@ -83,6 +87,7 @@ export function EstoqueItemPicker({
   }
 
   const valorInput = aberto ? busca : selecionado ? rotuloItem(selecionado) : ''
+  const mostrarThumbNoCampo = comImagem && selecionado && !aberto
 
   return (
     <div className="st-item-picker" ref={wrapRef}>
@@ -97,12 +102,34 @@ export function EstoqueItemPicker({
           onChange={() => {}}
         />
       )}
-      <div className="st-item-picker__control">
+      <div
+        className={[
+          'st-item-picker__control',
+          mostrarThumbNoCampo ? 'st-item-picker__control--with-thumb' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+      >
+        {mostrarThumbNoCampo && (
+          <span className="st-item-picker__field-thumb" aria-hidden>
+            <EstoqueItemThumb
+              imagemUrl={selecionado.imagem_url}
+              alt=""
+              variant="picker"
+            />
+          </span>
+        )}
         <input
           ref={inputRef}
           id={inputId}
           type="search"
-          className="st-input st-item-picker__input"
+          className={[
+            'st-input',
+            'st-item-picker__input',
+            mostrarThumbNoCampo ? 'st-item-picker__input--with-thumb' : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
           value={valorInput}
           placeholder={placeholder}
           disabled={disabled}
@@ -148,12 +175,33 @@ export function EstoqueItemPicker({
               <li key={item.id} role="option" aria-selected={item.id === value}>
                 <button
                   type="button"
-                  className={`st-item-picker__option${item.id === value ? ' st-item-picker__option--on' : ''}`}
+                  className={`st-item-picker__option${item.id === value ? ' st-item-picker__option--on' : ''}${comImagem ? ' st-item-picker__option--with-thumb' : ''}`}
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => selecionar(item.id)}
                 >
-                  <span className="st-item-picker__nome">{item.nome}</span>
-                  <span className="st-item-picker__sku">{item.sku}</span>
+                  {comImagem ? (
+                    <>
+                      <EstoqueItemThumb
+                        imagemUrl={item.imagem_url}
+                        alt=""
+                        variant="picker"
+                      />
+                      <span className="st-item-picker__body">
+                        <span className="st-item-picker__nome">{item.nome}</span>
+                        <span className="st-item-picker__meta">
+                          SKU {item.sku}
+                          {Number(item.saldo_atual) > 0
+                            ? ` · ${Number(item.saldo_atual)} ${item.unidade}`
+                            : ' · sem saldo'}
+                        </span>
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="st-item-picker__nome">{item.nome}</span>
+                      <span className="st-item-picker__sku">{item.sku}</span>
+                    </>
+                  )}
                 </button>
               </li>
             ))

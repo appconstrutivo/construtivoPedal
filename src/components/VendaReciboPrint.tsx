@@ -1,5 +1,5 @@
 import type { VendaDetalhe } from '../services/lancamentos.service'
-import { resumoPagamentosVenda } from '../services/lancamentos.service'
+import { dataExibicaoVenda, resumoPagamentosVenda } from '../services/lancamentos.service'
 
 type VendaReciboPrintProps = {
   venda: VendaDetalhe
@@ -250,7 +250,7 @@ export function VendaReciboHtml({ venda, companyName, segundaVia = false }: Vend
         <p class="head__doc-title">Recibo de venda</p>
         <p class="head__doc-meta">
           Nº <strong>${venda.numero}</strong><br />
-          ${formatDateTime(venda.created_at)}
+          ${formatDateTime(dataExibicaoVenda(venda))}
         </p>
       </div>
     </header>

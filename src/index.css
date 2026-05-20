@@ -384,6 +384,7 @@ button {
 }
 
 .cp-navlink {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -410,6 +411,30 @@ button {
   display: grid;
   place-items: center;
   opacity: 0.92;
+}
+
+.cp-navlink__badge {
+  margin-left: auto;
+  min-width: 20px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 800;
+  line-height: 1.25;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.cp-shell--sidebar-collapsed .cp-navlink__badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 16px;
+  padding: 1px 5px;
+  font-size: 0.62rem;
+  margin-left: 0;
 }
 
 .cp-shell--sidebar-collapsed .cp-navlink {
@@ -466,8 +491,25 @@ button {
 }
 
 .cp-bottomnav__icon {
+  position: relative;
   display: grid;
   place-items: center;
+}
+
+.cp-bottomnav__badge {
+  position: absolute;
+  top: -2px;
+  right: -6px;
+  min-width: 16px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+  border: 2px solid var(--cp-surface);
 }
 
 .cp-bottomnav__btn:focus-visible {
@@ -3188,12 +3230,26 @@ button {
 .st-item-picker__control {
   position: relative;
   display: flex;
-  align-items: stretch;
+  align-items: center;
+  gap: 0;
+}
+
+.st-item-picker__control--with-thumb {
+  gap: 8px;
+}
+
+.st-item-picker__field-thumb {
+  flex-shrink: 0;
+  padding-left: 4px;
 }
 
 .st-item-picker__input {
   width: 100%;
   padding-right: 36px;
+}
+
+.st-item-picker__input--with-thumb {
+  padding-left: 4px;
 }
 
 .st-item-picker__input::-webkit-search-cancel-button {
@@ -3227,7 +3283,7 @@ button {
   left: 0;
   right: 0;
   top: calc(100% + 4px);
-  max-height: min(240px, 40vh);
+  max-height: min(320px, 50vh);
   margin: 0;
   padding: 4px;
   list-style: none;
@@ -3246,11 +3302,10 @@ button {
 
 .st-item-picker__option {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 8px 10px;
+  padding: 6px 8px;
   border: none;
   border-radius: var(--cp-radius-sm);
   background: transparent;
@@ -3258,15 +3313,36 @@ button {
   cursor: pointer;
 }
 
+.st-item-picker__option--with-thumb {
+  padding: 6px 10px 6px 6px;
+}
+
 .st-item-picker__option:hover,
 .st-item-picker__option--on {
   background: color-mix(in srgb, var(--cp-tone-blue) 10%, var(--cp-surface));
 }
 
+.st-item-picker__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
 .st-item-picker__nome {
-  font-size: 0.86rem;
+  font-size: 0.84rem;
+  font-weight: 560;
   color: var(--cp-text);
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.st-item-picker__meta {
+  font-size: 0.72rem;
+  color: var(--cp-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3776,6 +3852,25 @@ button {
 .os-chip--ready {
   background: color-mix(in srgb, #10b981 20%, var(--cp-surface));
   color: #047857;
+}
+
+.os-finance__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-bottom: 12px;
+}
+
+.os-finance__meta {
+  font-size: 0.82rem;
+  color: var(--cp-text-muted);
+}
+
+.os-finance__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .os-chip--done {
@@ -4895,6 +4990,13 @@ button {
   margin-top: 2px;
 }
 
+.pdv-thumb--picker {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--cp-radius-sm);
+  border: 1px solid var(--cp-border);
+}
+
 .pdv-thumb__img {
   width: 100%;
   height: 100%;
@@ -5953,8 +6055,12 @@ button {
    MÓDULO — FINANCEIRO
    ══════════════════════════════════════════════════ */
 
-.fin-page {
-  max-width: 1120px;
+.cp-page.fin-page {
+  max-width: min(1680px, 100%);
+  width: 100%;
+  margin: 0;
+  padding-inline: clamp(12px, 2vw, 28px);
+  box-sizing: border-box;
 }
 
 .fin-valor--entrada {
@@ -6058,7 +6164,12 @@ button {
 .fin-caixas-layout {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 16px;
+  gap: 20px;
+  width: 100%;
+}
+
+.fin-contas-list {
+  min-width: 0;
 }
 
 .fin-contas-cards {
@@ -6117,6 +6228,7 @@ button {
 
 .fin-movs-panel {
   min-height: 200px;
+  min-width: 0;
 }
 
 .fin-mov-list {
@@ -6335,10 +6447,66 @@ button {
   filter: brightness(1.05);
 }
 
+.lc-data-modal {
+  max-width: 420px;
+}
+
+.lc-data-modal__body {
+  padding: 0 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.lc-data-modal__hint {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--cp-text-muted);
+  line-height: 1.45;
+}
+
+.lc-data-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lc-data-field__lbl {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--cp-text-muted);
+}
+
+.lc-input-datetime {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--cp-border);
+  border-radius: var(--cp-radius-sm);
+  font: inherit;
+  color: var(--cp-text);
+  background: var(--cp-surface);
+}
+
+.lc-data-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 @media (min-width: 768px) {
   .fin-caixas-layout {
-    grid-template-columns: minmax(220px, 280px) 1fr;
+    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
     align-items: start;
+    gap: 24px;
+  }
+
+  .fin-kpi-row.rl-kpi-grid {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+
+  .fin-toolbar {
+    padding-inline: 0;
   }
 
   .rl-kpi-grid--4 {
@@ -6448,6 +6616,7 @@ button {
 }
 
 .orc-list-item {
+  position: relative;
   text-align: left;
   border-radius: var(--cp-radius-md);
   border: 1px solid var(--cp-border);
@@ -6455,6 +6624,24 @@ button {
   padding: 12px 14px;
   cursor: pointer;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.orc-list-item--notify {
+  border-color: color-mix(in srgb, #dc2626 35%, var(--cp-border));
+  padding-left: 18px;
+}
+
+.orc-list-item__dot {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #dc2626;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #dc2626 22%, transparent);
+  flex-shrink: 0;
 }
 
 .orc-list-item:hover {
@@ -6630,7 +6817,8 @@ button {
   min-width: 0;
 }
 
-.orc-add-block .st-item-picker {
+.orc-add-block .st-item-picker,
+.os-card .st-item-picker {
   width: 100%;
 }
 

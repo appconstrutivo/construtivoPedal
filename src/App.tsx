@@ -12,6 +12,8 @@ import { LancamentosPage } from './pages/LancamentosPage'
 import { FinanceiroPage } from './pages/FinanceiroPage'
 import { RelatoriosPage } from './pages/RelatoriosPage'
 import { OrcamentosPage } from './pages/OrcamentosPage'
+import { contarContasPagarVencendoHoje } from './services/financeiro.service'
+import { contarOrcamentosAprovacaoNaoVista } from './services/orcamento.service'
 import { OrcamentoAprovacaoPage } from './pages/OrcamentoAprovacaoPage'
 import { AuthPages } from './pages/AuthPages'
 import { isSupabaseConfigured, supabase } from './lib/supabaseClient'
@@ -64,6 +66,8 @@ export default function App() {
   const [activeStoreId, setActiveStoreId] = useState('')
   const [storesLoading, setStoresLoading] = useState(false)
   const [modalNovaLojaOpen, setModalNovaLojaOpen] = useState(false)
+  const [orcAprovacoesPendentes, setOrcAprovacoesPendentes] = useState(0)
+  const [contasPagarVencemHoje, setContasPagarVencemHoje] = useState(0)
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -251,6 +255,50 @@ export default function App() {
     }
   }
 
+  const recarregarAprovacoesPendentes = useCallback(async () => {
+    if (!tenant?.companyId || !activeStoreId) {
+      setOrcAprovacoesPendentes(0)
+      return
+    }
+    try {
+      const total = await contarOrcamentosAprovacaoNaoVista(tenant.companyId, activeStoreId)
+      setOrcAprovacoesPendentes(total)
+    } catch {
+      /* mantém último valor */
+    }
+  }, [tenant?.companyId, activeStoreId])
+
+  const recarregarContasPagarVencendoHoje = useCallback(async () => {
+    if (!tenant?.companyId || !activeStoreId) {
+      setContasPagarVencemHoje(0)
+      return
+    }
+    try {
+      const total = await contarContasPagarVencendoHoje(tenant.companyId, activeStoreId)
+      setContasPagarVencemHoje(total)
+    } catch {
+      /* mantém último valor */
+    }
+  }, [tenant?.companyId, activeStoreId])
+
+  useEffect(() => {
+    void recarregarAprovacoesPendentes()
+    void recarregarContasPagarVencendoHoje()
+  }, [recarregarAprovacoesPendentes, recarregarContasPagarVencendoHoje])
+
+  useEffect(() => {
+    const atualizar = () => {
+      void recarregarAprovacoesPendentes()
+      void recarregarContasPagarVencendoHoje()
+    }
+    const intervalo = window.setInterval(atualizar, 45_000)
+    window.addEventListener('focus', atualizar)
+    return () => {
+      window.clearInterval(intervalo)
+      window.removeEventListener('focus', atualizar)
+    }
+  }, [recarregarAprovacoesPendentes, recarregarContasPagarVencendoHoje])
+
   if (publicOrcamentoToken) {
     return <OrcamentoAprovacaoPage token={publicOrcamentoToken} />
   }
@@ -304,6 +352,10 @@ export default function App() {
     <AppShell
       activeNav={activeNav}
       onNavigate={setActiveNav}
+      navBadges={{
+        ...(orcAprovacoesPendentes > 0 ? { orcamentos: orcAprovacoesPendentes } : {}),
+        ...(contasPagarVencemHoje > 0 ? { financeiro: contasPagarVencemHoje } : {}),
+      }}
       companyName={tenant.companyName}
       userEmail={session.user.email}
       onSignOut={handleSignOut}
@@ -342,6 +394,7 @@ export default function App() {
           companyName={tenant.companyName}
           onNavigatePdv={() => setActiveNav('pdv')}
           onNavigateOficina={() => setActiveNav('oficina')}
+          onAprovacoesPendentesChange={() => void recarregarAprovacoesPendentes()}
         />
       )}
       {activeNav === 'financeiro' && (
@@ -349,6 +402,7 @@ export default function App() {
           companyId={tenant.companyId}
           activeStoreId={activeStoreId}
           storeName={stores.find((s) => s.id === activeStoreId)?.name}
+          onContasPagarChange={() => void recarregarContasPagarVencendoHoje()}
         />
       )}
       {activeNav === 'lancamentos' && (

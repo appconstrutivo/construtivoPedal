@@ -9,6 +9,11 @@ export type PagamentoVendaDetalhe = {
 
 export type VendaStatus = 'finalizada' | 'cancelada'
 
+/** Data exibida em listas, recibo e relatórios (data operacional da venda). */
+export function dataExibicaoVenda(v: { realizada_em?: string | null; created_at: string }): string {
+  return v.realizada_em ?? v.created_at
+}
+
 export type VendaLancamentoLista = Tables<'vendas'> & {
   clienteNome: string | null
   qtdItens: number
@@ -45,7 +50,7 @@ export async function listarVendasLancamentos(
     .select('*, clientes(nome), venda_itens(id), venda_pagamentos(forma_pagamento, valor)')
     .eq('company_id', companyId)
     .eq('store_id', storeId)
-    .order('created_at', { ascending: false })
+    .order('realizada_em', { ascending: false })
     .limit(limit)
 
   if (opts?.status && opts.status !== 'todas') {
@@ -133,6 +138,37 @@ export function resumoPagamentosVenda(
       .join(' · ')
   }
   return labelPagamento(formaCabecalho)
+}
+
+export async function ajustarDataVenda(
+  companyId: string,
+  storeId: string,
+  vendaId: string,
+  realizadaEmIso: string,
+): Promise<void> {
+  if (!storeId) throw new Error('Selecione uma loja no topo da tela.')
+
+  const detalhe = await obterVendaDetalhe(companyId, storeId, vendaId)
+  const quando = new Date(realizadaEmIso)
+  if (Number.isNaN(quando.getTime())) {
+    throw new Error('Data ou horário inválido.')
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).rpc('pdv_ajustar_data_venda', {
+    p_venda_id: detalhe.id,
+    p_realizada_em: quando.toISOString(),
+  })
+
+  if (error) {
+    const msg = (error as { message?: string }).message ?? ''
+    if (/function public\.pdv_ajustar_data_venda|does not exist|schema cache/i.test(msg)) {
+      throw new Error(
+        'Função de ajuste de data não encontrada. Aplique a migração supabase/sql/036_vendas_realizada_em.sql.',
+      )
+    }
+    throw new Error(msg || 'Erro ao ajustar data da venda.')
+  }
 }
 
 export async function cancelarVenda(companyId: string, storeId: string, vendaId: string): Promise<void> {
