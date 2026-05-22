@@ -3248,8 +3248,26 @@ button {
   padding-right: 2px;
 }
 
+.st-sup-item--kit {
+  align-items: flex-start;
+}
+
 .st-sup-item--kit .st-sup-item__body {
+  flex: 1;
   min-width: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.st-sup-item--kit .st-kit-comp-preview {
+  width: 100%;
+}
+
+.st-sup-item--kit .st-kit-comp-preview li {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .st-kit-painel__resumo {
