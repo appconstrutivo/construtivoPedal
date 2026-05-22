@@ -10,6 +10,7 @@ import {
   filtrarInputQuantidadeInteira,
   parseQuantidadeInteira,
 } from '../lib/quantidade'
+import { ClientePicker } from '../components/ClientePicker'
 import { EstoqueItemThumb } from '../components/EstoqueItemThumb'
 import {
   finalizarConversaoPdv,
@@ -658,22 +659,16 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
                   <label className="pdv-field__lbl" htmlFor="pdv-cliente-modal">
                     Cliente (opcional)
                   </label>
-                  <select
+                  <ClientePicker
                     id="pdv-cliente-modal"
-                    className="pdv-input"
+                    clientes={clientes}
                     value={clienteId}
-                    onChange={(e) => {
-                      setClienteId(e.target.value)
+                    inputClassName="pdv-input"
+                    onChange={(id) => {
+                      setClienteId(id)
                       setBicicletaId('')
                     }}
-                  >
-                    <option value="">Consumidor / balcão</option>
-                    {clientes.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.nome}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
 
                 {clienteId && bikesCliente.length > 0 && (

@@ -7016,8 +7016,11 @@ button {
   min-width: 0;
 }
 
+.orc-field .st-item-picker,
 .orc-add-block .st-item-picker,
-.os-card .st-item-picker {
+.os-field .st-item-picker,
+.os-card .st-item-picker,
+.pdv-field .st-item-picker {
   width: 100%;
 }
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ClientePicker } from '../components/ClientePicker'
 import { EstoqueItemPicker } from '../components/EstoqueItemPicker'
 import { ServicoCatalogoPicker } from '../components/ServicoCatalogoPicker'
 import { imprimirOrcamento } from '../components/OrcamentoPrint'
@@ -512,17 +513,16 @@ export function OrcamentosPage({
                 <div className="orc-form-grid">
                   <label className="orc-field">
                     <span>Cliente {semCliente ? '(opcional)' : ''}</span>
-                    <select
-                      className="orc-input"
+                    <ClientePicker
+                      clientes={clientes}
                       value={form.clienteId}
+                      balcaoLabel={ORCAMENTO_CLIENTE_BALCAO}
+                      inputClassName="orc-input"
                       disabled={!podeAlterarCliente || busy === 'vincular'}
-                      onChange={(e) => setForm((f) => ({ ...f, clienteId: e.target.value, bicicletaId: '' }))}
-                    >
-                      <option value="">{ORCAMENTO_CLIENTE_BALCAO}</option>
-                      {clientes.map((c) => (
-                        <option key={c.id} value={c.id}>{c.nome}</option>
-                      ))}
-                    </select>
+                      onChange={(clienteId) =>
+                        setForm((f) => ({ ...f, clienteId, bicicletaId: '' }))
+                      }
+                    />
                     {semCliente && (
                       <span className="orc-field__hint">
                         Orçamento rápido sem cadastro. Você pode vincular um cliente depois.
@@ -687,10 +687,12 @@ export function OrcamentosPage({
             >
               <label className="st-field">
                 <span>Cliente (opcional)</span>
-                <select className="st-input" value={novoClienteId} onChange={(e) => setNovoClienteId(e.target.value)}>
-                  <option value="">{ORCAMENTO_CLIENTE_BALCAO}</option>
-                  {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-                </select>
+                <ClientePicker
+                  clientes={clientes}
+                  value={novoClienteId}
+                  balcaoLabel={ORCAMENTO_CLIENTE_BALCAO}
+                  onChange={setNovoClienteId}
+                />
                 <span className="orc-field__hint">Deixe em balcão para orçamento rápido e vincule o cliente depois.</span>
               </label>
               <div className="st-form-actions">

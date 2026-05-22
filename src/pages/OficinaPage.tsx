@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
+import { ClientePicker } from '../components/ClientePicker'
 import { EstoqueItemPicker } from '../components/EstoqueItemPicker'
 import { PagamentoMistoFields, validarPagamentoMisto } from '../components/PagamentoMistoFields'
 import { novaLinhaPagamento, type PagamentoLinha } from '../lib/pagamento-misto'
@@ -22,6 +23,7 @@ import {
   excluirOrdemServico,
   excluirOsItem,
   listarOrdensServico,
+  OS_CLIENTE_BALCAO,
   STATUS_OS_ABERTAS,
   type OrdemServicoDetalhe,
   type OrdemServicoLista,
@@ -244,12 +246,13 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
     }
     const q = busca.trim().toLowerCase()
     if (!q) return rows
-    return rows.filter(
-      (r) =>
-        r.clienteNome.toLowerCase().includes(q) ||
-        String(r.numero).includes(q) ||
-        (r.bikeLabel && r.bikeLabel.toLowerCase().includes(q)),
-    )
+    return rows.filter((r) => {
+      if (r.clienteNome.toLowerCase().includes(q)) return true
+      if (!r.cliente_id && OS_CLIENTE_BALCAO.toLowerCase().includes(q)) return true
+      if (String(r.numero).includes(q)) return true
+      if (r.bikeLabel && r.bikeLabel.toLowerCase().includes(q)) return true
+      return false
+    })
   }, [lista, filtro, busca])
 
   const servicosAtivosParaOs = useMemo(
@@ -409,16 +412,12 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
   }
 
   async function handleNovaOs() {
-    if (!novaOs.clienteId.trim()) {
-      setErro('Selecione o cliente.')
-      return
-    }
     setNovaOsSalvando(true)
     setErro(null)
     try {
       const row = await criarOrdemServico({
         company_id: companyId,
-        cliente_id: novaOs.clienteId,
+        cliente_id: novaOs.clienteId.trim() || null,
         bicicleta_id: novaOs.bicicletaId || null,
         store_id: activeStoreId,
         problema_relatado: novaOs.problema.trim() || '—',
@@ -1244,20 +1243,18 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
             <div className="st-form">
               <label className="os-field">
                 <span>Cliente</span>
-                <select
-                  className="os-input"
+                <ClientePicker
+                  clientes={clientes}
                   value={novaOs.clienteId}
-                  onChange={(e) =>
-                    setNovaOs((s) => ({ ...s, clienteId: e.target.value, bicicletaId: '' }))
+                  balcaoLabel={OS_CLIENTE_BALCAO}
+                  inputClassName="os-input"
+                  onChange={(clienteId) =>
+                    setNovaOs((s) => ({ ...s, clienteId, bicicletaId: '' }))
                   }
-                >
-                  <option value="">Selecione…</option>
-                  {clientes.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.nome}
-                    </option>
-                  ))}
-                </select>
+                />
+                <span className="st-field__hint">
+                  Deixe em balcão para serviço rápido — sem cadastro de cliente nem bicicleta.
+                </span>
               </label>
               <label className="os-field">
                 <span>Bicicleta (opcional)</span>
@@ -1267,7 +1264,9 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
                   onChange={(e) => setNovaOs((s) => ({ ...s, bicicletaId: e.target.value }))}
                   disabled={!novaOs.clienteId}
                 >
-                  <option value="">—</option>
+                  <option value="">
+                    {novaOs.clienteId ? '—' : 'Disponível após vincular cliente'}
+                  </option>
                   {bikesDoCliente.map((b) => (
                     <option key={b.id} value={b.id}>
                       {b.marca} {b.modelo}

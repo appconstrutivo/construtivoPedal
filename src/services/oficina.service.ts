@@ -3,6 +3,15 @@ import type { Tables, TablesInsert, TablesUpdate } from '../lib/database.types'
 
 const BUCKET_OS_FOTOS = 'os-fotos'
 
+import { CLIENTE_BALCAO_LABEL } from '../lib/cliente-busca'
+
+/** Rótulo exibido quando a OS não tem cliente vinculado (igual orçamentos e PDV). */
+export const OS_CLIENTE_BALCAO = CLIENTE_BALCAO_LABEL
+
+export function nomeClienteOs(nome: string | null | undefined): string {
+  return nome?.trim() || OS_CLIENTE_BALCAO
+}
+
 export type OrdemServicoRow = Tables<'ordens_servico'>
 export type OsItemRow = Tables<'os_itens'>
 export type OsChecklistRow = Tables<'os_checklist_itens'>
@@ -64,7 +73,7 @@ export async function listarOrdensServico(
 
   return ((data ?? []) as Raw[]).map((row) => ({
     ...row,
-    clienteNome: row.clientes?.nome ?? 'Cliente',
+    clienteNome: nomeClienteOs(row.clientes?.nome),
     bikeLabel: bikeLabel(
       row.bicicletas
         ? { marca: row.bicicletas.marca ?? '', modelo: row.bicicletas.modelo ?? '' }
@@ -136,7 +145,7 @@ export async function carregarOrdemDetalhe(
 
   return {
     ...(osLimpo as OrdemServicoRow),
-    clienteNome: base.clientes?.nome ?? 'Cliente',
+    clienteNome: nomeClienteOs(base.clientes?.nome),
     bikeLabel: bikeLabel(
       base.bicicletas
         ? { marca: base.bicicletas.marca ?? '', modelo: base.bicicletas.modelo ?? '' }

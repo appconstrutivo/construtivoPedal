@@ -50,7 +50,7 @@ export type Database = {
           company_id: string
           store_id: string | null
           numero: number
-          cliente_id: string
+          cliente_id: string | null
           bicicleta_id: string | null
           status: string
           problema_relatado: string
@@ -66,7 +66,7 @@ export type Database = {
           company_id: string
           store_id?: string | null
           numero?: number
-          cliente_id: string
+          cliente_id?: string | null
           bicicleta_id?: string | null
           status?: string
           problema_relatado?: string
@@ -81,7 +81,7 @@ export type Database = {
           company_id?: string
           store_id?: string | null
           numero?: number
-          cliente_id?: string
+          cliente_id?: string | null
           bicicleta_id?: string | null
           status?: string
           problema_relatado?: string
