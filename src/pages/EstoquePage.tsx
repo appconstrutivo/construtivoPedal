@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { calcularCustoComposicaoKit, calcularCustoLinhasKitForm } from '../lib/kit-custo'
+import {
+  mensagemFaltaEstoqueMontagemKit,
+  verificarEstoqueMontagemKit,
+} from '../lib/kit-montagem'
 import {
   atualizarFornecedor,
   atualizarItemEstoque,
   criarFornecedor,
   criarItemEstoque,
   excluirFornecedor,
+  atualizarKitComComponentes,
   criarKitComComponentes,
   criarMovimentacaoEstoque,
   excluirItemEstoque,
@@ -15,7 +21,9 @@ import {
   listarItensEstoque,
   listarKits,
   listarMovimentacoesHoje,
+  desmontarKit,
   montarKit,
+  sincronizarCustoItemResultanteKit,
   type EstoqueItemComLocal,
   type KitComComponentes,
   type EstoqueMovimentacaoComItem,
@@ -50,12 +58,28 @@ function novoComponenteKitLinha(): KitComponenteLinha {
   return { id: novoIdLinhaKit(), itemId: '', quantidade: '1' }
 }
 
+/** Mantém itens preenchidos e sempre uma linha vazia no final para novo componente. */
+function kitComponentesComLinhaNova(linhas: KitComponenteLinha[]): KitComponenteLinha[] {
+  const preenchidas: KitComponenteLinha[] = []
+  let linhaVazia: KitComponenteLinha | null = null
+
+  for (const linha of linhas) {
+    if (linha.itemId.trim()) {
+      preenchidas.push(linha)
+    } else {
+      linhaVazia = linha
+    }
+  }
+
+  return [...preenchidas, linhaVazia ?? novoComponenteKitLinha()]
+}
+
 function emptyKitForm() {
   return {
     sku: '',
     nome: '',
     itemResultanteId: '',
-    componentes: [novoComponenteKitLinha(), novoComponenteKitLinha(), novoComponenteKitLinha()],
+    componentes: kitComponentesComLinhaNova([]),
   }
 }
 
@@ -116,6 +140,26 @@ function IconPencil() {
   )
 }
 
+function IconDesmontar() {
+  return (
+    <svg aria-hidden width={14} height={14} viewBox="0 0 24 24" fill="none">
+      <path
+        d="M12 3v6M8 7h8M6 13h12M8 17h8M10 21h4"
+        stroke="currentColor"
+        strokeWidth={1.75}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="m4 13 4 4M20 13l-4 4"
+        stroke="currentColor"
+        strokeWidth={1.75}
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
 function IconX() {
   return (
     <svg aria-hidden width={14} height={14} viewBox="0 0 24 24" fill="none">
@@ -144,6 +188,7 @@ type ModalItemAba = 'dados' | 'detalhes'
 function emptyItemForm() {
   return {
     sku: '',
+    skuFornecedor: '',
     nome: '',
     imagemLink: '',
     descricao: '',
@@ -221,13 +266,17 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
   const [modalItemOpen, setModalItemOpen] = useState(false)
   const [modalMovOpen, setModalMovOpen] = useState(false)
   const [modalKitOpen, setModalKitOpen] = useState(false)
+  const [kitEditandoId, setKitEditandoId] = useState<string | null>(null)
+  const [kitsComposicaoAberta, setKitsComposicaoAberta] = useState<Record<string, boolean>>({})
   const [modalMontagemOpen, setModalMontagemOpen] = useState(false)
+  const [modalDesmontagemOpen, setModalDesmontagemOpen] = useState(false)
   const [modalImportOpen, setModalImportOpen] = useState(false)
   const [salvandoFornecedor, setSalvandoFornecedor] = useState(false)
   const [salvandoItem, setSalvandoItem] = useState(false)
   const [salvandoMov, setSalvandoMov] = useState(false)
   const [salvandoKit, setSalvandoKit] = useState(false)
   const [salvandoMontagem, setSalvandoMontagem] = useState(false)
+  const [salvandoDesmontagem, setSalvandoDesmontagem] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [fornecedorForm, setFornecedorForm] = useState(emptyFornecedorForm)
   const [itemEditandoId, setItemEditandoId] = useState<string | null>(null)
@@ -250,6 +299,11 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
   })
   const [kitForm, setKitForm] = useState(emptyKitForm)
   const [montagemForm, setMontagemForm] = useState({
+    kitId: '',
+    quantidade: '1',
+    origem: '',
+  })
+  const [desmontagemForm, setDesmontagemForm] = useState({
     kitId: '',
     quantidade: '1',
     origem: '',
@@ -306,14 +360,6 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
       )
     })
   }, [busca, categoria, status, itens])
-
-  const resumo = useMemo(() => {
-    const totalSkus = itens.length
-    const criticos = itens.filter((item) => statusItem(item) === 'critico').length
-    const reposicao = itens.filter((item) => statusItem(item) === 'reposicao').length
-    const valorEstoque = itens.reduce((acc, item) => acc + item.custo_medio * item.saldo_atual, 0)
-    return { totalSkus, criticos, reposicao, valorEstoque }
-  }, [itens])
 
   function abrirMovimentacao(tipo: TipoMovimentacao, itemId?: string) {
     setFormError(null)
@@ -466,10 +512,111 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
     [kits, montagemForm.kitId],
   )
 
+  const kitDesmontagemSelecionado = useMemo(
+    () => kits.find((k) => k.id === desmontagemForm.kitId) ?? null,
+    [kits, desmontagemForm.kitId],
+  )
+
   const qtdMontagemNum = useMemo(() => {
     const n = parseQuantidadeInteira(montagemForm.quantidade)
     return Number.isFinite(n) && n > 0 ? n : 0
   }, [montagemForm.quantidade])
+
+  const faltasEstoqueMontagem = useMemo(() => {
+    if (!kitMontagemSelecionado || qtdMontagemNum <= 0) return []
+    return verificarEstoqueMontagemKit(
+      kitMontagemSelecionado.componentes.map((c) => ({
+        componenteItemId: c.componenteItemId,
+        componenteNome: c.componenteNome,
+        quantidade: c.quantidade,
+      })),
+      qtdMontagemNum,
+      itens.map((i) => ({ id: i.id, nome: i.nome, saldo_atual: i.saldo_atual })),
+    )
+  }, [kitMontagemSelecionado, qtdMontagemNum, itens])
+
+  const saldoComponenteMontagemPorId = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const item of itens) {
+      map.set(item.id, Math.trunc(Number(item.saldo_atual) || 0))
+    }
+    return map
+  }, [itens])
+
+  const qtdDesmontagemNum = useMemo(() => {
+    const n = parseQuantidadeInteira(desmontagemForm.quantidade)
+    return Number.isFinite(n) && n > 0 ? n : 0
+  }, [desmontagemForm.quantidade])
+
+  const saldoItemResultanteDesmontagem = useMemo(() => {
+    const kit = kitDesmontagemSelecionado
+    if (!kit?.item_resultante_id) return null
+    const item = itens.find((i) => i.id === kit.item_resultante_id)
+    return item?.saldo_atual ?? null
+  }, [itens, kitDesmontagemSelecionado])
+
+  const custoPorItemResultanteId = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const kit of kits) {
+      if (!kit.item_resultante_id) continue
+      map.set(
+        kit.item_resultante_id,
+        calcularCustoComposicaoKit(
+          kit.componentes.map((c) => ({
+            componenteItemId: c.componenteItemId,
+            quantidade: c.quantidade,
+          })),
+          itens,
+        ),
+      )
+    }
+    return map
+  }, [kits, itens])
+
+  const custoKitForm = useMemo(
+    () => calcularCustoLinhasKitForm(kitForm.componentes, itens),
+    [kitForm.componentes, itens],
+  )
+
+  const kitDoItemEmEdicao = useMemo(
+    () =>
+      itemEditandoId
+        ? (kits.find((k) => k.item_resultante_id === itemEditandoId) ?? null)
+        : null,
+    [kits, itemEditandoId],
+  )
+
+  const custoItemKitEmEdicao = useMemo(() => {
+    if (!kitDoItemEmEdicao) return null
+    return calcularCustoComposicaoKit(
+      kitDoItemEmEdicao.componentes.map((c) => ({
+        componenteItemId: c.componenteItemId,
+        quantidade: c.quantidade,
+      })),
+      itens,
+    )
+  }, [kitDoItemEmEdicao, itens])
+
+  const custoExibicaoItem = useCallback(
+    (item: EstoqueItemComLocal) =>
+      custoPorItemResultanteId.get(item.id) ?? Number(item.custo_medio) ?? 0,
+    [custoPorItemResultanteId],
+  )
+
+  const resumo = useMemo(() => {
+    const totalSkus = itens.length
+    const criticos = itens.filter((item) => statusItem(item) === 'critico').length
+    const reposicao = itens.filter((item) => statusItem(item) === 'reposicao').length
+    const valorEstoque = itens.reduce((acc, item) => {
+      const custo = custoPorItemResultanteId.get(item.id) ?? Number(item.custo_medio) ?? 0
+      return acc + custo * Number(item.saldo_atual)
+    }, 0)
+    return { totalSkus, criticos, reposicao, valorEstoque }
+  }, [itens, custoPorItemResultanteId])
+
+  function alternarComposicaoKitPainel(kitId: string) {
+    setKitsComposicaoAberta((prev) => ({ ...prev, [kitId]: !prev[kitId] }))
+  }
 
   const itemFormImagemPreview = useMemo(() => {
     const link = itemForm.imagemLink.trim()
@@ -509,8 +656,9 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
     modalKitAbertoRef.current = modalKitOpen
     if (!modalKitOpen) return
     if (!eraKitAberto) return
+    if (kitEditandoId) return
     void reservarSkuKitParaFormulario()
-  }, [modalKitOpen, reservarSkuKitParaFormulario])
+  }, [modalKitOpen, kitEditandoId, reservarSkuKitParaFormulario])
 
   function abrirNovoItem() {
     setFormError(null)
@@ -528,11 +676,21 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
     setItemEditandoId(item.id)
     setItemEditandoStoreId(item.store_id)
     setModalItemAba('dados')
-    const custo = item.custo_medio
+    const kitItem = kits.find((k) => k.item_resultante_id === item.id)
+    const custo = kitItem
+      ? calcularCustoComposicaoKit(
+          kitItem.componentes.map((c) => ({
+            componenteItemId: c.componenteItemId,
+            quantidade: c.quantidade,
+          })),
+          itens,
+        )
+      : item.custo_medio
     const pv = item.preco_varejo ?? 0
     const pa = item.preco_atacado ?? 0
     setItemForm({
       sku: item.sku,
+      skuFornecedor: item.sku_fornecedor?.trim() ?? '',
       nome: item.nome,
       imagemLink: imagemLinkFromItem(item.imagem_url),
       descricao: item.descricao?.trim() ?? '',
@@ -541,7 +699,7 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
       fornecedorId: item.fornecedor_id ?? '',
       quantidadeInicial: String(item.saldo_atual),
       estoqueMinimo: String(item.estoque_minimo),
-      custoMedio: String(item.custo_medio),
+      custoMedio: String(custo),
       precoVarejo: String(item.preco_varejo ?? 0),
       precoAtacado: String(item.preco_atacado ?? 0),
       markupVarejo: markupPctFromCostAndPrice(custo, pv),
@@ -589,12 +747,21 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
     const nome = itemForm.nome.trim()
     const quantidadeInicial = parseQuantidadeInteira(itemForm.quantidadeInicial)
     const estoqueMinimo = parseQuantidadeInteira(itemForm.estoqueMinimo)
-    const custoMedio = Number(itemForm.custoMedio)
+    const custoMedio = kitDoItemEmEdicao
+      ? calcularCustoComposicaoKit(
+          kitDoItemEmEdicao.componentes.map((c) => ({
+            componenteItemId: c.componenteItemId,
+            quantidade: c.quantidade,
+          })),
+          itens,
+        )
+      : Number(itemForm.custoMedio)
     const precoVarejo = Number(itemForm.precoVarejo)
     const precoAtacado = Number(itemForm.precoAtacado)
 
     const imagemLink = itemForm.imagemLink.trim()
     const descricao = itemForm.descricao.trim()
+    const skuFornecedor = itemForm.skuFornecedor.trim() || null
     let imagemUrl: string | null = imagemLink || null
     if (itemEditandoId && !imagemLink) {
       const emEdicao = itens.find((i) => i.id === itemEditandoId)
@@ -642,6 +809,7 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
           unidade: itemForm.unidade.trim() || 'un',
           store_id: itemEditandoStoreId,
           fornecedor_id: itemForm.fornecedorId || null,
+          sku_fornecedor: skuFornecedor,
           estoque_minimo: estoqueMinimo,
           custo_medio: custoMedio,
           preco_varejo: precoVarejo,
@@ -653,6 +821,7 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
         await criarItemEstoque({
           company_id: companyId,
           sku,
+          sku_fornecedor: skuFornecedor,
           nome,
           categoria: itemForm.categoria,
           unidade: itemForm.unidade.trim() || 'un',
@@ -722,24 +891,61 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
 
   function abrirCadastroKit() {
     setFormError(null)
+    setKitEditandoId(null)
     setKitForm(emptyKitForm())
     setModalKitOpen(true)
     void reservarSkuKitParaFormulario()
   }
 
+  function abrirEditarKit(kit: KitComComponentes) {
+    setFormError(null)
+    setKitEditandoId(kit.id)
+    setKitSkuLoading(false)
+    setKitForm({
+      sku: kit.sku,
+      nome: kit.nome,
+      itemResultanteId: kit.item_resultante_id ?? '',
+      componentes: kitComponentesComLinhaNova(
+        kit.componentes.map((c) => ({
+          id: novoIdLinhaKit(),
+          itemId: c.componenteItemId,
+          quantidade: formatQuantidadeInteira(c.quantidade),
+        })),
+      ),
+    })
+    setModalKitOpen(true)
+  }
+
+  function fecharModalKit() {
+    if (salvandoKit) return
+    setModalKitOpen(false)
+    setKitEditandoId(null)
+    setKitForm(emptyKitForm())
+    setFormError(null)
+  }
+
   function adicionarLinhaComponenteKit() {
-    setKitForm((prev) => ({
-      ...prev,
-      componentes: [...prev.componentes, novoComponenteKitLinha()],
-    }))
+    setKitForm((prev) => {
+      const normalizado = kitComponentesComLinhaNova(prev.componentes)
+      const preenchidas = normalizado.filter((c) => c.itemId.trim())
+      const linhaVazia = normalizado.find((c) => !c.itemId.trim())!
+      return {
+        ...prev,
+        componentes: [...preenchidas, novoComponenteKitLinha(), linhaVazia],
+      }
+    })
   }
 
   function removerLinhaComponenteKit(linhaId: string) {
     setKitForm((prev) => {
-      if (prev.componentes.length <= 1) return prev
+      const idx = prev.componentes.findIndex((c) => c.id === linhaId)
+      if (idx < 0) return prev
+      const alvo = prev.componentes[idx]
+      const ehLinhaNovaFinal = idx === prev.componentes.length - 1 && !alvo.itemId.trim()
+      if (ehLinhaNovaFinal) return prev
       return {
         ...prev,
-        componentes: prev.componentes.filter((c) => c.id !== linhaId),
+        componentes: kitComponentesComLinhaNova(prev.componentes.filter((c) => c.id !== linhaId)),
       }
     })
   }
@@ -750,7 +956,9 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
   ) {
     setKitForm((prev) => ({
       ...prev,
-      componentes: prev.componentes.map((c) => (c.id === linhaId ? { ...c, ...patch } : c)),
+      componentes: kitComponentesComLinhaNova(
+        prev.componentes.map((c) => (c.id === linhaId ? { ...c, ...patch } : c)),
+      ),
     }))
   }
 
@@ -758,8 +966,10 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
     setKitForm((prev) => ({
       ...prev,
       itemResultanteId,
-      componentes: prev.componentes.map((c) =>
-        c.itemId === itemResultanteId ? { ...c, itemId: '' } : c,
+      componentes: kitComponentesComLinhaNova(
+        prev.componentes.map((c) =>
+          c.itemId === itemResultanteId ? { ...c, itemId: '' } : c,
+        ),
       ),
     }))
   }
@@ -772,6 +982,16 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
       origem: '',
     })
     setModalMontagemOpen(true)
+  }
+
+  function abrirDesmontagemKit(kitIdPreselect?: string) {
+    setFormError(null)
+    setDesmontagemForm({
+      kitId: kitIdPreselect ?? kits[0]?.id ?? '',
+      quantidade: '1',
+      origem: '',
+    })
+    setModalDesmontagemOpen(true)
   }
 
   async function handleSalvarKit(e: React.FormEvent) {
@@ -816,15 +1036,30 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
 
     setSalvandoKit(true)
     try {
-      await criarKitComComponentes({
-        companyId,
-        sku,
-        nome,
+      if (kitEditandoId) {
+        await atualizarKitComComponentes({
+          companyId,
+          kitId: kitEditandoId,
+          nome,
+          itemResultanteId,
+          componentes,
+        })
+      } else {
+        await criarKitComComponentes({
+          companyId,
+          sku,
+          nome,
+          itemResultanteId,
+          componentes,
+        })
+      }
+      await sincronizarCustoItemResultanteKit({
         itemResultanteId,
         componentes,
+        itens,
       })
       await carregarDados()
-      setModalKitOpen(false)
+      fecharModalKit()
     } catch (err: unknown) {
       setFormError(err instanceof Error ? err.message : 'Erro ao salvar kit.')
     } finally {
@@ -847,6 +1082,23 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
       return
     }
 
+    const faltas = kitMontagemSelecionado
+      ? verificarEstoqueMontagemKit(
+          kitMontagemSelecionado.componentes.map((c) => ({
+            componenteItemId: c.componenteItemId,
+            componenteNome: c.componenteNome,
+            quantidade: c.quantidade,
+          })),
+          quantidade,
+          itens.map((i) => ({ id: i.id, nome: i.nome, saldo_atual: i.saldo_atual })),
+        )
+      : []
+
+    if (faltas.length > 0) {
+      setFormError(mensagemFaltaEstoqueMontagemKit(faltas))
+      return
+    }
+
     setSalvandoMontagem(true)
     try {
       await montarKit({
@@ -861,6 +1113,55 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
       setFormError(err instanceof Error ? err.message : 'Erro ao montar kit.')
     } finally {
       setSalvandoMontagem(false)
+    }
+  }
+
+  async function handleDesmontarKit(e: React.FormEvent) {
+    e.preventDefault()
+    setFormError(null)
+
+    if (!desmontagemForm.kitId) {
+      setFormError('Selecione um kit para desmontar.')
+      return
+    }
+
+    const quantidade = parseQuantidadeInteira(desmontagemForm.quantidade)
+    if (!Number.isFinite(quantidade) || quantidade <= 0) {
+      setFormError(MSG_QUANTIDADE_INTEIRA)
+      return
+    }
+
+    const saldo = saldoItemResultanteDesmontagem
+    if (saldo !== null && quantidade > saldo) {
+      setFormError(
+        `Saldo insuficiente do item montado. Disponível: ${formatQuantidadeInteira(saldo)} unidade(s).`,
+      )
+      return
+    }
+
+    const kit = kitDesmontagemSelecionado
+    if (
+      !window.confirm(
+        `Desmontar ${formatQuantidadeInteira(quantidade)} unidade(s) do kit "${kit?.nome ?? ''}"?\n\nO item montado será baixado do estoque e os componentes voltarão automaticamente.`,
+      )
+    ) {
+      return
+    }
+
+    setSalvandoDesmontagem(true)
+    try {
+      await desmontarKit({
+        companyId,
+        kitId: desmontagemForm.kitId,
+        quantidade,
+        origem: desmontagemForm.origem.trim() || undefined,
+      })
+      await carregarDados()
+      setModalDesmontagemOpen(false)
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Erro ao desmontar kit.')
+    } finally {
+      setSalvandoDesmontagem(false)
     }
   }
 
@@ -932,6 +1233,14 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
                 disabled={kits.length === 0}
               >
                 Montar kit
+              </button>
+              <button
+                type="button"
+                className="st-primary-btn st-primary-btn--soft"
+                onClick={() => abrirDesmontagemKit()}
+                disabled={kits.length === 0}
+              >
+                Desmontar kit
               </button>
             </div>
 
@@ -1039,7 +1348,7 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
                         <div className="st-row__prices">
                           <span className="st-row__price-item">
                             <span className="st-row__price-label">Custo</span>
-                            <span className="st-row__price-value">{formatBRL(item.custo_medio)}</span>
+                            <span className="st-row__price-value">{formatBRL(custoExibicaoItem(item))}</span>
                           </span>
                           <span className="st-row__price-item">
                             <span className="st-row__price-label">Var.</span>
@@ -1091,7 +1400,12 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
                   {itemPreviewLoading ? (
                     <span className="st-item-detail__placeholder">Carregando foto…</span>
                   ) : itemPreviewUrl ? (
-                    <img src={itemPreviewUrl} alt={itemSelecionado.nome} className="st-item-detail__img" />
+                    <img
+                      src={itemPreviewUrl}
+                      alt={itemSelecionado.nome}
+                      className="st-item-detail__img"
+                      referrerPolicy="no-referrer"
+                    />
                   ) : (
                     <span className="st-item-detail__placeholder" aria-hidden>
                       {itemSelecionado.nome.charAt(0).toUpperCase()}
@@ -1111,7 +1425,7 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
                     </div>
                     <div>
                       <dt>Custo</dt>
-                      <dd>{formatBRL(itemSelecionado.custo_medio)}</dd>
+                      <dd>{formatBRL(custoExibicaoItem(itemSelecionado))}</dd>
                     </div>
                     <div>
                       <dt>Varejo</dt>
@@ -1239,7 +1553,7 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
             )}
           </section>
 
-          <section className="st-panel">
+          <section className="st-panel st-panel--kits">
             <div className="st-panel__head">
               <h2 className="st-panel__title">Kits montáveis</h2>
               <button
@@ -1254,26 +1568,81 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
             {kits.length === 0 ? (
               <p className="st-panel__hint">Nenhum kit cadastrado.</p>
             ) : (
-              <ul className="st-sup-list">
-                {kits.slice(0, 6).map((kit) => (
-                  <li key={kit.id} className="st-sup-item">
-                    <strong>{kit.nome}</strong>
-                    <span className="st-sup-item__meta">{kit.sku}</span>
-                    <span>
-                      {kit.componentes.length} componente{kit.componentes.length === 1 ? '' : 's'} ·
-                      entrada em {kit.itemResultanteNome ?? 'item resultante'}
-                    </span>
-                    {kit.componentes.length > 0 && (
-                      <ul className="st-kit-comp-preview">
-                        {kit.componentes.map((c) => (
-                          <li key={c.id}>
-                            {formatQuantidadeInteira(c.quantidade)}× {c.componenteNome}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </li>
-                ))}
+              <ul className="st-sup-list st-sup-list--kits">
+                {kits.map((kit) => {
+                  const custoKit = calcularCustoComposicaoKit(
+                    kit.componentes.map((c) => ({
+                      componenteItemId: c.componenteItemId,
+                      quantidade: c.quantidade,
+                    })),
+                    itens,
+                  )
+                  const composicaoAberta = Boolean(kitsComposicaoAberta[kit.id])
+                  const previewLimite = 3
+                  const componentesVisiveis = composicaoAberta
+                    ? kit.componentes
+                    : kit.componentes.slice(0, previewLimite)
+                  const temMaisComponentes = kit.componentes.length > previewLimite
+
+                  return (
+                    <li key={kit.id} className="st-sup-item st-sup-item--kit">
+                      <div className="st-sup-item__body">
+                        <strong>{kit.nome}</strong>
+                        <span className="st-sup-item__meta">{kit.sku}</span>
+                        <span className="st-kit-painel__resumo">
+                          {kit.componentes.length} componente{kit.componentes.length === 1 ? '' : 's'} ·{' '}
+                          {kit.itemResultanteNome ?? 'item resultante'}
+                        </span>
+                        <span className="st-kit-painel__custo">
+                          Custo (1 un.): <strong>{formatBRL(custoKit)}</strong>
+                        </span>
+                        {kit.componentes.length > 0 && (
+                          <>
+                            <ul
+                              className={`st-kit-comp-preview${composicaoAberta ? ' is-aberta' : ''}`}
+                            >
+                              {componentesVisiveis.map((c) => (
+                                <li key={c.id}>
+                                  {formatQuantidadeInteira(c.quantidade)}× {c.componenteNome}
+                                </li>
+                              ))}
+                            </ul>
+                            {temMaisComponentes && (
+                              <button
+                                type="button"
+                                className="st-link-btn st-kit-painel__toggle"
+                                onClick={() => alternarComposicaoKitPainel(kit.id)}
+                              >
+                                {composicaoAberta
+                                  ? 'Ocultar composição'
+                                  : `Ver todos (${kit.componentes.length})`}
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                      <div className="st-sup-item__actions">
+                        <button
+                          type="button"
+                          className="st-row__action st-row__action--icon"
+                          aria-label={`Editar composição do kit ${kit.nome}`}
+                          onClick={() => abrirEditarKit(kit)}
+                        >
+                          <IconPencil />
+                        </button>
+                        <button
+                          type="button"
+                          className="st-row__action st-row__action--icon"
+                          aria-label={`Desmontar kit ${kit.nome}`}
+                          onClick={() => abrirDesmontagemKit(kit.id)}
+                          title="Desmontar e devolver componentes ao estoque"
+                        >
+                          <IconDesmontar />
+                        </button>
+                      </div>
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </section>
@@ -1357,8 +1726,13 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
       )}
 
       {modalItemOpen && (
-        <div className="st-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="st-item-title">
-          <div className="st-modal st-modal--lg">
+        <div
+          className="st-modal-overlay st-modal-overlay--scroll"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="st-item-title"
+        >
+          <div className="st-modal st-modal--lg st-modal--scroll">
             <div className="st-modal__head">
               <h2 id="st-item-title" className="st-modal__title">
                 {itemEditandoId ? 'Editar item de estoque' : 'Novo item de estoque'}
@@ -1367,7 +1741,7 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
                 ×
               </button>
             </div>
-            <form className="st-form" onSubmit={handleSalvarItem}>
+            <form className="st-form st-form--modal-scroll" onSubmit={handleSalvarItem}>
               <div className="st-modal-tabs" role="tablist" aria-label="Seções do cadastro">
                 <button
                   type="button"
@@ -1393,6 +1767,7 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
                 </button>
               </div>
 
+              <div className="st-modal__body">
               <div
                 id="st-item-panel-dados"
                 role="tabpanel"
@@ -1463,14 +1838,37 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
                   </select>
                 </label>
                 <label className="st-field">
+                  <span title="Código do produto no catálogo ou planilha do fornecedor (diferente do SKU interno da loja)">
+                    SKU do fornecedor
+                  </span>
+                  <input
+                    className="st-input"
+                    value={itemForm.skuFornecedor}
+                    onChange={(e) =>
+                      setItemForm((prev) => ({ ...prev, skuFornecedor: e.target.value }))
+                    }
+                    placeholder="Ex.: código na tabela do fornecedor"
+                    autoComplete="off"
+                  />
+                </label>
+              </div>
+              <div className="st-form-grid">
+                <label className="st-field">
                   <span title="Custo pago ao fornecedor">Custo (R$)</span>
                   <input
                     className="st-input"
                     type="number"
                     min={0}
                     step="0.01"
-                    value={itemForm.custoMedio}
+                    value={
+                      custoItemKitEmEdicao !== null
+                        ? String(custoItemKitEmEdicao)
+                        : itemForm.custoMedio
+                    }
+                    readOnly={custoItemKitEmEdicao !== null}
+                    aria-readonly={custoItemKitEmEdicao !== null}
                     onChange={(e) => {
+                      if (custoItemKitEmEdicao !== null) return
                       const raw = e.target.value
                       setItemForm((prev) => {
                         const custo = parseDecimalInput(raw)
@@ -1501,6 +1899,12 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
                       })
                     }}
                   />
+                  {custoItemKitEmEdicao !== null && (
+                    <span className="st-field__hint">
+                      Calculado pela composição do kit. Para alterar, edite os componentes em Kits
+                      montáveis.
+                    </span>
+                  )}
                 </label>
               </div>
               <div className="st-form-grid">
@@ -1668,7 +2072,12 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
                 </label>
                 {itemFormImagemPreview ? (
                   <div className="st-item-form-preview">
-                    <img src={itemFormImagemPreview} alt="Prévia da foto" className="st-item-form-preview__img" />
+                    <img
+                      src={itemFormImagemPreview}
+                      alt="Prévia da foto"
+                      className="st-item-form-preview__img"
+                      referrerPolicy="no-referrer"
+                    />
                   </div>
                 ) : (
                   <div className="st-item-form-preview st-item-form-preview--empty" aria-hidden>
@@ -1702,9 +2111,10 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
                   />
                 </label>
               </div>
+              </div>
 
-              {formError && <p className="st-form-error">{formError}</p>}
-              <div className="st-form-actions">
+              {formError && <p className="st-form-error st-form-error--modal-foot">{formError}</p>}
+              <div className="st-form-actions st-form-actions--modal-foot">
                 <button type="button" className="st-ghost-btn" onClick={fecharModalItem}>
                   Cancelar
                 </button>
@@ -1811,15 +2221,23 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
       )}
 
       {modalKitOpen && (
-        <div className="st-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="st-kit-title">
-          <div className="st-modal st-modal--lg">
+        <div
+          className="st-modal-overlay st-modal-overlay--scroll"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="st-kit-title"
+        >
+          <div className="st-modal st-modal--lg st-modal--scroll">
             <div className="st-modal__head">
-              <h2 id="st-kit-title" className="st-modal__title">Novo kit composto</h2>
-              <button type="button" className="st-modal__close" onClick={() => setModalKitOpen(false)}>
+              <h2 id="st-kit-title" className="st-modal__title">
+                {kitEditandoId ? 'Editar composição do kit' : 'Novo kit composto'}
+              </h2>
+              <button type="button" className="st-modal__close" onClick={fecharModalKit}>
                 ×
               </button>
             </div>
-            <form className="st-form" onSubmit={handleSalvarKit}>
+            <form className="st-form st-form--modal-scroll" onSubmit={handleSalvarKit}>
+              <div className="st-modal__body">
               <div className="st-form-grid">
                 <label className="st-field">
                   <span>SKU do kit</span>
@@ -1865,12 +2283,30 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
                 </div>
                 <p className="st-field__hint">
                   Liste todas as peças consumidas na montagem. Linhas em branco são ignoradas ao salvar.
+                  {kitEditandoId && (
+                    <>
+                      {' '}
+                      Alterações valem para novas montagens; movimentações já registradas não são alteradas.
+                    </>
+                  )}
                 </p>
                 <ul className="st-kit-comp__list" aria-label="Lista de componentes do kit">
-                  {kitForm.componentes.map((linha, index) => (
-                    <li key={linha.id} className="st-kit-comp__row">
+                  {kitForm.componentes.map((linha, index) => {
+                    const ehLinhaNova = !linha.itemId.trim()
+                    const ehUltimaLinha = index === kitForm.componentes.length - 1
+                    const bloquearRemoverLinhaNova = ehLinhaNova && ehUltimaLinha
+
+                    return (
+                    <li
+                      key={linha.id}
+                      className={`st-kit-comp__row${ehLinhaNova && ehUltimaLinha ? ' is-nova-linha' : ''}`}
+                    >
                       <label className="st-field st-kit-comp__item">
-                        <span>Item {index + 1}</span>
+                        <span>
+                          {ehLinhaNova && ehUltimaLinha
+                            ? 'Novo componente'
+                            : `Item ${index + 1}`}
+                        </span>
                         <EstoqueItemPicker
                           itens={itensParaComponenteKit}
                           value={linha.itemId}
@@ -1901,25 +2337,160 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
                         className="st-kit-comp__remove"
                         aria-label={`Remover componente ${index + 1}`}
                         onClick={() => removerLinhaComponenteKit(linha.id)}
-                        disabled={kitForm.componentes.length <= 1}
+                        disabled={bloquearRemoverLinhaNova}
                       >
                         ×
                       </button>
                     </li>
-                  ))}
+                    )
+                  })}
                 </ul>
               </div>
-              {formError && <p className="st-form-error">{formError}</p>}
-              <div className="st-form-actions">
-                <button type="button" className="st-ghost-btn" onClick={() => setModalKitOpen(false)}>
+              <div className="st-kit-custo-total" aria-live="polite">
+                <span className="st-kit-custo-total__label">Custo total do kit (1 un.)</span>
+                <strong className="st-kit-custo-total__valor">{formatBRL(custoKitForm)}</strong>
+                <span className="st-kit-custo-total__hint">
+                  Soma do custo médio de cada componente × quantidade na receita.
+                </span>
+              </div>
+              </div>
+              {formError && <p className="st-form-error st-form-error--modal-foot">{formError}</p>}
+              <div className="st-form-actions st-form-actions--modal-foot">
+                <button type="button" className="st-ghost-btn" onClick={fecharModalKit}>
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   className="st-primary-btn"
-                  disabled={salvandoKit || kitSkuLoading || !kitForm.sku.trim()}
+                  disabled={salvandoKit || kitSkuLoading || (!kitEditandoId && !kitForm.sku.trim())}
                 >
-                  {salvandoKit ? 'Salvando...' : 'Salvar kit'}
+                  {salvandoKit ? 'Salvando...' : kitEditandoId ? 'Salvar alterações' : 'Salvar kit'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {modalDesmontagemOpen && (
+        <div
+          className="st-modal-overlay st-modal-overlay--scroll"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="st-desmontagem-title"
+        >
+          <div className="st-modal st-modal--lg st-modal--scroll">
+            <div className="st-modal__head">
+              <h2 id="st-desmontagem-title" className="st-modal__title">Desmontar kit</h2>
+              <button
+                type="button"
+                className="st-modal__close"
+                onClick={() => setModalDesmontagemOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+            <form className="st-form st-form--modal-scroll" onSubmit={handleDesmontarKit}>
+              <div className="st-modal__body">
+              <label className="st-field">
+                <span>Kit *</span>
+                <select
+                  className="st-input"
+                  value={desmontagemForm.kitId}
+                  onChange={(e) =>
+                    setDesmontagemForm((prev) => ({ ...prev, kitId: e.target.value }))
+                  }
+                  required
+                >
+                  <option value="">Selecione...</option>
+                  {kits.map((kit) => (
+                    <option key={kit.id} value={kit.id}>
+                      {kit.sku} — {kit.nome}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="st-form-grid">
+                <label className="st-field">
+                  <span>Quantidade a desmontar *</span>
+                  <input
+                    className="st-input"
+                    type="number"
+                    step={1}
+                    min={1}
+                    inputMode="numeric"
+                    value={desmontagemForm.quantidade}
+                    onChange={(e) =>
+                      setDesmontagemForm((prev) => ({
+                        ...prev,
+                        quantidade: filtrarInputQuantidadeInteira(e.target.value),
+                      }))
+                    }
+                    required
+                  />
+                  {saldoItemResultanteDesmontagem !== null && (
+                    <span className="st-field__hint">
+                      Estoque do item montado:{' '}
+                      <strong>{formatQuantidadeInteira(saldoItemResultanteDesmontagem)}</strong> un.
+                      {qtdDesmontagemNum > saldoItemResultanteDesmontagem && (
+                        <span className="st-form-error"> — quantidade acima do disponível</span>
+                      )}
+                    </span>
+                  )}
+                </label>
+                <label className="st-field">
+                  <span>Origem</span>
+                  <input
+                    className="st-input"
+                    value={desmontagemForm.origem}
+                    onChange={(e) =>
+                      setDesmontagemForm((prev) => ({ ...prev, origem: e.target.value }))
+                    }
+                    placeholder="Ex.: estorno montagem acidental"
+                  />
+                </label>
+              </div>
+              {kitDesmontagemSelecionado && (
+                <div className="st-kit-montagem-preview">
+                  <p className="st-kit-montagem-preview__title">Movimentações desta desmontagem</p>
+                  <ul>
+                    <li>
+                      <span className="st-kit-montagem-preview__saida">
+                        Saída: {formatQuantidadeInteira(qtdDesmontagemNum)}×{' '}
+                        {kitDesmontagemSelecionado.itemResultanteNome ?? 'item montado'}
+                      </span>
+                    </li>
+                    {kitDesmontagemSelecionado.componentes.map((c) => (
+                      <li key={c.id}>
+                        <span className="st-kit-montagem-preview__entrada">
+                          Entrada: {formatQuantidadeInteira(c.quantidade * qtdDesmontagemNum)}×{' '}
+                          {c.componenteNome}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              </div>
+              {formError && <p className="st-form-error st-form-error--modal-foot">{formError}</p>}
+              <div className="st-form-actions st-form-actions--modal-foot">
+                <button
+                  type="button"
+                  className="st-ghost-btn"
+                  onClick={() => setModalDesmontagemOpen(false)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="st-primary-btn"
+                  disabled={
+                    salvandoDesmontagem ||
+                    (saldoItemResultanteDesmontagem !== null &&
+                      qtdDesmontagemNum > saldoItemResultanteDesmontagem)
+                  }
+                >
+                  {salvandoDesmontagem ? 'Processando...' : 'Desmontar kit'}
                 </button>
               </div>
             </form>
@@ -1929,19 +2500,20 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
 
       {modalMontagemOpen && (
         <div
-          className="st-modal-overlay"
+          className="st-modal-overlay st-modal-overlay--scroll"
           role="dialog"
           aria-modal="true"
           aria-labelledby="st-montagem-title"
         >
-          <div className="st-modal">
+          <div className="st-modal st-modal--lg st-modal--scroll">
             <div className="st-modal__head">
               <h2 id="st-montagem-title" className="st-modal__title">Montar kit</h2>
               <button type="button" className="st-modal__close" onClick={() => setModalMontagemOpen(false)}>
                 ×
               </button>
             </div>
-            <form className="st-form" onSubmit={handleMontarKit}>
+            <form className="st-form st-form--modal-scroll" onSubmit={handleMontarKit}>
+              <div className="st-modal__body">
               <label className="st-field">
                 <span>Kit *</span>
                 <select
@@ -1988,31 +2560,64 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
                 </label>
               </div>
               {kitMontagemSelecionado && (
-                <div className="st-kit-montagem-preview">
+                <div
+                  className={`st-kit-montagem-preview${faltasEstoqueMontagem.length > 0 ? ' has-falta' : ''}`}
+                >
                   <p className="st-kit-montagem-preview__title">Movimentações desta montagem</p>
                   <ul>
-                    {kitMontagemSelecionado.componentes.map((c) => (
-                      <li key={c.id}>
-                        <span className="st-kit-montagem-preview__saida">
-                          Saída: {formatQuantidadeInteira(c.quantidade * qtdMontagemNum)}× {c.componenteNome}
-                        </span>
-                      </li>
-                    ))}
+                    {kitMontagemSelecionado.componentes.map((c) => {
+                      const qtdSaida = c.quantidade * qtdMontagemNum
+                      const saldo = saldoComponenteMontagemPorId.get(c.componenteItemId) ?? 0
+                      const insuficiente = qtdMontagemNum > 0 && saldo < qtdSaida
+
+                      return (
+                        <li key={c.id}>
+                          <span
+                            className={`st-kit-montagem-preview__saida${insuficiente ? ' is-insuficiente' : ''}`}
+                          >
+                            Saída: {formatQuantidadeInteira(qtdSaida)}× {c.componenteNome}
+                            {qtdMontagemNum > 0 && (
+                              <span className="st-kit-montagem-preview__saldo">
+                                {' '}
+                                (estoque: {formatQuantidadeInteira(saldo)})
+                              </span>
+                            )}
+                          </span>
+                        </li>
+                      )
+                    })}
                     <li>
                       <span className="st-kit-montagem-preview__entrada">
-                        Entrada: {formatQuantidadeInteira(qtdMontagemNum)}× {' '}
+                        Entrada: {formatQuantidadeInteira(qtdMontagemNum)}×{' '}
                         {kitMontagemSelecionado.itemResultanteNome ?? 'item resultante'}
                       </span>
                     </li>
                   </ul>
+                  {faltasEstoqueMontagem.length > 0 && (
+                    <p className="st-kit-montagem-preview__alert" role="alert">
+                      {mensagemFaltaEstoqueMontagemKit(faltasEstoqueMontagem)}
+                    </p>
+                  )}
                 </div>
               )}
-              {formError && <p className="st-form-error">{formError}</p>}
-              <div className="st-form-actions">
+              </div>
+              {formError && (
+                <p className="st-form-error st-form-error--modal-foot st-form-error--pre">{formError}</p>
+              )}
+              <div className="st-form-actions st-form-actions--modal-foot">
                 <button type="button" className="st-ghost-btn" onClick={() => setModalMontagemOpen(false)}>
                   Cancelar
                 </button>
-                <button type="submit" className="st-primary-btn" disabled={salvandoMontagem}>
+                <button
+                  type="submit"
+                  className="st-primary-btn"
+                  disabled={salvandoMontagem || faltasEstoqueMontagem.length > 0}
+                  title={
+                    faltasEstoqueMontagem.length > 0
+                      ? 'Corrija o estoque dos componentes em falta'
+                      : undefined
+                  }
+                >
                   {salvandoMontagem ? 'Processando...' : 'Montar kit'}
                 </button>
               </div>

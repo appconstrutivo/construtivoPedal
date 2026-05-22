@@ -3,6 +3,7 @@ import {
   calcularPrecoComMarkup,
   type LinhaPlanilhaEstoque,
 } from '../lib/estoque-import-planilha'
+import { calcularCustoComposicaoKit, type LinhaCustoKit } from '../lib/kit-custo'
 import { MSG_QUANTIDADE_INTEIRA, ehQuantidadeInteiraPositiva } from '../lib/quantidade'
 import { supabase } from '../lib/supabaseClient'
 import type { Tables, TablesInsert, TablesUpdate } from '../lib/database.types'
@@ -549,6 +550,70 @@ export async function criarKitComComponentes(params: {
   }
 }
 
+export async function atualizarKitComComponentes(params: {
+  companyId: string
+  kitId: string
+  nome: string
+  itemResultanteId: string
+  componentes: Array<{ componenteItemId: string; quantidade: number }>
+}): Promise<void> {
+  const { companyId, kitId, nome, itemResultanteId, componentes } = params
+
+  for (const comp of componentes) {
+    if (!ehQuantidadeInteiraPositiva(comp.quantidade)) {
+      throw new Error(MSG_QUANTIDADE_INTEIRA)
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: kitError } = await (supabase as any)
+    .from('estoque_kits')
+    .update({
+      nome,
+      item_resultante_id: itemResultanteId,
+    })
+    .eq('id', kitId)
+    .eq('company_id', companyId)
+
+  if (kitError) throw new Error((kitError as { message?: string }).message ?? 'Erro ao atualizar kit.')
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: deleteError } = await (supabase as any)
+    .from('estoque_kit_componentes')
+    .delete()
+    .eq('kit_id', kitId)
+    .eq('company_id', companyId)
+
+  if (deleteError) {
+    throw new Error((deleteError as { message?: string }).message ?? 'Erro ao atualizar componentes do kit.')
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: compsError } = await (supabase as any).from('estoque_kit_componentes').insert(
+    componentes.map((comp) => ({
+      company_id: companyId,
+      kit_id: kitId,
+      componente_item_id: comp.componenteItemId,
+      quantidade: comp.quantidade,
+    })),
+  )
+
+  if (compsError) {
+    throw new Error((compsError as { message?: string }).message ?? 'Erro ao salvar componentes do kit.')
+  }
+}
+
+/** Atualiza o custo médio do item resultante com base na composição do kit. */
+export async function sincronizarCustoItemResultanteKit(params: {
+  itemResultanteId: string
+  componentes: LinhaCustoKit[]
+  itens: Array<{ id: string; custo_medio: number }>
+}): Promise<void> {
+  const { itemResultanteId, componentes, itens } = params
+  const custo = calcularCustoComposicaoKit(componentes, itens)
+  await atualizarItemEstoque(itemResultanteId, { custo_medio: custo })
+}
+
 export async function montarKit(params: {
   companyId: string
   kitId: string
@@ -568,4 +633,33 @@ export async function montarKit(params: {
   })
 
   if (error) throw new Error((error as { message?: string }).message ?? 'Erro ao montar kit.')
+}
+
+export async function desmontarKit(params: {
+  companyId: string
+  kitId: string
+  quantidade: number
+  origem?: string
+}): Promise<void> {
+  const { companyId, kitId, quantidade, origem } = params
+  if (!ehQuantidadeInteiraPositiva(quantidade)) {
+    throw new Error(MSG_QUANTIDADE_INTEIRA)
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).rpc('registrar_desmontagem_kit', {
+    p_company_id: companyId,
+    p_kit_id: kitId,
+    p_quantidade: quantidade,
+    p_origem: origem ?? null,
+  })
+
+  if (error) {
+    const msg = (error as { message?: string }).message ?? ''
+    if (/registrar_desmontagem_kit|não consegui encontrar a função|does not exist|schema cache/i.test(msg)) {
+      throw new Error(
+        'Função de desmontagem de kit não encontrada no banco. Execute supabase/sql/041_desmontagem_kit.sql no Supabase.',
+      )
+    }
+    throw new Error(msg || 'Erro ao desmontar kit.')
+  }
 }

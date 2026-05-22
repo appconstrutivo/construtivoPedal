@@ -77,8 +77,16 @@ function statusChipClass(s: StatusOrcamento) {
 function podeEditar(s: StatusOrcamento) {
   return s === 'rascunho' || s === 'enviado'
 }
-function podeExcluir(s: StatusOrcamento) {
-  return s !== 'convertido'
+function mensagemConfirmarExclusao(d: OrcamentoDetalhe): string {
+  const base = `Excluir orçamento #${d.numero}?`
+  if (d.status !== 'convertido') return `${base}\n\nEsta ação não pode ser desfeita.`
+  const osAtiva = d.convertido_os_id != null
+  const vendaAtiva = d.convertido_venda_id != null
+  if (osAtiva || vendaAtiva) {
+    const refs = [osAtiva && 'a ordem de serviço', vendaAtiva && 'a venda no PDV'].filter(Boolean).join(' nem ')
+    return `${base}\n\nO orçamento foi convertido, mas ${refs} vinculada(s) não será(ão) excluída(s).`
+  }
+  return `${base}\n\nFoi convertido anteriormente; a OS ou venda vinculada já não existe. Apenas o registro do orçamento será removido.`
 }
 function defaultValidoAte() {
   const d = new Date()
@@ -335,7 +343,7 @@ export function OrcamentosPage({
   }
 
   async function handleExcluir() {
-    if (!detalhe || !window.confirm(`Excluir orçamento #${detalhe.numero}?`)) return
+    if (!detalhe || !window.confirm(mensagemConfirmarExclusao(detalhe))) return
     setBusy('del'); setErro(null)
     try { await excluirOrcamento(companyId, detalhe.id); setSelectedId(null); setDetalhe(null); await carregarLista(); setMsgOk('Excluído.') }
     catch (e: unknown) { setErro(e instanceof Error ? e.message : 'Erro ao excluir.') }
@@ -495,12 +503,10 @@ export function OrcamentosPage({
                     </h2>
                     <p className="orc-detail__sub">Atualizado {formatShortDate(detalhe.updated_at)}</p>
                   </div>
-                  {podeExcluir(detalhe.status) && (
-                    <button type="button" className="orc-btn-excluir st-ghost-btn" disabled={busy === 'del'}
-                      onClick={() => void handleExcluir()}>
-                      {busy === 'del' ? 'Excluindo…' : 'Excluir orçamento'}
-                    </button>
-                  )}
+                  <button type="button" className="orc-btn-excluir st-ghost-btn" disabled={busy === 'del'}
+                    onClick={() => void handleExcluir()}>
+                    {busy === 'del' ? 'Excluindo…' : 'Excluir orçamento'}
+                  </button>
                 </div>
 
                 <div className="orc-form-grid">

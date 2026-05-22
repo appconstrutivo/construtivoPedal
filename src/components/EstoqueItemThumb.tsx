@@ -93,6 +93,7 @@ export function EstoqueItemThumb({
           alt={alt}
           loading="lazy"
           decoding="async"
+          referrerPolicy="no-referrer"
           onError={() => setErro(true)}
         />
       )}
