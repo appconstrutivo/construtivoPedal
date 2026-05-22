@@ -166,7 +166,7 @@ export function EstoqueImportModal({
             Colunas da planilha: <strong>SKU</strong> (código do fornecedor, só para conferência),{' '}
             <strong>Nome</strong>, <strong>Preço de Venda</strong> (= <strong>Custo (R$)</strong> no cadastro) e{' '}
             <strong>Quantidade</strong>. Se o item já existir, o sistema mantém o <strong>maior custo</strong> entre o
-            cadastro e a planilha.
+            cadastro e a planilha e <strong>não altera</strong> o preço varejo/atacado já cadastrado.
             O arquivo é lido apenas no seu navegador — <strong>não é salvo no Supabase</strong>. Cada item
             novo recebe o <strong>SKU interno da loja</strong> (000001, 000002…) como no cadastro manual.
           </p>
@@ -217,7 +217,9 @@ export function EstoqueImportModal({
                 onChange={(e) => setMarkupPct(e.target.value)}
                 disabled={importando}
               />
-              <p className="st-field__hint">Preço varejo/atacado = custo (com adicional) + markup.</p>
+              <p className="st-field__hint">
+                Aplica só em itens <strong>novos</strong>: preço varejo/atacado = custo (com adicional) + markup.
+              </p>
             </label>
           </div>
           <label className="st-field">

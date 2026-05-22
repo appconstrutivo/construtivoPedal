@@ -333,13 +333,11 @@ export async function importarItensPlanilhaEstoque(params: {
         const novoSaldo = existente.saldo_atual + linha.quantidade
         // Coluna "Preço de Venda" da planilha = custo_medio (Custo R$) no cadastro.
         const custoMedio = Math.max(custoPlanilha, existente.custo_medio)
-        const precoVenda = calcularPrecoComMarkup(custoMedio, markupPct)
+        // Itens já cadastrados: atualiza custo/saldo, mas mantém preços de venda validados na loja.
         await atualizarItemEstoque(existente.id, {
           nome: linha.nome,
           sku_fornecedor: linha.skuFornecedor,
           custo_medio: custoMedio,
-          preco_varejo: precoVenda,
-          preco_atacado: precoVenda,
           saldo_atual: novoSaldo,
           fornecedor_id: fornecedorId,
         })
