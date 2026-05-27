@@ -389,9 +389,6 @@ export async function converterOrcamentoEmOs(params: {
   if (!det) throw new Error('Orçamento não encontrado.')
   if (det.status === 'convertido') throw new Error('Orçamento já foi convertido.')
   if (det.itens.length === 0) throw new Error('Adicione itens ao orçamento.')
-  if (!det.cliente_id) {
-    throw new Error('Vincule um cliente cadastrado antes de converter em ordem de serviço.')
-  }
 
   const temServico = det.itens.some((i) => i.tipo === 'servico')
   if (!temServico && det.itens.every((i) => i.tipo === 'peca')) {
@@ -401,8 +398,8 @@ export async function converterOrcamentoEmOs(params: {
   const os = await criarOrdemServico({
     company_id: params.companyId,
     store_id: params.storeId,
-    cliente_id: det.cliente_id,
-    bicicleta_id: det.bicicleta_id,
+    cliente_id: det.cliente_id ?? null,
+    bicicleta_id: det.cliente_id ? det.bicicleta_id ?? null : null,
     status: 'aberta',
     problema_relatado: det.resumo || 'Serviço conforme orçamento',
     diagnostico: det.observacoes,

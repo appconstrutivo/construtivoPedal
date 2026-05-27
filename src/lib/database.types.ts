@@ -504,26 +504,41 @@ export type Database = {
       companies: {
         Row: {
           active: boolean
+          address: string | null
+          cnpj: string | null
           created_at: string
+          email: string | null
           id: string
+          legal_name: string | null
           logo_url: string | null
           name: string
+          phone: string | null
           plan: string
           slug: string
           updated_at: string
         }
         Insert: {
           active?: boolean
+          address?: string | null
+          cnpj?: string | null
+          email?: string | null
           id?: string
+          legal_name?: string | null
           logo_url?: string | null
           name: string
+          phone?: string | null
           plan?: string
           slug: string
         }
         Update: {
           active?: boolean
+          address?: string | null
+          cnpj?: string | null
+          email?: string | null
+          legal_name?: string | null
           logo_url?: string | null
           name?: string
+          phone?: string | null
           plan?: string
         }
       }

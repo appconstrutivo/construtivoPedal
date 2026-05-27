@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import { ClientePicker } from '../components/ClientePicker'
 import { EstoqueItemPicker } from '../components/EstoqueItemPicker'
+import { ServicoCatalogoPicker } from '../components/ServicoCatalogoPicker'
 import { PagamentoMistoFields, validarPagamentoMisto } from '../components/PagamentoMistoFields'
 import { novaLinhaPagamento, type PagamentoLinha } from '../lib/pagamento-misto'
 import {
@@ -186,6 +187,11 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
     void carregarLista()
     void carregarContexto()
   }, [carregarLista, carregarContexto])
+
+  useEffect(() => {
+    setPecaForm({ itemId: '', qtd: '1', descricao: '', preco: '' })
+    setServicoForm({ catalogoId: '', desc: '', qtd: '1', preco: '0' })
+  }, [activeStoreId])
 
   const carregarFaturamentoOs = useCallback(
     async (osId: string) => {
@@ -494,9 +500,30 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
     }))
   }
 
+  function selecionarServicoCatalogo(id: string) {
+    if (!id) {
+      setServicoForm({ catalogoId: '', desc: '', qtd: '1', preco: '0' })
+      return
+    }
+    const svc = servicosAtivosParaOs.find((s) => s.id === id)
+    setServicoForm({
+      catalogoId: id,
+      desc: svc?.nome ?? '',
+      qtd: '1',
+      preco: svc != null ? String(Number(svc.preco_sugerido)) : '0',
+    })
+  }
+
   async function addPeca() {
-    if (!detalhe || !pecaForm.itemId) return
+    if (!detalhe || !pecaForm.itemId) {
+      setErro('Selecione uma peça no estoque antes de incluir.')
+      return
+    }
     const item = itensEstoque.find((x) => x.id === pecaForm.itemId)
+    if (!item) {
+      setErro('Peça não encontrada na loja ativa. Recarregue a página ou selecione outro item.')
+      return
+    }
     const q = parseQuantidadeInteira(pecaForm.qtd)
     if (!(q > 0)) {
       setErro(MSG_QUANTIDADE_INTEIRA)
@@ -904,35 +931,20 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
                       <p className="os-mini-title">Serviço / mão de obra</p>
                       <label className="os-field">
                         <span>Serviço do catálogo</span>
-                        <select
-                          className="os-input"
+                        <ServicoCatalogoPicker
+                          servicos={servicosAtivosParaOs}
                           value={servicoForm.catalogoId}
-                          onChange={(e) => {
-                            const id = e.target.value
-                            if (!id) {
-                              setServicoForm({ catalogoId: '', desc: '', qtd: '1', preco: '0' })
-                              return
-                            }
-                            const svc = servicosAtivosParaOs.find((s) => s.id === id)
-                            setServicoForm({
-                              catalogoId: id,
-                              desc: svc?.nome ?? '',
-                              qtd: '1',
-                              preco: svc != null ? String(Number(svc.preco_sugerido)) : '0',
-                            })
-                          }}
-                        >
-                          <option value="">
-                            {servicosAtivosParaOs.length === 0
-                              ? '— Sem serviços ativos: use avulso ou cadastre na aba Catálogo —'
-                              : '— Serviço avulso (descrição livre abaixo) —'}
-                          </option>
-                          {servicosAtivosParaOs.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.nome} — {formatBRL(Number(s.preco_sugerido))}
-                            </option>
-                          ))}
-                        </select>
+                          onChange={selecionarServicoCatalogo}
+                          formatPreco={formatBRL}
+                          permitirAvulso
+                          placeholder={
+                            servicosAtivosParaOs.length === 0
+                              ? 'Sem serviços ativos — use avulso abaixo'
+                              : 'Buscar serviço do catálogo…'
+                          }
+                          rotuloAvulso="Serviço avulso (descrição livre abaixo)"
+                          hintAvulso="Digite a descrição manualmente no campo abaixo"
+                        />
                       </label>
                       <label className="os-field">
                         <span>Descrição na linha da OS</span>

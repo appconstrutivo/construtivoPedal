@@ -7273,6 +7273,100 @@ button {
   font-weight: 600;
 }
 
+/* ── Mais (empresa / configurações) ───────────────── */
+.mais-page {
+  max-width: min(1100px, 100%);
+  gap: 20px;
+}
+
+.mais-grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 900px) {
+  .mais-grid {
+    grid-template-columns: 1fr min(320px, 34%);
+    align-items: start;
+  }
+}
+
+.mais-panel__title {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.mais-form .st-form-grid {
+  grid-template-columns: 1fr 1fr;
+}
+
+.mais-form .st-field--full {
+  grid-column: 1 / -1;
+}
+
+.mais-code {
+  font-size: 0.85em;
+  font-family: ui-monospace, monospace;
+}
+
+.mais-success {
+  margin: 0;
+  color: var(--cp-tone-teal);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.mais-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.mais-meta {
+  margin: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.mais-meta dt {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--cp-text-muted);
+}
+
+.mais-meta dd {
+  margin: 4px 0 0;
+  font-weight: 600;
+}
+
+.mais-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--cp-tone-teal) 14%, transparent);
+  color: var(--cp-tone-teal);
+  font-size: 0.85rem;
+}
+
+.mais-list {
+  margin: 0 0 12px;
+  padding-left: 1.2rem;
+  color: var(--cp-text-muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 640px) {
+  .mais-form .st-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     scroll-behavior: auto !important;

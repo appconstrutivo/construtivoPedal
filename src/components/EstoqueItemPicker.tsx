@@ -1,20 +1,24 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { EstoqueItemThumb } from './EstoqueItemThumb'
+import { normalizarNomeEstoque } from '../services/estoque.service'
 import type { EstoqueItemComLocal } from '../services/estoque.service'
 
 function rotuloItem(item: EstoqueItemComLocal) {
   return `${item.nome} (${item.sku})`
 }
 
+function textoBuscaItem(item: EstoqueItemComLocal) {
+  return [item.nome, item.sku, item.sku_fornecedor ?? ''].join(' ').toLowerCase()
+}
+
 function itemCorrespondeBusca(item: EstoqueItemComLocal, busca: string) {
-  const termos = busca
-    .trim()
+  const termos = normalizarNomeEstoque(busca)
     .toLowerCase()
     .split(/\s+/)
     .filter(Boolean)
   if (termos.length === 0) return true
 
-  const texto = [item.nome, item.sku, item.sku_fornecedor ?? ''].join(' ').toLowerCase()
+  const texto = textoBuscaItem(item)
   return termos.every((t) => texto.includes(t))
 }
 
@@ -42,12 +46,23 @@ export function EstoqueItemPicker({
 }: EstoqueItemPickerProps) {
   const [aberto, setAberto] = useState(false)
   const [busca, setBusca] = useState('')
+  /** Mantém o rótulo visível até o `value` do pai atualizar após o clique na lista. */
+  const [idLocal, setIdLocal] = useState<string | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const ignorarOnChangeRef = useRef(false)
   const listId = useId()
   const inputId = id ?? listId
 
-  const selecionado = useMemo(() => itens.find((i) => i.id === value) ?? null, [itens, value])
+  const idEfetivo = value || idLocal || ''
+  const selecionado = useMemo(
+    () => (idEfetivo ? itens.find((i) => i.id === idEfetivo) ?? null : null),
+    [itens, idEfetivo],
+  )
+
+  useEffect(() => {
+    if (value && idLocal === value) setIdLocal(null)
+  }, [value, idLocal])
 
   const resultados = useMemo(() => {
     const lista = busca.trim() ? itens.filter((i) => itemCorrespondeBusca(i, busca)) : itens
@@ -69,17 +84,26 @@ export function EstoqueItemPicker({
   function abrir() {
     if (disabled) return
     setAberto(true)
-    setBusca('')
-    requestAnimationFrame(() => inputRef.current?.focus())
+    setBusca(selecionado ? rotuloItem(selecionado) : '')
+    requestAnimationFrame(() => {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    })
   }
 
   function selecionar(itemId: string) {
+    ignorarOnChangeRef.current = true
+    setIdLocal(itemId)
     onChange(itemId)
     setAberto(false)
     setBusca('')
+    requestAnimationFrame(() => {
+      ignorarOnChangeRef.current = false
+    })
   }
 
   function limpar() {
+    setIdLocal(null)
     onChange('')
     setBusca('')
     setAberto(true)
@@ -122,7 +146,7 @@ export function EstoqueItemPicker({
         <input
           ref={inputRef}
           id={inputId}
-          type="search"
+          type="text"
           className={[
             'st-input',
             'st-item-picker__input',
@@ -140,9 +164,13 @@ export function EstoqueItemPicker({
           role="combobox"
           onFocus={abrir}
           onChange={(e) => {
-            setBusca(e.target.value)
+            if (ignorarOnChangeRef.current) return
+            const texto = e.target.value
+            setBusca(texto)
             if (!aberto) setAberto(true)
-            if (selecionado && e.target.value !== rotuloItem(selecionado)) {
+            const rotuloAtual = selecionado ? rotuloItem(selecionado) : ''
+            if (idEfetivo && texto !== rotuloAtual) {
+              setIdLocal(null)
               onChange('')
             }
           }}
@@ -172,12 +200,14 @@ export function EstoqueItemPicker({
             <li className="st-item-picker__empty">Nenhum item encontrado.</li>
           ) : (
             resultados.map((item) => (
-              <li key={item.id} role="option" aria-selected={item.id === value}>
+              <li key={item.id} role="option" aria-selected={item.id === idEfetivo}>
                 <button
                   type="button"
-                  className={`st-item-picker__option${item.id === value ? ' st-item-picker__option--on' : ''}${comImagem ? ' st-item-picker__option--with-thumb' : ''}`}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => selecionar(item.id)}
+                  className={`st-item-picker__option${item.id === idEfetivo ? ' st-item-picker__option--on' : ''}${comImagem ? ' st-item-picker__option--with-thumb' : ''}`}
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    selecionar(item.id)
+                  }}
                 >
                   {comImagem ? (
                     <>

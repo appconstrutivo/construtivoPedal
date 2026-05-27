@@ -15,6 +15,7 @@ import { OrcamentosPage } from './pages/OrcamentosPage'
 import { contarContasPagarVencendoHoje } from './services/financeiro.service'
 import { contarOrcamentosAprovacaoNaoVista } from './services/orcamento.service'
 import { OrcamentoAprovacaoPage } from './pages/OrcamentoAprovacaoPage'
+import { MaisPage } from './pages/MaisPage'
 import { AuthPages } from './pages/AuthPages'
 import { isSupabaseConfigured, supabase } from './lib/supabaseClient'
 
@@ -29,20 +30,6 @@ const ACTIVE_STORE_STORAGE_KEY = 'cp_pedal_active_store_v1'
 
 function activeStoreStorageKey(companyId: string) {
   return `${ACTIVE_STORE_STORAGE_KEY}:${companyId}`
-}
-
-function PlaceholderPage({ title, hint }: { title: string; hint: string }) {
-  return (
-    <div className="cp-page cp-page--dash">
-      <header className="cp-dash-head cp-dash-head--simple">
-        <h1 className="cp-dash-head__title">{title}</h1>
-        <p className="cp-dash-head__tag">{hint}</p>
-      </header>
-      <div className="cp-panel cp-panel--muted">
-        <p className="cp-panel__hint">Módulo em desenvolvimento — em breve integrado ao Supabase.</p>
-      </div>
-    </div>
-  )
 }
 
 function tokenOrcamentoPublico() {
@@ -60,6 +47,7 @@ export default function App() {
   const [tenant, setTenant] = useState<{
     companyId: string
     companyName: string
+    companyPlan: string
     role: string
   } | null>(null)
   const [stores, setStores] = useState<StoreRow[]>([])
@@ -118,13 +106,13 @@ export default function App() {
     setTenantError(null)
 
     async function loadTenant(): Promise<
-      { companyId: string; role: string; companyName: string } | null
+      { companyId: string; role: string; companyName: string; companyPlan: string } | null
     > {
       // TODO: substituir por seleção explícita de empresa no onboarding.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (supabase as any)
         .from('company_memberships')
-        .select('company_id, role, companies(name)')
+        .select('company_id, role, companies(name, plan)')
         .eq('user_id', sessionUserId)
         .eq('is_active', true)
         .limit(1)
@@ -136,6 +124,7 @@ export default function App() {
           companyId: data.company_id,
           role: data.role,
           companyName: data.companies?.name ?? 'Empresa',
+          companyPlan: data.companies?.plan ?? 'starter',
         }
       }
 
@@ -144,7 +133,7 @@ export default function App() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: profile, error: profileError } = await (supabase as any)
         .from('user_profiles')
-        .select('company_id, role, companies(name)')
+        .select('company_id, role, companies(name, plan)')
         .eq('id', sessionUserId)
         .maybeSingle()
 
@@ -154,6 +143,7 @@ export default function App() {
           companyId: profile.company_id,
           role: profile.role ?? 'owner',
           companyName: profile.companies?.name ?? 'Empresa',
+          companyPlan: profile.companies?.plan ?? 'starter',
         }
       }
 
@@ -423,7 +413,15 @@ export default function App() {
         />
       )}
       {activeNav === 'mais' && (
-        <PlaceholderPage title="Mais" hint="Equipe, plano e preferências da empresa." />
+        <MaisPage
+          companyId={tenant.companyId}
+          companyName={tenant.companyName}
+          plan={tenant.companyPlan}
+          role={tenant.role}
+          onCompanyUpdated={(name) =>
+            setTenant((prev) => (prev ? { ...prev, companyName: name } : prev))
+          }
+        />
       )}
     </AppShell>
   )

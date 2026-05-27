@@ -173,6 +173,28 @@ function IconX() {
   )
 }
 
+function IconCopy() {
+  return (
+    <svg aria-hidden width={14} height={14} viewBox="0 0 24 24" fill="none">
+      <rect
+        x={9}
+        y={9}
+        width={11}
+        height={11}
+        rx={1.5}
+        stroke="currentColor"
+        strokeWidth={1.75}
+      />
+      <path
+        d="M7 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1"
+        stroke="currentColor"
+        strokeWidth={1.75}
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
 function emptyFornecedorForm() {
   return {
     nome: '',
@@ -267,6 +289,8 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
   const [modalMovOpen, setModalMovOpen] = useState(false)
   const [modalKitOpen, setModalKitOpen] = useState(false)
   const [kitEditandoId, setKitEditandoId] = useState<string | null>(null)
+  /** Nome do kit usado como base ao duplicar receita (somente exibição no modal). */
+  const [kitReceitaOrigemNome, setKitReceitaOrigemNome] = useState<string | null>(null)
   const [kitsComposicaoAberta, setKitsComposicaoAberta] = useState<Record<string, boolean>>({})
   const [modalMontagemOpen, setModalMontagemOpen] = useState(false)
   const [modalDesmontagemOpen, setModalDesmontagemOpen] = useState(false)
@@ -892,7 +916,29 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
   function abrirCadastroKit() {
     setFormError(null)
     setKitEditandoId(null)
+    setKitReceitaOrigemNome(null)
     setKitForm(emptyKitForm())
+    setModalKitOpen(true)
+    void reservarSkuKitParaFormulario()
+  }
+
+  function abrirDuplicarKit(kit: KitComComponentes) {
+    setFormError(null)
+    setKitEditandoId(null)
+    setKitReceitaOrigemNome(kit.nome)
+    setKitSkuLoading(false)
+    setKitForm({
+      sku: '',
+      nome: `${kit.nome} (cópia)`,
+      itemResultanteId: '',
+      componentes: kitComponentesComLinhaNova(
+        kit.componentes.map((c) => ({
+          id: novoIdLinhaKit(),
+          itemId: c.componenteItemId,
+          quantidade: formatQuantidadeInteira(c.quantidade),
+        })),
+      ),
+    })
     setModalKitOpen(true)
     void reservarSkuKitParaFormulario()
   }
@@ -900,6 +946,7 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
   function abrirEditarKit(kit: KitComComponentes) {
     setFormError(null)
     setKitEditandoId(kit.id)
+    setKitReceitaOrigemNome(null)
     setKitSkuLoading(false)
     setKitForm({
       sku: kit.sku,
@@ -920,6 +967,7 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
     if (salvandoKit) return
     setModalKitOpen(false)
     setKitEditandoId(null)
+    setKitReceitaOrigemNome(null)
     setKitForm(emptyKitForm())
     setFormError(null)
   }
@@ -1625,6 +1673,15 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
                         <button
                           type="button"
                           className="st-row__action st-row__action--icon"
+                          aria-label={`Duplicar receita do kit ${kit.nome}`}
+                          title="Criar novo kit a partir desta receita"
+                          onClick={() => abrirDuplicarKit(kit)}
+                        >
+                          <IconCopy />
+                        </button>
+                        <button
+                          type="button"
+                          className="st-row__action st-row__action--icon"
                           aria-label={`Editar composição do kit ${kit.nome}`}
                           onClick={() => abrirEditarKit(kit)}
                         >
@@ -2230,7 +2287,11 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
           <div className="st-modal st-modal--lg st-modal--scroll">
             <div className="st-modal__head">
               <h2 id="st-kit-title" className="st-modal__title">
-                {kitEditandoId ? 'Editar composição do kit' : 'Novo kit composto'}
+                {kitEditandoId
+                  ? 'Editar composição do kit'
+                  : kitReceitaOrigemNome
+                    ? 'Novo kit a partir de receita'
+                    : 'Novo kit composto'}
               </h2>
               <button type="button" className="st-modal__close" onClick={fecharModalKit}>
                 ×
@@ -2238,6 +2299,12 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
             </div>
             <form className="st-form st-form--modal-scroll" onSubmit={handleSalvarKit}>
               <div className="st-modal__body">
+              {kitReceitaOrigemNome ? (
+                <p className="st-field__hint st-kit-receita-origem">
+                  Receita base: <strong>{kitReceitaOrigemNome}</strong>. Os componentes foram copiados —
+                  ajuste o nome, escolha o <strong>item resultante</strong> e salve como um kit novo.
+                </p>
+              ) : null}
               <div className="st-form-grid">
                 <label className="st-field">
                   <span>SKU do kit</span>
@@ -2364,7 +2431,13 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
                   className="st-primary-btn"
                   disabled={salvandoKit || kitSkuLoading || (!kitEditandoId && !kitForm.sku.trim())}
                 >
-                  {salvandoKit ? 'Salvando...' : kitEditandoId ? 'Salvar alterações' : 'Salvar kit'}
+                  {salvandoKit
+                    ? 'Salvando...'
+                    : kitEditandoId
+                      ? 'Salvar alterações'
+                      : kitReceitaOrigemNome
+                        ? 'Criar kit'
+                        : 'Salvar kit'}
                 </button>
               </div>
             </form>

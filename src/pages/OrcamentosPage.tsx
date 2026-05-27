@@ -653,14 +653,43 @@ export function OrcamentosPage({
                   {podeConverter && (
                     <div className="orc-actions__convert">
                       {temPeca && !temServico && <button type="button" className="st-primary-btn" disabled={!!busy} onClick={() => void converterOrcamentoEmPdvPrefill(companyId, detalhe.id).then(onNavigatePdv).catch((e) => setErro(e instanceof Error ? e.message : 'Erro PDV.'))}>Converter em venda (PDV)</button>}
-                      {temServico && !temPeca && activeStoreId && detalhe.cliente_id && <button type="button" className="st-primary-btn" disabled={!!busy} onClick={() => void converterOrcamentoEmOs({ companyId, storeId: activeStoreId, orcamentoId: detalhe.id }).then(({ osId }) => onNavigateOficina(osId)).catch((e) => setErro(e instanceof Error ? e.message : 'Erro OS.'))}>Converter em OS</button>}
-                      {temServico && !temPeca && activeStoreId && !detalhe.cliente_id && (
-                        <p className="orc-muted">Vincule um cliente para converter em OS.</p>
+                      {temServico && !temPeca && activeStoreId && (
+                        <button
+                          type="button"
+                          className="st-primary-btn"
+                          disabled={!!busy}
+                          onClick={() =>
+                            void converterOrcamentoEmOs({
+                              companyId,
+                              storeId: activeStoreId,
+                              orcamentoId: detalhe.id,
+                            })
+                              .then(({ osId }) => onNavigateOficina(osId))
+                              .catch((e) => setErro(e instanceof Error ? e.message : 'Erro OS.'))
+                          }
+                        >
+                          Converter em OS
+                        </button>
                       )}
                       {temPeca && temServico && (
                         <>
                           <button type="button" className="st-ghost-btn" disabled={!!busy} onClick={() => void converterOrcamentoEmPdvPrefill(companyId, detalhe.id).then(onNavigatePdv)}>Converter em venda (PDV)</button>
-                          {activeStoreId && detalhe.cliente_id && <button type="button" className="st-ghost-btn" disabled={!!busy} onClick={() => void converterOrcamentoEmOs({ companyId, storeId: activeStoreId, orcamentoId: detalhe.id }).then(({ osId }) => onNavigateOficina(osId))}>Converter em OS</button>}
+                          {activeStoreId && (
+                            <button
+                              type="button"
+                              className="st-ghost-btn"
+                              disabled={!!busy}
+                              onClick={() =>
+                                void converterOrcamentoEmOs({
+                                  companyId,
+                                  storeId: activeStoreId,
+                                  orcamentoId: detalhe.id,
+                                }).then(({ osId }) => onNavigateOficina(osId))
+                              }
+                            >
+                              Converter em OS
+                            </button>
+                          )}
                         </>
                       )}
                     </div>

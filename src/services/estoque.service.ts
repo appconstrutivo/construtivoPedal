@@ -50,6 +50,11 @@ function statusSaldoItem(saldo: number, minimo: number): 'critico' | 'reposicao'
   return 'saudavel'
 }
 
+/** Remove quebras de linha e espaços duplicados vindos de planilhas importadas. */
+export function normalizarNomeEstoque(nome: string): string {
+  return nome.replace(/\s+/g, ' ').trim()
+}
+
 export async function obterResumoEstoqueLoja(
   companyId: string,
   storeId: string,
@@ -90,6 +95,7 @@ export async function listarItensEstoque(
   }
   return ((data ?? []) as Raw[]).map((item) => ({
     ...item,
+    nome: normalizarNomeEstoque(item.nome),
     storeName: item.stores?.name ?? 'Sem loja',
     fornecedorNome: item.fornecedores?.nome ?? null,
   }))
