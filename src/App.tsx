@@ -16,6 +16,8 @@ import { contarContasPagarVencendoHoje } from './services/financeiro.service'
 import { contarOrcamentosAprovacaoNaoVista } from './services/orcamento.service'
 import { OrcamentoAprovacaoPage } from './pages/OrcamentoAprovacaoPage'
 import { MaisPage } from './pages/MaisPage'
+import { PedidosPecasPage } from './pages/PedidosPecasPage'
+import { contarPedidosAguardandoAviso } from './services/pedidos-pecas.service'
 import { AuthPages } from './pages/AuthPages'
 import { isSupabaseConfigured, supabase } from './lib/supabaseClient'
 
@@ -56,6 +58,7 @@ export default function App() {
   const [modalNovaLojaOpen, setModalNovaLojaOpen] = useState(false)
   const [orcAprovacoesPendentes, setOrcAprovacoesPendentes] = useState(0)
   const [contasPagarVencemHoje, setContasPagarVencemHoje] = useState(0)
+  const [pedidosAguardandoAviso, setPedidosAguardandoAviso] = useState(0)
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -271,15 +274,30 @@ export default function App() {
     }
   }, [tenant?.companyId, activeStoreId])
 
+  const recarregarPedidosAguardandoAviso = useCallback(async () => {
+    if (!tenant?.companyId || !activeStoreId) {
+      setPedidosAguardandoAviso(0)
+      return
+    }
+    try {
+      const total = await contarPedidosAguardandoAviso(tenant.companyId, activeStoreId)
+      setPedidosAguardandoAviso(total)
+    } catch {
+      /* mantém último valor */
+    }
+  }, [tenant?.companyId, activeStoreId])
+
   useEffect(() => {
     void recarregarAprovacoesPendentes()
     void recarregarContasPagarVencendoHoje()
-  }, [recarregarAprovacoesPendentes, recarregarContasPagarVencendoHoje])
+    void recarregarPedidosAguardandoAviso()
+  }, [recarregarAprovacoesPendentes, recarregarContasPagarVencendoHoje, recarregarPedidosAguardandoAviso])
 
   useEffect(() => {
     const atualizar = () => {
       void recarregarAprovacoesPendentes()
       void recarregarContasPagarVencendoHoje()
+      void recarregarPedidosAguardandoAviso()
     }
     const intervalo = window.setInterval(atualizar, 45_000)
     window.addEventListener('focus', atualizar)
@@ -287,7 +305,7 @@ export default function App() {
       window.clearInterval(intervalo)
       window.removeEventListener('focus', atualizar)
     }
-  }, [recarregarAprovacoesPendentes, recarregarContasPagarVencendoHoje])
+  }, [recarregarAprovacoesPendentes, recarregarContasPagarVencendoHoje, recarregarPedidosAguardandoAviso])
 
   if (publicOrcamentoToken) {
     return <OrcamentoAprovacaoPage token={publicOrcamentoToken} />
@@ -345,6 +363,7 @@ export default function App() {
       navBadges={{
         ...(orcAprovacoesPendentes > 0 ? { orcamentos: orcAprovacoesPendentes } : {}),
         ...(contasPagarVencemHoje > 0 ? { financeiro: contasPagarVencemHoje } : {}),
+        ...(pedidosAguardandoAviso > 0 ? { pedidos: pedidosAguardandoAviso } : {}),
       }}
       companyName={tenant.companyName}
       userEmail={session.user.email}
@@ -404,6 +423,13 @@ export default function App() {
       )}
       {activeNav === 'estoque' && (
         <EstoquePage companyId={tenant.companyId} activeStoreId={activeStoreId} />
+      )}
+      {activeNav === 'pedidos' && (
+        <PedidosPecasPage
+          companyId={tenant.companyId}
+          activeStoreId={activeStoreId}
+          onBadgeChange={() => void recarregarPedidosAguardandoAviso()}
+        />
       )}
       {activeNav === 'relatorios' && (
         <RelatoriosPage

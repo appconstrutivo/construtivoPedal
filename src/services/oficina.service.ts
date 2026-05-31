@@ -35,6 +35,40 @@ export const STATUS_OS_ABERTAS: StatusOrdemServico[] = [
 export type OrdemServicoLista = OrdemServicoRow & {
   clienteNome: string
   bikeLabel: string | null
+  /** OS entregue com valor a receber ainda não quitado (sem faturar ou conta pendente). */
+  pendenciaFinanceira: boolean
+}
+
+type OsItemResumoLista = Pick<
+  OsItemRow,
+  'tipo' | 'estoque_item_id' | 'movimentacao_id' | 'quantidade' | 'preco_unitario'
+>
+
+type ContaReceberResumoLista = { status: string }
+
+export function calcularTotalOs(
+  itens: Pick<OsItemRow, 'quantidade' | 'preco_unitario'>[],
+): number {
+  return itens.reduce((acc, it) => acc + Number(it.quantidade) * Number(it.preco_unitario), 0)
+}
+
+/** Peças vinculadas ao estoque ainda sem movimentação de saída. */
+export function temPecasEstoqueSemBaixa(itens: Pick<OsItemRow, 'tipo' | 'estoque_item_id' | 'movimentacao_id'>[]): boolean {
+  return itens.some(
+    (it) => it.tipo === 'peca' && it.estoque_item_id != null && it.movimentacao_id == null,
+  )
+}
+
+export function osTemPendenciaFinanceira(
+  status: string,
+  itens: Pick<OsItemRow, 'quantidade' | 'preco_unitario'>[],
+  contasReceber?: ContaReceberResumoLista[] | null,
+): boolean {
+  if (status !== 'entregue') return false
+  if (calcularTotalOs(itens) <= 0) return false
+  const ativa = (contasReceber ?? []).find((c) => c.status !== 'cancelado')
+  if (!ativa) return true
+  return ativa.status === 'pendente'
 }
 
 export type OrdemServicoDetalhe = OrdemServicoRow & {
@@ -59,7 +93,9 @@ export async function listarOrdensServico(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('ordens_servico')
-    .select('*, clientes(nome), bicicletas(marca, modelo)')
+    .select(
+      '*, clientes(nome), bicicletas(marca, modelo), os_itens(tipo, estoque_item_id, movimentacao_id, quantidade, preco_unitario), financeiro_contas_receber(status)',
+    )
     .eq('company_id', companyId)
     .eq('store_id', storeId)
     .order('updated_at', { ascending: false })
@@ -69,17 +105,28 @@ export async function listarOrdensServico(
   type Raw = OrdemServicoRow & {
     clientes?: { nome?: string | null } | null
     bicicletas?: { marca?: string; modelo?: string } | null
+    os_itens?: OsItemResumoLista[]
+    financeiro_contas_receber?: ContaReceberResumoLista[] | null
   }
 
-  return ((data ?? []) as Raw[]).map((row) => ({
-    ...row,
-    clienteNome: nomeClienteOs(row.clientes?.nome),
-    bikeLabel: bikeLabel(
-      row.bicicletas
-        ? { marca: row.bicicletas.marca ?? '', modelo: row.bicicletas.modelo ?? '' }
-        : null,
-    ),
-  }))
+  return ((data ?? []) as Raw[]).map((row) => {
+    const itens = row.os_itens ?? []
+    const { clientes: _cl, bicicletas: _bi, os_itens: _it, financeiro_contas_receber: _cr, ...base } = row
+    return {
+      ...(base as OrdemServicoRow),
+      clienteNome: nomeClienteOs(row.clientes?.nome),
+      bikeLabel: bikeLabel(
+        row.bicicletas
+          ? { marca: row.bicicletas.marca ?? '', modelo: row.bicicletas.modelo ?? '' }
+          : null,
+      ),
+      pendenciaFinanceira: osTemPendenciaFinanceira(
+        base.status,
+        itens,
+        row.financeiro_contas_receber,
+      ),
+    }
+  })
 }
 
 export async function contarOsAbertas(companyId: string, storeId: string): Promise<number> {

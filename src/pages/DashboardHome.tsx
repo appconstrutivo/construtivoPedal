@@ -208,6 +208,7 @@ export function DashboardHome({ activeNav, companyId, activeStoreId, onNavigate 
       financeiro: { title: 'Financeiro', hint: 'Fluxo de caixa, contas e gestão da empresa.' },
       lancamentos: { title: 'Lançamentos', hint: '2ª via, ajuste de data e cancelamento de vendas.' },
       estoque: { title: 'Estoque', hint: 'Peças, bikes e movimentações por loja.' },
+      pedidos: { title: 'Pedidos de peças', hint: 'Lista de encomendas e pedidos de clientes no balcão.' },
       clientes: { title: 'Clientes', hint: 'CRM, bikes e revisões num só lugar.' },
       relatorios: { title: 'Relatórios', hint: 'Vendas, oficina, estoque e clientes por loja.' },
       mais: { title: 'Mais', hint: 'Equipe, plano e preferências da empresa.' },

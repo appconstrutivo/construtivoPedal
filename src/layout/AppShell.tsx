@@ -8,6 +8,7 @@ export type NavKey =
   | 'financeiro'
   | 'lancamentos'
   | 'estoque'
+  | 'pedidos'
   | 'clientes'
   | 'relatorios'
   | 'mais'
@@ -173,6 +174,26 @@ function IconGrid() {
   )
 }
 
+function IconClipboardList() {
+  return (
+    <svg aria-hidden width={22} height={22} viewBox="0 0 24 24" fill="none">
+      <path
+        d="M9 4h6l1 2h4v14H4V6h4l1-2Z"
+        stroke="currentColor"
+        strokeWidth={1.75}
+        strokeLinejoin="round"
+      />
+      <path d="M9 12h6M9 16h4" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" />
+      <path
+        d="M16 4v2a1 1 0 0 0 1 1h1"
+        stroke="currentColor"
+        strokeWidth={1.75}
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
 const NAV_ITEMS: NavItem[] = [
   { key: 'inicio', label: 'Início', icon: <IconHome /> },
   { key: 'oficina', label: 'Oficina', icon: <IconWrench /> },
@@ -181,6 +202,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'financeiro', label: 'Financeiro', icon: <IconWallet /> },
   { key: 'lancamentos', label: 'Lançamentos', icon: <IconReceipt /> },
   { key: 'estoque', label: 'Estoque', icon: <IconPackage /> },
+  { key: 'pedidos', label: 'Pedidos', icon: <IconClipboardList /> },
   { key: 'clientes', label: 'Clientes', icon: <IconUsers /> },
   { key: 'relatorios', label: 'Relatórios', icon: <IconChart /> },
   { key: 'mais', label: 'Mais', icon: <IconGrid /> },

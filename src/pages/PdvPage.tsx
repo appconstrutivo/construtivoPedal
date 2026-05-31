@@ -492,12 +492,13 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
               produtosFiltrados.map((item) => {
                 const semSaldo = Number(item.saldo_atual) <= 0
                 return (
-                  <li key={item.id}>
+                  <li key={item.id} className="pdv-prod-grid__item">
                     <button
                       type="button"
                       className="pdv-prod-card"
                       disabled={semLoja || semSaldo}
                       onClick={() => adicionarProduto(item)}
+                      aria-label={item.nome}
                     >
                       <EstoqueItemThumb
                         imagemUrl={item.imagem_url}
@@ -515,6 +516,9 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
                       </span>
                       {semSaldo && <span className="pdv-prod-card__badge">Sem saldo</span>}
                     </button>
+                    <span className="pdv-prod-tooltip" role="tooltip">
+                      {item.nome}
+                    </span>
                   </li>
                 )
               })

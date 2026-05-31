@@ -26,6 +26,7 @@ import {
   listarOrdensServico,
   OS_CLIENTE_BALCAO,
   STATUS_OS_ABERTAS,
+  temPecasEstoqueSemBaixa,
   type OrdemServicoDetalhe,
   type OrdemServicoLista,
   type OsItemRow,
@@ -292,6 +293,16 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
 
   async function handleSalvarCabecalho() {
     if (!detalhe) return
+    if (
+      formDetalhe.status === 'entregue' &&
+      detalhe.status !== 'entregue' &&
+      temPecasEstoqueSemBaixa(detalhe.itens)
+    ) {
+      setErro(
+        'Antes de marcar como Entregue, clique em Baixar em todas as peças vinculadas ao estoque.',
+      )
+      return
+    }
     setSalvandoCabecalho(true)
     setErro(null)
     try {
@@ -737,9 +748,21 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
                   key={r.id}
                   type="button"
                   role="listitem"
-                  className={selectedId === r.id ? 'os-list-item os-list-item--active' : 'os-list-item'}
+                  className={[
+                    'os-list-item',
+                    selectedId === r.id ? 'os-list-item--active' : '',
+                    r.pendenciaFinanceira ? 'os-list-item--notify' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
                   onClick={() => setSelectedId(r.id)}
                 >
+                  {r.pendenciaFinanceira ? (
+                    <span
+                      className="os-list-item__dot"
+                      aria-label="OS entregue — pendente de faturamento ou recebimento"
+                    />
+                  ) : null}
                   <div className="os-list-item__top">
                     <span className="os-list-item__num">#{r.numero}</span>
                     <span className={statusChipClass(r.status)}>{statusLabel(r.status)}</span>
