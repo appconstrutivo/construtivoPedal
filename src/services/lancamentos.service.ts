@@ -20,6 +20,14 @@ export type VendaLancamentoLista = Tables<'vendas'> & {
   pagamentos: PagamentoVendaDetalhe[]
 }
 
+export type VendasLancamentosPagina = {
+  items: VendaLancamentoLista[]
+  total: number
+}
+
+/** Tamanho fixo por página — padrão operacional sem expor seletor ao usuário. */
+export const LANCAMENTOS_PAGE_SIZE = 20
+
 export type VendaItemDetalhe = {
   id: string
   descricao: string
@@ -35,39 +43,14 @@ export type VendaDetalhe = Tables<'vendas'> & {
   pagamentos: PagamentoVendaDetalhe[]
 }
 
-export async function listarVendasLancamentos(
-  companyId: string,
-  storeId: string,
-  opts?: { limit?: number; status?: VendaStatus | 'todas' },
-): Promise<VendaLancamentoLista[]> {
-  if (!storeId) return []
-
-  const limit = opts?.limit ?? 60
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q = (supabase as any)
-    .from('vendas')
-    .select('*, clientes(nome), venda_itens(id), venda_pagamentos(forma_pagamento, valor)')
-    .eq('company_id', companyId)
-    .eq('store_id', storeId)
-    .order('realizada_em', { ascending: false })
-    .limit(limit)
-
-  if (opts?.status && opts.status !== 'todas') {
-    q = q.eq('status', opts.status)
-  }
-
-  const { data, error } = await q
-
-  if (error) throw new Error((error as { message?: string }).message ?? 'Erro ao carregar vendas.')
-
+function mapVendasLancamentosRaw(data: unknown[]): VendaLancamentoLista[] {
   type Raw = Tables<'vendas'> & {
     clientes?: { nome?: string | null } | null
     venda_itens?: Array<{ id: string }>
     venda_pagamentos?: PagamentoVendaDetalhe[]
   }
 
-  return ((data ?? []) as Raw[]).map((v) => ({
+  return (data as Raw[]).map((v) => ({
     ...v,
     clienteNome: v.clientes?.nome ?? null,
     qtdItens: v.venda_itens?.length ?? 0,
@@ -76,6 +59,60 @@ export async function listarVendasLancamentos(
       valor: Number(p.valor),
     })),
   }))
+}
+
+export async function listarVendasLancamentos(
+  companyId: string,
+  storeId: string,
+  opts?: {
+    page?: number
+    pageSize?: number
+    status?: VendaStatus | 'todas'
+    busca?: string
+  },
+): Promise<VendasLancamentosPagina> {
+  if (!storeId) return { items: [], total: 0 }
+
+  const pageSize = opts?.pageSize ?? LANCAMENTOS_PAGE_SIZE
+  const page = Math.max(1, opts?.page ?? 1)
+  const from = (page - 1) * pageSize
+  const to = from + pageSize - 1
+  const busca = opts?.busca?.trim() ?? ''
+
+  const selectCols =
+    '*, clientes(nome), venda_itens(id), venda_pagamentos(forma_pagamento, valor)'
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let q = (supabase as any)
+    .from('vendas')
+    .select(selectCols, { count: 'exact' })
+    .eq('company_id', companyId)
+    .eq('store_id', storeId)
+    .order('realizada_em', { ascending: false })
+    .range(from, to)
+
+  if (opts?.status && opts.status !== 'todas') {
+    q = q.eq('status', opts.status)
+  }
+
+  if (busca) {
+    const esc = busca.replace(/%/g, '\\%').replace(/_/g, '\\_')
+    if (/^\d+$/.test(busca)) {
+      const n = parseInt(busca, 10)
+      q = q.or(`numero.eq.${n},clientes.nome.ilike.%${esc}%`)
+    } else {
+      q = q.filter('clientes.nome', 'ilike', `%${esc}%`)
+    }
+  }
+
+  const { data, error, count } = await q
+
+  if (error) throw new Error((error as { message?: string }).message ?? 'Erro ao carregar vendas.')
+
+  return {
+    items: mapVendasLancamentosRaw(data ?? []),
+    total: count ?? 0,
+  }
 }
 
 export async function obterVendaDetalhe(

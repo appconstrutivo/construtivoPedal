@@ -6,6 +6,7 @@ import {
   dataExibicaoVenda,
   resumoPagamentosVenda,
   labelStatusVenda,
+  LANCAMENTOS_PAGE_SIZE,
   listarVendasLancamentos,
   obterVendaDetalhe,
   type VendaLancamentoLista,
@@ -49,7 +50,10 @@ export function LancamentosPage({ companyId, companyName, activeStoreId }: Lanca
   const semLoja = !activeStoreId
 
   const [vendas, setVendas] = useState<VendaLancamentoLista[]>([])
+  const [totalVendas, setTotalVendas] = useState(0)
+  const [pagina, setPagina] = useState(1)
   const [busca, setBusca] = useState('')
+  const [buscaAplicada, setBuscaAplicada] = useState('')
   const [filtro, setFiltro] = useState<FiltroStatus>('todas')
   const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
@@ -59,41 +63,57 @@ export function LancamentosPage({ companyId, companyName, activeStoreId }: Lanca
   const [dataVendaLocal, setDataVendaLocal] = useState('')
   const [salvandoData, setSalvandoData] = useState(false)
 
+  useEffect(() => {
+    const t = window.setTimeout(() => setBuscaAplicada(busca.trim()), 320)
+    return () => window.clearTimeout(t)
+  }, [busca])
+
+  useEffect(() => {
+    setPagina(1)
+  }, [activeStoreId, filtro, buscaAplicada])
+
+  const totalPaginas = Math.max(1, Math.ceil(totalVendas / LANCAMENTOS_PAGE_SIZE))
+
+  useEffect(() => {
+    if (pagina > totalPaginas) setPagina(totalPaginas)
+  }, [pagina, totalPaginas])
+
   const recarregar = useCallback(async () => {
     if (!activeStoreId) {
       setVendas([])
+      setTotalVendas(0)
       setLoading(false)
       return
     }
     setLoading(true)
     setErro(null)
     try {
-      const lista = await listarVendasLancamentos(companyId, activeStoreId, {
-        limit: 80,
+      const { items, total } = await listarVendasLancamentos(companyId, activeStoreId, {
+        page: pagina,
+        pageSize: LANCAMENTOS_PAGE_SIZE,
         status: filtro === 'todas' ? 'todas' : filtro,
+        busca: buscaAplicada || undefined,
       })
-      setVendas(lista)
+      setVendas(items)
+      setTotalVendas(total)
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao carregar lançamentos.')
     } finally {
       setLoading(false)
     }
-  }, [companyId, activeStoreId, filtro])
+  }, [companyId, activeStoreId, filtro, pagina, buscaAplicada])
 
   useEffect(() => {
     setSucesso(null)
     void recarregar()
   }, [recarregar])
 
-  const vendasFiltradas = useMemo(() => {
-    const q = busca.trim().toLowerCase()
-    if (!q) return vendas
-    return vendas.filter((v) => {
-      if (String(v.numero).includes(q)) return true
-      if (v.clienteNome?.toLowerCase().includes(q)) return true
-      return false
-    })
-  }, [vendas, busca])
+  const intervaloLista = useMemo(() => {
+    if (totalVendas === 0) return null
+    const inicio = (pagina - 1) * LANCAMENTOS_PAGE_SIZE + 1
+    const fim = Math.min(pagina * LANCAMENTOS_PAGE_SIZE, totalVendas)
+    return { inicio, fim }
+  }, [pagina, totalVendas])
 
   async function handleImprimir(vendaId: string) {
     if (semLoja) return
@@ -219,13 +239,14 @@ export function LancamentosPage({ companyId, companyName, activeStoreId }: Lanca
       <section className="lc-panel" aria-label="Vendas registradas">
         {loading ? (
           <p className="lc-empty">Carregando vendas…</p>
-        ) : vendasFiltradas.length === 0 ? (
+        ) : vendas.length === 0 ? (
           <p className="lc-empty">
             {semLoja ? 'Nenhuma venda — selecione uma loja.' : 'Nenhuma venda encontrada.'}
           </p>
         ) : (
+          <>
           <ul className="lc-list">
-            {vendasFiltradas.map((v) => {
+            {vendas.map((v) => {
               const busy = processandoId === v.id
               const finalizada = v.status === 'finalizada'
               return (
@@ -278,6 +299,40 @@ export function LancamentosPage({ companyId, companyName, activeStoreId }: Lanca
               )
             })}
           </ul>
+          {totalPaginas > 1 && intervaloLista && (
+            <footer className="lc-pager" aria-label="Paginação de vendas">
+              <p className="lc-pager__info">
+                Exibindo {intervaloLista.inicio}–{intervaloLista.fim} de {totalVendas} vendas
+              </p>
+              <div className="lc-pager__nav">
+                <button
+                  type="button"
+                  className="lc-btn lc-btn--ghost"
+                  disabled={semLoja || loading || pagina <= 1}
+                  onClick={() => setPagina((p) => Math.max(1, p - 1))}
+                >
+                  Anterior
+                </button>
+                <span className="lc-pager__page" aria-live="polite">
+                  Página {pagina} de {totalPaginas}
+                </span>
+                <button
+                  type="button"
+                  className="lc-btn lc-btn--ghost"
+                  disabled={semLoja || loading || pagina >= totalPaginas}
+                  onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
+                >
+                  Próxima
+                </button>
+              </div>
+            </footer>
+          )}
+          {totalVendas > 0 && totalVendas <= LANCAMENTOS_PAGE_SIZE && (
+            <p className="lc-pager__info lc-pager__info--solo">
+              {totalVendas === 1 ? '1 venda' : `${totalVendas} vendas`}
+            </p>
+          )}
+          </>
         )}
       </section>
 

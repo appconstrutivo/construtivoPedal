@@ -6208,6 +6208,45 @@ button {
   border-bottom: none;
 }
 
+.lc-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--cp-border);
+  background: color-mix(in srgb, var(--cp-bg) 35%, var(--cp-surface));
+}
+
+.lc-pager__info {
+  margin: 0;
+  font-size: 0.84rem;
+  color: var(--cp-text-muted);
+  font-weight: 600;
+}
+
+.lc-pager__info--solo {
+  padding: 10px 16px;
+  border-top: 1px solid var(--cp-border);
+  text-align: center;
+}
+
+.lc-pager__nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.lc-pager__page {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--cp-text-soft);
+  min-width: 7.5rem;
+  text-align: center;
+}
+
 .lc-row--cancel {
   opacity: 0.72;
   background: color-mix(in srgb, var(--cp-bg) 50%, var(--cp-surface));
