@@ -5,6 +5,7 @@ import {
   cancelarVenda,
   dataExibicaoVenda,
   resumoPagamentosVenda,
+  vendaOriginadaDeOs,
   labelStatusVenda,
   LANCAMENTOS_PAGE_SIZE,
   listarVendasLancamentos,
@@ -163,8 +164,11 @@ export function LancamentosPage({ companyId, companyName, activeStoreId }: Lanca
 
   async function handleCancelar(v: VendaLancamentoLista) {
     if (semLoja || v.status !== 'finalizada') return
+    const deOs = vendaOriginadaDeOs(v)
     const ok = window.confirm(
-      `Cancelar a venda #${v.numero} (${formatBRL(Number(v.total))})?\n\nO estoque dos produtos será estornado automaticamente.`,
+      deOs
+        ? `Cancelar o recebimento da venda #${v.numero} (${formatBRL(Number(v.total))})?\n\nO valor será estornado do caixa e a OS poderá ser editada e faturada novamente. O estoque da oficina não é alterado.`
+        : `Cancelar a venda #${v.numero} (${formatBRL(Number(v.total))})?\n\nO estoque dos produtos será estornado automaticamente.`,
     )
     if (!ok) return
 
@@ -172,8 +176,12 @@ export function LancamentosPage({ companyId, companyName, activeStoreId }: Lanca
     setErro(null)
     setSucesso(null)
     try {
-      await cancelarVenda(companyId, activeStoreId, v.id)
-      setSucesso(`Venda #${v.numero} cancelada.`)
+      const { originadaDeOs } = await cancelarVenda(companyId, activeStoreId, v.id)
+      setSucesso(
+        originadaDeOs
+          ? `Venda #${v.numero} cancelada. O faturamento da OS foi revertido — edite a OS e fature novamente com os valores corretos.`
+          : `Venda #${v.numero} cancelada.`,
+      )
       await recarregar()
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao cancelar venda.')
@@ -188,7 +196,7 @@ export function LancamentosPage({ companyId, companyName, activeStoreId }: Lanca
         <div>
           <h1 className="lc-head__title">Lançamentos</h1>
           <p className="lc-head__sub">
-            Recibo de venda, ajuste de data e cancelamento de vendas do balcão.
+            Recibo de venda, ajuste de data e cancelamento de vendas do balcão e de oficina (OS).
           </p>
         </div>
       </header>
@@ -256,6 +264,7 @@ export function LancamentosPage({ companyId, companyName, activeStoreId }: Lanca
                     <span className="lc-row__meta">
                       {formatShortDate(dataExibicaoVenda(v))}
                       {v.clienteNome ? ` · ${v.clienteNome}` : ' · Balcão'}
+                      {vendaOriginadaDeOs(v) ? ' · OS' : ''}
                       {' · '}
                       {resumoPagamentosVenda(v.forma_pagamento, v.pagamentos)}
                       {v.qtdItens > 0 ? ` · ${v.qtdItens} itens` : ''}
@@ -289,7 +298,13 @@ export function LancamentosPage({ companyId, companyName, activeStoreId }: Lanca
                       type="button"
                       className="lc-btn lc-btn--danger"
                       disabled={semLoja || busy || !finalizada}
-                      title={finalizada ? 'Cancelar venda e estornar estoque' : 'Venda já cancelada'}
+                      title={
+                        finalizada
+                          ? vendaOriginadaDeOs(v)
+                            ? 'Cancelar recebimento da OS e reverter faturamento'
+                            : 'Cancelar venda e estornar estoque'
+                          : 'Venda já cancelada'
+                      }
                       onClick={() => void handleCancelar(v)}
                     >
                       Cancelar

@@ -29,6 +29,38 @@ const STATUS_OS_LABEL: Record<string, string> = {
   cancelada: 'Cancelada',
 }
 
+/** Valida string YYYY-MM-DD (evita crash ao digitar datas incompletas no período personalizado). */
+export function isDataIsoValida(valor: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(valor)) return false
+  const [ano, mes, dia] = valor.split('-').map(Number)
+  const d = new Date(ano, mes - 1, dia)
+  return d.getFullYear() === ano && d.getMonth() === mes - 1 && d.getDate() === dia
+}
+
+export function tentarIntervaloPersonalizado(
+  dataInicio: string,
+  dataFim: string,
+): IntervaloRelatorio | null {
+  if (!isDataIsoValida(dataInicio) || !isDataIsoValida(dataFim)) return null
+
+  const desde = new Date(`${dataInicio}T00:00:00`)
+  const ate = new Date(`${dataFim}T23:59:59.999`)
+  if (Number.isNaN(desde.getTime()) || Number.isNaN(ate.getTime())) return null
+
+  const fmt = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
+  const label =
+    dataInicio === dataFim
+      ? fmt.format(desde)
+      : `${fmt.format(desde)} – ${fmt.format(ate)}`
+  return { desde: desde.toISOString(), ate: ate.toISOString(), label }
+}
+
+export function intervaloPersonalizado(dataInicio: string, dataFim: string): IntervaloRelatorio {
+  const intervalo = tentarIntervaloPersonalizado(dataInicio, dataFim)
+  if (!intervalo) throw new Error('Informe datas válidas no período personalizado.')
+  return intervalo
+}
+
 export function intervaloPeriodo(preset: PeriodoRelatorio): IntervaloRelatorio {
   const ate = new Date()
   const desde = new Date()
@@ -518,9 +550,8 @@ export async function obterRelatorioClientes(
 export async function obterRelatorioConsolidado(
   companyId: string,
   storeId: string,
-  periodo: PeriodoRelatorio,
+  intervalo: IntervaloRelatorio,
 ): Promise<RelatorioConsolidado & { intervalo: IntervaloRelatorio }> {
-  const intervalo = intervaloPeriodo(periodo)
   const [vendas, oficina, estoque, clientes] = await Promise.all([
     obterRelatorioVendas(companyId, storeId, intervalo),
     obterRelatorioOficina(companyId, storeId, intervalo),

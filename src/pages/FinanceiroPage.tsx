@@ -5,6 +5,7 @@ import { FinContasReceberTab } from '../components/financeiro/FinContasReceberTa
 import { obterResumoVendasHoje } from '../services/pdv.service'
 import { obterResumoContasPagar, obterResumoContasReceber } from '../services/financeiro.service'
 import {
+  intervaloPeriodo,
   obterRelatorioConsolidado,
   type PeriodoRelatorio,
   type RelatorioConsolidado,
@@ -264,7 +265,7 @@ export function FinanceiroPage({
     setErro(null)
     try {
       const [relatorio, hoje, resumo, resumoRec] = await Promise.all([
-        obterRelatorioConsolidado(companyId, activeStoreId, periodo),
+        obterRelatorioConsolidado(companyId, activeStoreId, intervaloPeriodo(periodo)),
         obterResumoVendasHoje(companyId, activeStoreId),
         obterResumoContasPagar(companyId, activeStoreId),
         obterResumoContasReceber(companyId, activeStoreId),

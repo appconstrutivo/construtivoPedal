@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { RelatorioVendasPanel } from '../components/relatorios/RelatorioVendasPanel'
 import {
+  intervaloPeriodo,
+  tentarIntervaloPersonalizado,
   obterRelatorioConsolidado,
+  type IntervaloRelatorio,
   type PeriodoRelatorio,
   type RelatorioConsolidado,
 } from '../services/relatorios.service'
@@ -13,12 +17,19 @@ type RelatoriosPageProps = {
 
 type AbaRelatorio = 'geral' | 'vendas' | 'oficina' | 'estoque' | 'clientes'
 
-const PERIODOS: { key: PeriodoRelatorio; label: string }[] = [
+const PERIODOS: { key: PeriodoRelatorio | 'custom'; label: string }[] = [
   { key: 'hoje', label: 'Hoje' },
   { key: '7d', label: '7 dias' },
   { key: '30d', label: '30 dias' },
   { key: 'mes', label: 'Mês' },
+  { key: 'custom', label: 'Personalizado' },
 ]
+
+function hojeIsoLocal(): string {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
 
 const ABAS: { key: AbaRelatorio; label: string }[] = [
   { key: 'geral', label: 'Geral' },
@@ -151,61 +162,6 @@ function AbaGeral({ dados }: { dados: RelatorioConsolidado }) {
                   </li>
                 ))}
             </ul>
-          )}
-        </section>
-      </div>
-    </>
-  )
-}
-
-function AbaVendas({ dados }: { dados: RelatorioConsolidado }) {
-  const { vendas } = dados
-  const maxTop = vendas.topProdutos[0]?.faturamento ?? 0
-
-  return (
-    <>
-      <div className="rl-kpi-grid rl-kpi-grid--3">
-        <KpiCard tom="teal" label="Faturamento" value={formatBRL(vendas.faturamento)} />
-        <KpiCard tom="blue" label="Vendas" value={String(vendas.quantidade)} />
-        <KpiCard tom="violet" label="Descontos" value={formatBRL(vendas.descontos)} />
-      </div>
-      <div className="rl-split">
-        <section className="rl-card">
-          <SecaoTitulo>Por forma de pagamento</SecaoTitulo>
-          {vendas.quantidade === 0 ? (
-            <ListaVazia texto="Sem vendas no período selecionado." />
-          ) : (
-            <ul className="rl-ranked">
-              {vendas.porFormaPagamento.map((f) => (
-                <li key={f.forma} className="rl-ranked__row">
-                  <div className="rl-ranked__head">
-                    <span>
-                      {f.label} <em className="rl-muted">({f.quantidade})</em>
-                    </span>
-                    <span>{formatBRL(f.total)}</span>
-                  </div>
-                  <BarraProporcional valor={f.total} max={vendas.faturamento} tom="blue" />
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-        <section className="rl-card">
-          <SecaoTitulo>Produtos mais vendidos</SecaoTitulo>
-          {vendas.topProdutos.length === 0 ? (
-            <ListaVazia texto="Sem itens registrados." />
-          ) : (
-            <ol className="rl-table">
-              {vendas.topProdutos.map((p, i) => (
-                <li key={p.descricao} className="rl-table__row">
-                  <span className="rl-table__rank">{i + 1}</span>
-                  <span className="rl-table__name">{p.descricao}</span>
-                  <span className="rl-table__qty">{formatNum(p.quantidade, 0)} un.</span>
-                  <span className="rl-table__val">{formatBRL(p.faturamento)}</span>
-                  <BarraProporcional valor={p.faturamento} max={maxTop} tom="teal" />
-                </li>
-              ))}
-            </ol>
           )}
         </section>
       </div>
@@ -351,21 +307,44 @@ function AbaClientes({ dados }: { dados: RelatorioConsolidado }) {
 }
 
 export function RelatoriosPage({ companyId, activeStoreId, storeName }: RelatoriosPageProps) {
-  const [periodo, setPeriodo] = useState<PeriodoRelatorio>('30d')
+  const [periodo, setPeriodo] = useState<PeriodoRelatorio | 'custom'>('30d')
+  const [dataInicio, setDataInicio] = useState(hojeIsoLocal)
+  const [dataFim, setDataFim] = useState(hojeIsoLocal)
   const [aba, setAba] = useState<AbaRelatorio>('geral')
-  const [dados, setDados] = useState<(RelatorioConsolidado & { intervalo: { label: string } }) | null>(null)
+  const [dados, setDados] = useState<(RelatorioConsolidado & { intervalo: IntervaloRelatorio }) | null>(
+    null,
+  )
   const [loading, setLoading] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+
+  const intervalo = useMemo((): IntervaloRelatorio | null => {
+    if (periodo === 'custom') return tentarIntervaloPersonalizado(dataInicio, dataFim)
+    return intervaloPeriodo(periodo)
+  }, [periodo, dataInicio, dataFim])
+
+  const periodoIncompleto = periodo === 'custom' && !intervalo
 
   const carregar = useCallback(async () => {
     if (!activeStoreId) {
       setDados(null)
       return
     }
+    if (periodo === 'custom' && !intervalo) {
+      setErro(null)
+      setDados(null)
+      setLoading(false)
+      return
+    }
+    if (periodo === 'custom' && dataInicio > dataFim) {
+      setErro('A data inicial não pode ser posterior à data final.')
+      setDados(null)
+      return
+    }
+    if (!intervalo) return
     setLoading(true)
     setErro(null)
     try {
-      const res = await obterRelatorioConsolidado(companyId, activeStoreId, periodo)
+      const res = await obterRelatorioConsolidado(companyId, activeStoreId, intervalo)
       setDados(res)
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao carregar relatórios.')
@@ -373,7 +352,7 @@ export function RelatoriosPage({ companyId, activeStoreId, storeName }: Relatori
     } finally {
       setLoading(false)
     }
-  }, [companyId, activeStoreId, periodo])
+  }, [companyId, activeStoreId, intervalo, periodo, dataInicio, dataFim])
 
   useEffect(() => {
     void carregar()
@@ -389,7 +368,7 @@ export function RelatoriosPage({ companyId, activeStoreId, storeName }: Relatori
           <p className="rl-head__sub">
             {semLoja
               ? 'Selecione uma loja no topo da tela.'
-              : `${storeName ?? 'Loja ativa'} · ${dados?.intervalo.label ?? '…'}`}
+              : `${storeName ?? 'Loja ativa'} · ${intervalo?.label ?? 'período personalizado'}`}
           </p>
         </div>
         <button
@@ -418,6 +397,28 @@ export function RelatoriosPage({ companyId, activeStoreId, storeName }: Relatori
             </button>
           ))}
         </div>
+        {periodo === 'custom' ? (
+          <div className="rl-custom-period">
+            <label className="rl-custom-period__field">
+              <span>De</span>
+              <input
+                type="date"
+                value={dataInicio}
+                onChange={(e) => setDataInicio(e.target.value)}
+                disabled={semLoja}
+              />
+            </label>
+            <label className="rl-custom-period__field">
+              <span>Até</span>
+              <input
+                type="date"
+                value={dataFim}
+                onChange={(e) => setDataFim(e.target.value)}
+                disabled={semLoja}
+              />
+            </label>
+          </div>
+        ) : null}
         <nav className="rl-tabs" aria-label="Tipo de relatório">
           {ABAS.map((t) => (
             <button
@@ -443,6 +444,16 @@ export function RelatoriosPage({ companyId, activeStoreId, storeName }: Relatori
         <section className="cp-panel cp-panel--muted">
           <p className="cp-panel__hint">Os relatórios respeitam a loja selecionada no cabeçalho.</p>
         </section>
+      ) : periodoIncompleto ? (
+        <section className="cp-panel cp-panel--muted">
+          <p className="cp-panel__hint">Informe as datas inicial e final para carregar o relatório.</p>
+        </section>
+      ) : aba === 'vendas' && intervalo ? (
+        <RelatorioVendasPanel
+          companyId={companyId}
+          activeStoreId={activeStoreId}
+          intervalo={intervalo}
+        />
       ) : loading && !dados ? (
         <div className="rl-loading" role="status">
           <span className="cp-auth-loading__spinner" aria-hidden />
@@ -451,7 +462,6 @@ export function RelatoriosPage({ companyId, activeStoreId, storeName }: Relatori
       ) : dados ? (
         <div className={loading ? 'rl-content rl-content--loading' : 'rl-content'}>
           {aba === 'geral' && <AbaGeral dados={dados} />}
-          {aba === 'vendas' && <AbaVendas dados={dados} />}
           {aba === 'oficina' && <AbaOficina dados={dados} />}
           {aba === 'estoque' && <AbaEstoque dados={dados} />}
           {aba === 'clientes' && <AbaClientes dados={dados} />}

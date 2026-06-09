@@ -15,6 +15,7 @@ export function dataExibicaoVenda(v: { realizada_em?: string | null; created_at:
 }
 
 export type VendaLancamentoLista = Tables<'vendas'> & {
+  os_id?: string | null
   clienteNome: string | null
   qtdItens: number
   pagamentos: PagamentoVendaDetalhe[]
@@ -36,11 +37,17 @@ export type VendaItemDetalhe = {
 }
 
 export type VendaDetalhe = Tables<'vendas'> & {
+  os_id?: string | null
   clienteNome: string | null
   clienteFone: string | null
   lojaNome: string
   itens: VendaItemDetalhe[]
   pagamentos: PagamentoVendaDetalhe[]
+}
+
+export function vendaOriginadaDeOs(v: { os_id?: string | null; observacao?: string | null }): boolean {
+  if (v.os_id) return true
+  return (v.observacao ?? '').toLowerCase().includes('faturamento os')
 }
 
 function mapVendasLancamentosRaw(data: unknown[]): VendaLancamentoLista[] {
@@ -208,13 +215,19 @@ export async function ajustarDataVenda(
   }
 }
 
-export async function cancelarVenda(companyId: string, storeId: string, vendaId: string): Promise<void> {
+export async function cancelarVenda(
+  companyId: string,
+  storeId: string,
+  vendaId: string,
+): Promise<{ originadaDeOs: boolean }> {
   if (!storeId) throw new Error('Selecione uma loja no topo da tela.')
 
   const detalhe = await obterVendaDetalhe(companyId, storeId, vendaId)
   if (detalhe.status !== 'finalizada') {
     throw new Error('Esta venda já está cancelada.')
   }
+
+  const originadaDeOs = vendaOriginadaDeOs(detalhe)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any).rpc('pdv_cancelar_venda', {
@@ -225,11 +238,13 @@ export async function cancelarVenda(companyId: string, storeId: string, vendaId:
     const msg = (error as { message?: string }).message ?? ''
     if (/function public\.pdv_cancelar_venda|does not exist|schema cache/i.test(msg)) {
       throw new Error(
-        'Função de cancelamento não encontrada. Aplique a migração supabase/sql/026_pdv_cancelar_venda.sql.',
+        'Função de cancelamento não encontrada. Aplique a migração supabase/sql/048_pdv_cancelar_venda_os.sql.',
       )
     }
     throw new Error(msg || 'Erro ao cancelar venda.')
   }
+
+  return { originadaDeOs }
 }
 
 export const labelFormaPagamento = labelPagamento
