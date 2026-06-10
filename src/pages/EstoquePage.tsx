@@ -5,11 +5,18 @@ import {
   verificarEstoqueMontagemKit,
 } from '../lib/kit-montagem'
 import {
+  formatCodigoLocalEstoque,
+  validarCamposLocalEstoque,
+} from '../lib/estoque-local'
+import {
   atualizarFornecedor,
   atualizarItemEstoque,
+  atualizarLocalEstoque,
   criarFornecedor,
   criarItemEstoque,
+  criarLocalEstoque,
   excluirFornecedor,
+  excluirLocalEstoque,
   atualizarKitComComponentes,
   criarKitComComponentes,
   criarMovimentacaoEstoque,
@@ -20,11 +27,13 @@ import {
   listarFornecedores,
   listarItensEstoque,
   listarKits,
+  listarLocaisEstoque,
   listarMovimentacoesHoje,
   desmontarKit,
   montarKit,
   sincronizarCustoItemResultanteKit,
   type EstoqueItemComLocal,
+  type EstoqueLocalRow,
   type KitComComponentes,
   type EstoqueMovimentacaoComItem,
   type FornecedorRow,
@@ -205,6 +214,14 @@ function emptyFornecedorForm() {
   }
 }
 
+function emptyLocalForm() {
+  return {
+    estante: '',
+    prateleira: '',
+    divisoria: '',
+  }
+}
+
 type ModalItemAba = 'dados' | 'detalhes'
 
 function emptyItemForm() {
@@ -217,6 +234,7 @@ function emptyItemForm() {
     categoria: 'peca' as CategoriaEstoque,
     unidade: 'un',
     fornecedorId: '',
+    localId: '',
     quantidadeInicial: '0',
     estoqueMinimo: '0',
     custoMedio: '0',
@@ -276,6 +294,7 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
   const [busca, setBusca] = useState('')
   const [categoria, setCategoria] = useState<CategoriaEstoque | 'todos'>('todos')
   const [status, setStatus] = useState<StatusEstoque | 'todos'>('todos')
+  const [filtroLocalId, setFiltroLocalId] = useState<string>('todos')
   const [itens, setItens] = useState<EstoqueItemComLocal[]>([])
   const [movimentacoes, setMovimentacoes] = useState<EstoqueMovimentacaoComItem[]>([])
   const [kits, setKits] = useState<KitComComponentes[]>([])
@@ -285,6 +304,12 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
   const [modalFornecedorOpen, setModalFornecedorOpen] = useState(false)
   const [fornecedorEditandoId, setFornecedorEditandoId] = useState<string | null>(null)
   const [excluindoFornecedorId, setExcluindoFornecedorId] = useState<string | null>(null)
+  const [modalLocalOpen, setModalLocalOpen] = useState(false)
+  const [localEditandoId, setLocalEditandoId] = useState<string | null>(null)
+  const [excluindoLocalId, setExcluindoLocalId] = useState<string | null>(null)
+  const [locais, setLocais] = useState<EstoqueLocalRow[]>([])
+  const [salvandoLocal, setSalvandoLocal] = useState(false)
+  const [localForm, setLocalForm] = useState(emptyLocalForm)
   const [modalItemOpen, setModalItemOpen] = useState(false)
   const [modalMovOpen, setModalMovOpen] = useState(false)
   const [modalKitOpen, setModalKitOpen] = useState(false)
@@ -337,21 +362,24 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
     setLoading(true)
     setErro(null)
     try {
-      const [itensData, movimentacoesData, fornecedoresData, kitsData] = await Promise.all([
+      const [itensData, movimentacoesData, fornecedoresData, locaisData, kitsData] = await Promise.all([
         listarItensEstoque(companyId, activeStoreId),
         listarMovimentacoesHoje(companyId, activeStoreId),
         listarFornecedores(companyId, activeStoreId),
+        listarLocaisEstoque(companyId, activeStoreId),
         listarKits(companyId, activeStoreId),
       ])
       setItens(itensData)
       setMovimentacoes(movimentacoesData)
       setFornecedores(fornecedoresData)
+      setLocais(locaisData)
       setKits(kitsData)
     } catch (err: unknown) {
       setErro(err instanceof Error ? err.message : 'Erro ao carregar estoque.')
       setItens([])
       setMovimentacoes([])
       setFornecedores([])
+      setLocais([])
       setKits([])
     } finally {
       setLoading(false)
@@ -364,6 +392,7 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
 
   useEffect(() => {
     setItemSelecionadoId(null)
+    setFiltroLocalId('todos')
   }, [activeStoreId])
 
   const itensFiltrados = useMemo(() => {
@@ -376,14 +405,28 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
       const itemStatus = statusItem(item)
       if (status !== 'todos' && itemStatus !== status) return false
 
+      if (filtroLocalId !== 'todos' && item.local_id !== filtroLocalId) return false
+
       if (!termo) return true
       return (
         item.nome.toLowerCase().includes(termo) ||
         item.sku.toLowerCase().includes(termo) ||
-        item.storeName.toLowerCase().includes(termo)
+        item.storeName.toLowerCase().includes(termo) ||
+        (item.localCodigo?.toLowerCase().includes(termo) ?? false) ||
+        (item.localNome?.toLowerCase().includes(termo) ?? false)
       )
     })
-  }, [busca, categoria, status, itens])
+  }, [busca, categoria, status, filtroLocalId, itens])
+
+  const localFormPreview = useMemo(() => {
+    const validado = validarCamposLocalEstoque(
+      localForm.estante,
+      localForm.prateleira,
+      localForm.divisoria,
+    )
+    if (!validado.ok) return null
+    return formatCodigoLocalEstoque(validado.estante, validado.prateleira, validado.divisoria)
+  }, [localForm.estante, localForm.prateleira, localForm.divisoria])
 
   function abrirMovimentacao(tipo: TipoMovimentacao, itemId?: string) {
     setFormError(null)
@@ -489,6 +532,97 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
       setFormError(err instanceof Error ? err.message : 'Erro ao salvar fornecedor.')
     } finally {
       setSalvandoFornecedor(false)
+    }
+  }
+
+  function abrirNovoLocal() {
+    setFormError(null)
+    setLocalEditandoId(null)
+    setLocalForm(emptyLocalForm())
+    setModalLocalOpen(true)
+  }
+
+  function abrirEditarLocal(local: EstoqueLocalRow) {
+    setFormError(null)
+    setLocalEditandoId(local.id)
+    setLocalForm({
+      estante: String(local.estante),
+      prateleira: local.prateleira,
+      divisoria: String(local.divisoria),
+    })
+    setModalLocalOpen(true)
+  }
+
+  function fecharModalLocal() {
+    if (salvandoLocal) return
+    setModalLocalOpen(false)
+    setLocalEditandoId(null)
+    setLocalForm(emptyLocalForm())
+    setFormError(null)
+  }
+
+  async function handleExcluirLocal(local: EstoqueLocalRow) {
+    if (
+      !window.confirm(
+        `Excluir o local "${local.codigo}"?\n\nItens vinculados ficarão sem localização.`,
+      )
+    ) {
+      return
+    }
+    setExcluindoLocalId(local.id)
+    setFormError(null)
+    try {
+      await excluirLocalEstoque(local.id)
+      await carregarDados()
+      if (filtroLocalId === local.id) setFiltroLocalId('todos')
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Erro ao excluir local.')
+    } finally {
+      setExcluindoLocalId(null)
+    }
+  }
+
+  async function handleSalvarLocal(e: React.FormEvent) {
+    e.preventDefault()
+    setFormError(null)
+    if (!activeStoreId) {
+      setFormError('Selecione uma loja no topo da tela.')
+      return
+    }
+
+    const validado = validarCamposLocalEstoque(
+      localForm.estante,
+      localForm.prateleira,
+      localForm.divisoria,
+    )
+    if (!validado.ok) {
+      setFormError(validado.erro)
+      return
+    }
+
+    const payload = {
+      estante: validado.estante,
+      prateleira: validado.prateleira,
+      divisoria: validado.divisoria,
+    }
+
+    setSalvandoLocal(true)
+    try {
+      if (localEditandoId) {
+        await atualizarLocalEstoque(localEditandoId, payload)
+      } else {
+        await criarLocalEstoque({
+          company_id: companyId,
+          store_id: activeStoreId,
+          ...payload,
+        })
+      }
+      await carregarDados()
+      fecharModalLocal()
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Erro ao salvar local de estoque.')
+    } finally {
+      setSalvandoLocal(false)
     }
   }
 
@@ -721,6 +855,7 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
       categoria: toCategoriaEstoque(item.categoria),
       unidade: item.unidade,
       fornecedorId: item.fornecedor_id ?? '',
+      localId: item.local_id ?? '',
       quantidadeInicial: String(item.saldo_atual),
       estoqueMinimo: String(item.estoque_minimo),
       custoMedio: String(custo),
@@ -833,6 +968,7 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
           unidade: itemForm.unidade.trim() || 'un',
           store_id: itemEditandoStoreId,
           fornecedor_id: itemForm.fornecedorId || null,
+          local_id: itemForm.localId || null,
           sku_fornecedor: skuFornecedor,
           estoque_minimo: estoqueMinimo,
           custo_medio: custoMedio,
@@ -851,6 +987,7 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
           unidade: itemForm.unidade.trim() || 'un',
           store_id: activeStoreId,
           fornecedor_id: itemForm.fornecedorId || null,
+          local_id: itemForm.localId || null,
           saldo_atual: quantidadeInicial,
           estoque_minimo: estoqueMinimo,
           custo_medio: custoMedio,
@@ -1268,6 +1405,15 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
               <button
                 type="button"
                 className="st-primary-btn st-primary-btn--soft"
+                onClick={abrirNovoLocal}
+                disabled={!activeStoreId}
+                title={!activeStoreId ? 'Selecione uma loja no topo' : undefined}
+              >
+                Local
+              </button>
+              <button
+                type="button"
+                className="st-primary-btn st-primary-btn--soft"
                 onClick={abrirCadastroKit}
                 disabled={itens.length < 2}
                 title={itens.length < 2 ? 'Cadastre ao menos dois itens no estoque' : undefined}
@@ -1298,7 +1444,7 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
                 id="st-busca"
                 className="st-search"
                 type="search"
-                placeholder="Buscar por item, SKU ou loja..."
+                placeholder="Buscar por item, SKU ou local..."
                 value={busca}
                 onChange={(e) => setBusca(e.target.value)}
                 autoComplete="off"
@@ -1332,6 +1478,25 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
                 </button>
               ))}
             </div>
+
+            {locais.length > 0 && (
+              <label className="st-field st-field--inline">
+                <span className="cp-sr-only">Filtrar por local</span>
+                <select
+                  className="st-input st-input--compact"
+                  value={filtroLocalId}
+                  onChange={(e) => setFiltroLocalId(e.target.value)}
+                  aria-label="Filtrar por local de estoque"
+                >
+                  <option value="todos">Todos os locais</option>
+                  {locais.map((local) => (
+                    <option key={local.id} value={local.id}>
+                      {local.codigo}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
 
           <div className="st-list-wrap">
@@ -1379,11 +1544,14 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
                           <strong className="st-row__name">{item.nome}</strong>
                           <span className="st-row__sku">{item.sku}</span>
                         </div>
-                        {item.fornecedorNome && (
-                          <div className="st-row__meta">
-                            <span>{item.fornecedorNome}</span>
-                          </div>
-                        )}
+                        <div className="st-row__meta">
+                          {item.localCodigo && (
+                            <span className="st-badge st-badge--local" title={item.localNome ?? undefined}>
+                              {item.localCodigo}
+                            </span>
+                          )}
+                          {item.fornecedorNome && <span>{item.fornecedorNome}</span>}
+                        </div>
                       </div>
 
                       <div className="st-row__stock">
@@ -1483,6 +1651,14 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
                       <dt>SKU fornecedor</dt>
                       <dd>{itemSelecionado.sku_fornecedor?.trim() || '—'}</dd>
                     </div>
+                    <div>
+                      <dt>Local</dt>
+                      <dd>
+                        {itemSelecionado.localCodigo
+                          ? `${itemSelecionado.localCodigo}${itemSelecionado.localNome ? ` — ${itemSelecionado.localNome}` : ''}`
+                          : '—'}
+                      </dd>
+                    </div>
                   </dl>
                   <div className="st-item-detail__actions">
                     <button
@@ -1547,6 +1723,57 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
               </>
             )}
           </div>
+
+          <section className="st-panel">
+            <div className="st-panel__head">
+              <h2 className="st-panel__title">Locais de estoque</h2>
+              <button
+                type="button"
+                className="st-link-btn"
+                onClick={abrirNovoLocal}
+                disabled={!activeStoreId}
+                title={!activeStoreId ? 'Selecione uma loja no topo' : undefined}
+              >
+                Novo
+              </button>
+            </div>
+            {!activeStoreId ? (
+              <p className="st-panel__hint">Selecione uma loja no topo da tela.</p>
+            ) : locais.length === 0 ? (
+              <p className="st-panel__hint">Nenhum local cadastrado.</p>
+            ) : (
+              <ul className="st-sup-list">
+                {locais.slice(0, 6).map((local) => (
+                  <li key={local.id} className="st-sup-item">
+                    <div className="st-sup-item__body">
+                      <strong>{local.codigo}</strong>
+                      <span>{local.nome}</span>
+                    </div>
+                    <div className="st-sup-item__actions">
+                      <button
+                        type="button"
+                        className="st-row__action st-row__action--icon"
+                        aria-label={`Editar local ${local.codigo}`}
+                        onClick={() => abrirEditarLocal(local)}
+                        disabled={excluindoLocalId === local.id}
+                      >
+                        <IconPencil />
+                      </button>
+                      <button
+                        type="button"
+                        className="st-row__action st-row__action--icon st-row__action--danger"
+                        aria-label={`Excluir local ${local.codigo}`}
+                        onClick={() => void handleExcluirLocal(local)}
+                        disabled={excluindoLocalId === local.id}
+                      >
+                        <IconX />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
 
           <section className="st-panel">
             <div className="st-panel__head">
@@ -1705,6 +1932,82 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
           </section>
         </aside>
       </div>
+
+      {modalLocalOpen && (
+        <div className="st-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="st-local-title">
+          <div className="st-modal">
+            <div className="st-modal__head">
+              <h2 id="st-local-title" className="st-modal__title">
+                {localEditandoId ? 'Editar local de estoque' : 'Novo local de estoque'}
+              </h2>
+              <button type="button" className="st-modal__close" onClick={fecharModalLocal} aria-label="Fechar">
+                ×
+              </button>
+            </div>
+            <form className="st-form" onSubmit={handleSalvarLocal}>
+              <div className="st-form-grid st-form-grid--3">
+                <label className="st-field">
+                  <span>Estante *</span>
+                  <input
+                    className="st-input"
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={localForm.estante}
+                    onChange={(e) => setLocalForm((prev) => ({ ...prev, estante: e.target.value }))}
+                    placeholder="Ex.: 12"
+                    required
+                  />
+                </label>
+                <label className="st-field">
+                  <span>Prateleira *</span>
+                  <input
+                    className="st-input"
+                    value={localForm.prateleira}
+                    onChange={(e) =>
+                      setLocalForm((prev) => ({ ...prev, prateleira: e.target.value }))
+                    }
+                    placeholder="Ex.: A, topo, fundo"
+                    maxLength={32}
+                    required
+                  />
+                </label>
+                <label className="st-field">
+                  <span>Divisória *</span>
+                  <input
+                    className="st-input"
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={localForm.divisoria}
+                    onChange={(e) => setLocalForm((prev) => ({ ...prev, divisoria: e.target.value }))}
+                    placeholder="Ex.: 3"
+                    required
+                  />
+                </label>
+              </div>
+              {localFormPreview && (
+                <p className="st-form-hint">
+                  Código gerado: <strong>{localFormPreview}</strong>
+                </p>
+              )}
+              {formError && <p className="st-form-error">{formError}</p>}
+              <div className="st-form-actions">
+                <button type="button" className="st-ghost-btn" onClick={fecharModalLocal}>
+                  Cancelar
+                </button>
+                <button type="submit" className="st-primary-btn" disabled={salvandoLocal}>
+                  {salvandoLocal
+                    ? 'Salvando...'
+                    : localEditandoId
+                      ? 'Salvar alterações'
+                      : 'Salvar local'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {modalFornecedorOpen && (
         <div className="st-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="st-fornecedor-title">
@@ -1909,6 +2212,21 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
                   />
                 </label>
               </div>
+              <label className="st-field">
+                <span>Local de estoque</span>
+                <select
+                  className="st-input"
+                  value={itemForm.localId}
+                  onChange={(e) => setItemForm((prev) => ({ ...prev, localId: e.target.value }))}
+                >
+                  <option value="">Sem local definido</option>
+                  {locais.map((local) => (
+                    <option key={local.id} value={local.id}>
+                      {local.codigo} — {local.nome}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <div className="st-form-grid">
                 <label className="st-field">
                   <span title="Custo pago ao fornecedor">Custo (R$)</span>

@@ -2386,6 +2386,13 @@ button {
   background: color-mix(in srgb, var(--cp-tone-teal) 10%, var(--cp-surface));
 }
 
+.st-badge--local {
+  color: var(--cp-tone-blue);
+  border: 1px solid color-mix(in srgb, var(--cp-tone-blue) 35%, transparent);
+  background: color-mix(in srgb, var(--cp-tone-blue) 10%, var(--cp-surface));
+  font-variant-numeric: tabular-nums;
+}
+
 .st-row__action {
   justify-self: start;
   min-height: 34px;
@@ -3000,9 +3007,30 @@ button {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.st-form-grid--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.st-form-hint {
+  margin: 0;
+  font-size: 0.84rem;
+  color: var(--cp-text-muted);
+}
+
+.st-field--inline {
+  margin: 0;
+  min-width: 0;
+}
+
+.st-input--compact {
+  min-height: 34px;
+  font-size: 0.84rem;
+}
+
 @media (max-width: 520px) {
   .st-modal .st-form-grid,
-  .st-form-grid--precos {
+  .st-form-grid--precos,
+  .st-form-grid--3 {
     grid-template-columns: 1fr;
   }
 }

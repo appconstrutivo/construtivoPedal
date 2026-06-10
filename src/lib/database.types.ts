@@ -198,6 +198,7 @@ export type Database = {
           fornecedor_id: string | null
           id: string
           imagem_url: string | null
+          local_id: string | null
           nome: string
           preco_atacado: number
           preco_varejo: number
@@ -219,6 +220,7 @@ export type Database = {
           fornecedor_id?: string | null
           id?: string
           imagem_url?: string | null
+          local_id?: string | null
           nome: string
           preco_atacado?: number
           preco_varejo?: number
@@ -238,6 +240,7 @@ export type Database = {
           estoque_minimo?: number
           fornecedor_id?: string | null
           imagem_url?: string | null
+          local_id?: string | null
           nome?: string
           preco_atacado?: number
           preco_varejo?: number
@@ -246,6 +249,45 @@ export type Database = {
           sku_fornecedor?: string | null
           store_id?: string | null
           unidade?: string
+          updated_at?: string
+        }
+      }
+      estoque_locais: {
+        Row: {
+          ativo: boolean
+          codigo: string
+          company_id: string
+          created_at: string
+          divisoria: number
+          estante: number
+          id: string
+          nome: string
+          prateleira: string
+          store_id: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          codigo?: string
+          company_id: string
+          created_at?: string
+          divisoria: number
+          estante: number
+          id?: string
+          nome?: string
+          prateleira: string
+          store_id: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          codigo?: string
+          company_id?: string
+          divisoria?: number
+          estante?: number
+          nome?: string
+          prateleira?: string
+          store_id?: string
           updated_at?: string
         }
       }

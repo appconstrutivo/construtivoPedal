@@ -13,6 +13,7 @@ const BUCKET_ESTOQUE_FOTOS = 'estoque-fotos'
 export type EstoqueItemRow = Tables<'estoque_itens'>
 export type EstoqueMovimentacaoRow = Tables<'estoque_movimentacoes'>
 export type FornecedorRow = Tables<'fornecedores'>
+export type EstoqueLocalRow = Tables<'estoque_locais'>
 export type { StoreRow } from './lojas.service'
 export { listarLojas } from './lojas.service'
 export type EstoqueKitRow = Tables<'estoque_kits'>
@@ -21,6 +22,8 @@ export type EstoqueKitComponenteRow = Tables<'estoque_kit_componentes'>
 export type EstoqueItemComLocal = EstoqueItemRow & {
   storeName: string
   fornecedorNome: string | null
+  localCodigo: string | null
+  localNome: string | null
 }
 
 export type EstoqueMovimentacaoComItem = EstoqueMovimentacaoRow & {
@@ -81,7 +84,7 @@ export async function listarItensEstoque(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('estoque_itens')
-    .select('*, stores(name), fornecedores(nome)')
+    .select('*, stores(name), fornecedores(nome), estoque_locais(codigo, nome)')
     .eq('company_id', companyId)
     .eq('store_id', storeId)
     .eq('ativo', true)
@@ -92,12 +95,15 @@ export async function listarItensEstoque(
   type Raw = EstoqueItemRow & {
     stores?: { name?: string | null } | null
     fornecedores?: { nome?: string | null } | null
+    estoque_locais?: { codigo?: string | null; nome?: string | null } | null
   }
   return ((data ?? []) as Raw[]).map((item) => ({
     ...item,
     nome: normalizarNomeEstoque(item.nome),
     storeName: item.stores?.name ?? 'Sem loja',
     fornecedorNome: item.fornecedores?.nome ?? null,
+    localCodigo: item.estoque_locais?.codigo ?? null,
+    localNome: item.estoque_locais?.nome ?? null,
   }))
 }
 
@@ -181,6 +187,61 @@ export async function excluirFornecedor(id: string): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any).from('fornecedores').update({ ativo: false }).eq('id', id)
   if (error) throw new Error(error.message ?? 'Erro ao excluir fornecedor.')
+}
+
+export async function listarLocaisEstoque(
+  companyId: string,
+  storeId: string,
+): Promise<EstoqueLocalRow[]> {
+  if (!storeId) return []
+
+  const { data, error } = await supabase
+    .from('estoque_locais')
+    .select('*')
+    .eq('company_id', companyId)
+    .eq('store_id', storeId)
+    .eq('ativo', true)
+    .order('estante', { ascending: true })
+    .order('prateleira', { ascending: true })
+    .order('divisoria', { ascending: true })
+
+  if (error) throw new Error(error.message ?? 'Erro ao carregar locais de estoque.')
+  return data ?? []
+}
+
+export async function criarLocalEstoque(
+  payload: TablesInsert<'estoque_locais'>,
+): Promise<EstoqueLocalRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('estoque_locais')
+    .insert(payload)
+    .select()
+    .single()
+  if (error) throw new Error((error as { message?: string }).message ?? 'Erro ao criar local de estoque.')
+  return data as EstoqueLocalRow
+}
+
+export async function atualizarLocalEstoque(
+  id: string,
+  payload: TablesUpdate<'estoque_locais'>,
+): Promise<EstoqueLocalRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('estoque_locais')
+    .update(payload)
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw new Error((error as { message?: string }).message ?? 'Erro ao atualizar local de estoque.')
+  return data as EstoqueLocalRow
+}
+
+/** Desativa o local (soft delete). Itens vinculados perdem o vínculo. */
+export async function excluirLocalEstoque(id: string): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).from('estoque_locais').update({ ativo: false }).eq('id', id)
+  if (error) throw new Error(error.message ?? 'Erro ao excluir local de estoque.')
 }
 
 export async function criarItemEstoque(

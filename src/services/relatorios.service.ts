@@ -66,9 +66,14 @@ export function intervaloPeriodo(preset: PeriodoRelatorio): IntervaloRelatorio {
   const desde = new Date()
 
   switch (preset) {
-    case 'hoje':
+    case 'hoje': {
       desde.setHours(0, 0, 0, 0)
-      return { desde: desde.toISOString(), ate: ate.toISOString(), label: 'Hoje' }
+      // Fim do dia local — alinha com período personalizado e inclui vendas de OS
+      // (realizada_em operacional às 12h BR), que ficavam fora quando ate = agora.
+      const fimHoje = new Date()
+      fimHoje.setHours(23, 59, 59, 999)
+      return { desde: desde.toISOString(), ate: fimHoje.toISOString(), label: 'Hoje' }
+    }
     case '7d':
       desde.setDate(desde.getDate() - 6)
       desde.setHours(0, 0, 0, 0)
