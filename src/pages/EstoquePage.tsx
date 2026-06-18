@@ -1742,8 +1742,8 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
             ) : locais.length === 0 ? (
               <p className="st-panel__hint">Nenhum local cadastrado.</p>
             ) : (
-              <ul className="st-sup-list">
-                {locais.slice(0, 6).map((local) => (
+              <ul className="st-sup-list st-sup-list--scroll">
+                {locais.map((local) => (
                   <li key={local.id} className="st-sup-item">
                     <div className="st-sup-item__body">
                       <strong>{local.codigo}</strong>
@@ -1793,8 +1793,8 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
             ) : fornecedores.length === 0 ? (
               <p className="st-panel__hint">Nenhum fornecedor cadastrado.</p>
             ) : (
-              <ul className="st-sup-list">
-                {fornecedores.slice(0, 6).map((fornecedor) => (
+              <ul className="st-sup-list st-sup-list--scroll">
+                {fornecedores.map((fornecedor) => (
                   <li key={fornecedor.id} className="st-sup-item">
                     <div className="st-sup-item__body">
                       <strong>{fornecedor.nome}</strong>

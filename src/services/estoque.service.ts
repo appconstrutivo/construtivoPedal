@@ -240,6 +240,15 @@ export async function atualizarLocalEstoque(
 /** Desativa o local (soft delete). Itens vinculados perdem o vínculo. */
 export async function excluirLocalEstoque(id: string): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: unlinkError } = await (supabase as any)
+    .from('estoque_itens')
+    .update({ local_id: null })
+    .eq('local_id', id)
+  if (unlinkError) {
+    throw new Error(unlinkError.message ?? 'Erro ao desvincular itens do local de estoque.')
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any).from('estoque_locais').update({ ativo: false }).eq('id', id)
   if (error) throw new Error(error.message ?? 'Erro ao excluir local de estoque.')
 }

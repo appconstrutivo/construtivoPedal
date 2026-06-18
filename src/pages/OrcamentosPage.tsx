@@ -314,14 +314,22 @@ export function OrcamentosPage({
     }
   }
 
-  async function handleVincularCliente() {
-    if (!detalhe || !podeVincularCliente || !form.clienteId) {
+  async function handleVincularCliente(clienteIdOverride?: string) {
+    const clienteId = clienteIdOverride ?? form.clienteId
+    if (!detalhe || !podeVincularCliente || !clienteId) {
       setErro('Selecione um cliente cadastrado para vincular.')
       return
     }
     setBusy('vincular'); setErro(null); setMsgOk(null)
     try {
-      await persistCabecalho()
+      await atualizarOrcamento(detalhe.id, {
+        cliente_id: clienteId,
+        bicicleta_id: null,
+        resumo: form.resumo.trim(),
+        observacoes: form.observacoes.trim() || null,
+        desconto: Number(form.desconto) || 0,
+        valido_ate: form.validoAte || null,
+      })
       await carregarLista()
       await recarregarDetalhe(detalhe.id)
       setMsgOk('Cliente vinculado ao orçamento.')
@@ -519,17 +527,22 @@ export function OrcamentosPage({
                       balcaoLabel={ORCAMENTO_CLIENTE_BALCAO}
                       inputClassName="orc-input"
                       disabled={!podeAlterarCliente || busy === 'vincular'}
-                      onChange={(clienteId) =>
+                      onChange={(clienteId) => {
                         setForm((f) => ({ ...f, clienteId, bicicletaId: '' }))
-                      }
+                        if (podeVincularCliente && clienteId && detalhe?.status !== 'rascunho') {
+                          void handleVincularCliente(clienteId)
+                        }
+                      }}
                     />
                     {semCliente && (
                       <span className="orc-field__hint">
-                        Orçamento rápido sem cadastro. Você pode vincular um cliente depois.
+                        {detalhe.status === 'rascunho'
+                          ? 'Orçamento rápido sem cadastro. Você pode vincular um cliente depois.'
+                          : 'Selecione um cliente cadastrado para vincular ao orçamento.'}
                       </span>
                     )}
                   </label>
-                  {podeVincularCliente && form.clienteId && !editavel && (
+                  {podeVincularCliente && form.clienteId && (
                     <div className="orc-field orc-field--action">
                       <button
                         type="button"

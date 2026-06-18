@@ -2753,6 +2753,12 @@ button {
   gap: 8px;
 }
 
+.st-sup-list--scroll {
+  max-height: min(42vh, 380px);
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
 .st-sup-item {
   border: 1px solid var(--cp-border);
   border-radius: var(--cp-radius-sm);

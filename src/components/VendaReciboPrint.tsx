@@ -21,6 +21,35 @@ function formatDateTime(iso: string) {
   }).format(new Date(iso))
 }
 
+function linhasCabecalhoLoja(venda: VendaDetalhe, companyName: string): string {
+  const empresa = venda.empresa
+  const loja = venda.loja
+  const nomeEmpresa = empresa?.nome ?? companyName
+  const linhas: string[] = []
+
+  if (empresa?.razaoSocial && empresa.razaoSocial !== nomeEmpresa) {
+    linhas.push(`<p class="head__meta">${escapeHtml(empresa.razaoSocial)}</p>`)
+  }
+
+  linhas.push(`<p class="head__loja">${escapeHtml(loja?.nome ?? venda.lojaNome)}</p>`)
+
+  const endereco = loja?.endereco ?? empresa?.endereco
+  if (endereco) {
+    linhas.push(`<p class="head__meta">${escapeHtml(endereco)}</p>`)
+  }
+  if (empresa?.cnpj) {
+    linhas.push(`<p class="head__meta">CNPJ: ${escapeHtml(empresa.cnpj)}</p>`)
+  }
+  if (empresa?.telefone) {
+    linhas.push(`<p class="head__meta">Tel: ${escapeHtml(empresa.telefone)}</p>`)
+  }
+  if (empresa?.email) {
+    linhas.push(`<p class="head__meta">${escapeHtml(empresa.email)}</p>`)
+  }
+
+  return linhas.join('\n        ')
+}
+
 export function VendaReciboHtml({ venda, companyName, segundaVia = false }: VendaReciboPrintProps) {
   const linhas = venda.itens.map((item) => {
     const sub = item.quantidade * item.preco_unitario
@@ -84,6 +113,17 @@ export function VendaReciboHtml({ venda, companyName, segundaVia = false }: Vend
       margin: 0;
       color: #444;
       font-size: 11pt;
+      line-height: 1.45;
+    }
+    .head__brand p + p {
+      margin-top: 3px;
+    }
+    .head__loja {
+      font-weight: 700;
+      color: #222;
+    }
+    .head__meta {
+      font-size: 10pt;
     }
     .head__doc {
       text-align: right;
@@ -243,8 +283,8 @@ export function VendaReciboHtml({ venda, companyName, segundaVia = false }: Vend
   <div class="page">
     <header class="head">
       <div class="head__brand">
-        <h1>${escapeHtml(companyName)}</h1>
-        <p>${escapeHtml(venda.lojaNome)}</p>
+        <h1>${escapeHtml(venda.empresa?.nome ?? companyName)}</h1>
+        ${linhasCabecalhoLoja(venda, companyName)}
       </div>
       <div class="head__doc">
         <p class="head__doc-title">Recibo de venda</p>

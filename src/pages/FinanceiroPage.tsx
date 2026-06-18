@@ -181,7 +181,7 @@ function AbaVisaoGeral({
             </li>
           </ul>
           <p className="rl-card__hint">
-            Entradas vêm do PDV. Use as abas A pagar e Caixas e contas para despesas e saldos da loja.
+            Vendas do PDV e recebimentos de OS entram automaticamente no caixa. Use A pagar para despesas.
           </p>
         </section>
       </div>
