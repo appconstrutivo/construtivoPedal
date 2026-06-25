@@ -21,338 +21,56 @@ function formatDateTime(iso: string) {
   }).format(new Date(iso))
 }
 
-function linhasCabecalhoLoja(venda: VendaDetalhe, companyName: string): string {
-  const empresa = venda.empresa
-  const loja = venda.loja
-  const nomeEmpresa = empresa?.nome ?? companyName
-  const linhas: string[] = []
-
-  if (empresa?.razaoSocial && empresa.razaoSocial !== nomeEmpresa) {
-    linhas.push(`<p class="head__meta">${escapeHtml(empresa.razaoSocial)}</p>`)
-  }
-
-  linhas.push(`<p class="head__loja">${escapeHtml(loja?.nome ?? venda.lojaNome)}</p>`)
-
-  const endereco = loja?.endereco ?? empresa?.endereco
-  if (endereco) {
-    linhas.push(`<p class="head__meta">${escapeHtml(endereco)}</p>`)
-  }
-  if (empresa?.cnpj) {
-    linhas.push(`<p class="head__meta">CNPJ: ${escapeHtml(empresa.cnpj)}</p>`)
-  }
-  if (empresa?.telefone) {
-    linhas.push(`<p class="head__meta">Tel: ${escapeHtml(empresa.telefone)}</p>`)
-  }
-  if (empresa?.email) {
-    linhas.push(`<p class="head__meta">${escapeHtml(empresa.email)}</p>`)
-  }
-
-  return linhas.join('\n        ')
+function formatDate(iso: string) {
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(new Date(iso))
 }
 
-export function VendaReciboHtml({ venda, companyName, segundaVia = false }: VendaReciboPrintProps) {
-  const linhas = venda.itens.map((item) => {
-    const sub = item.quantidade * item.preco_unitario
-    return `
-      <tr>
-        <td>${escapeHtml(item.descricao)}</td>
-        <td class="num">${item.quantidade}</td>
-        <td class="num">${formatBRL(item.preco_unitario)}</td>
-        <td class="num">${formatBRL(sub)}</td>
-      </tr>`
-  })
+function formatTime(iso: string) {
+  return new Intl.DateTimeFormat('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(new Date(iso))
+}
 
-  const cancelada = venda.status === 'cancelada'
+function formatNumeroDoc(numero: number) {
+  return String(numero).padStart(9, '0').replace(/(\d{3})(?=\d)/g, '$1.')
+}
 
-  return `<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8" />
-  <title>Recibo venda #${venda.numero}</title>
-  <style>
-    @page {
-      size: A4 portrait;
-      margin: 18mm 20mm;
-    }
-    * { box-sizing: border-box; }
-    html, body {
-      width: 210mm;
-      min-height: 297mm;
-      margin: 0;
-      padding: 0;
-    }
-    body {
-      font-family: "Segoe UI", system-ui, sans-serif;
-      font-size: 11pt;
-      color: #111;
-      background: #fff;
-    }
-    .page {
-      width: 100%;
-      min-height: 257mm;
-      padding: 0;
-      display: flex;
-      flex-direction: column;
-    }
-    .head {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 24px;
-      padding-bottom: 16px;
-      border-bottom: 2px solid #111;
-      margin-bottom: 20px;
-    }
-    .head__brand h1 {
-      margin: 0 0 6px;
-      font-size: 20pt;
-      font-weight: 800;
-      letter-spacing: -0.02em;
-    }
-    .head__brand p {
-      margin: 0;
-      color: #444;
-      font-size: 11pt;
-      line-height: 1.45;
-    }
-    .head__brand p + p {
-      margin-top: 3px;
-    }
-    .head__loja {
-      font-weight: 700;
-      color: #222;
-    }
-    .head__meta {
-      font-size: 10pt;
-    }
-    .head__doc {
-      text-align: right;
-      flex-shrink: 0;
-    }
-    .head__doc-title {
-      margin: 0 0 8px;
-      font-size: 14pt;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: #333;
-    }
-    .head__doc-meta {
-      margin: 0;
-      font-size: 10.5pt;
-      line-height: 1.5;
-      color: #444;
-    }
-    .badges {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-bottom: 16px;
-    }
-    .badge {
-      display: inline-block;
-      padding: 4px 12px;
-      border-radius: 6px;
-      font-size: 9pt;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-    .badge--2via { background: #e0f2fe; color: #0369a1; }
-    .badge--cancel { background: #fee2e2; color: #991b1b; }
-    .info-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px 32px;
-      margin-bottom: 24px;
-      padding: 16px 18px;
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 8px;
-    }
-    .info-grid dt {
-      margin: 0;
-      font-size: 8.5pt;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: #64748b;
-    }
-    .info-grid dd {
-      margin: 2px 0 0;
-      font-size: 11pt;
-      font-weight: 600;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 24px;
-    }
-    th, td {
-      padding: 10px 12px;
-      text-align: left;
-      vertical-align: top;
-    }
-    th {
-      background: #f1f5f9;
-      border-bottom: 2px solid #cbd5e1;
-      font-size: 9pt;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: #475569;
-    }
-    td {
-      border-bottom: 1px solid #e2e8f0;
-      font-size: 10.5pt;
-    }
-    tbody tr:last-child td {
-      border-bottom: none;
-    }
-    .num { text-align: right; white-space: nowrap; }
-    .totals-wrap {
-      display: flex;
-      justify-content: flex-end;
-      margin-top: auto;
-      padding-top: 16px;
-    }
-    .totals {
-      width: 280px;
-    }
-    .totals__row {
-      display: flex;
-      justify-content: space-between;
-      gap: 24px;
-      padding: 6px 0;
-      font-size: 11pt;
-    }
-    .totals__row dt {
-      margin: 0;
-      color: #64748b;
-      font-weight: 500;
-    }
-    .totals__row dd {
-      margin: 0;
-      font-weight: 700;
-    }
-    .totals__row--disc dd { color: #b91c1c; }
-    .totals__row--total {
-      margin-top: 8px;
-      padding-top: 12px;
-      border-top: 2px solid #111;
-      font-size: 14pt;
-    }
-    .totals__row--total dt,
-    .totals__row--total dd {
-      font-weight: 800;
-      color: #111;
-    }
-    .foot {
-      margin-top: 32px;
-      padding-top: 16px;
-      border-top: 1px dashed #cbd5e1;
-      font-size: 9pt;
-      color: #64748b;
-      text-align: center;
-      line-height: 1.5;
-    }
-    @media screen {
-      body {
-        padding: 12mm;
-        background: #e2e8f0;
-      }
-      .page {
-        background: #fff;
-        padding: 18mm 20mm;
-        box-shadow: 0 4px 24px rgba(0,0,0,0.12);
-        min-height: 297mm;
-      }
-    }
-    @media print {
-      html, body { width: auto; min-height: auto; }
-      body { background: #fff; padding: 0; }
-      .page {
-        box-shadow: none;
-        padding: 0;
-        min-height: auto;
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="page">
-    <header class="head">
-      <div class="head__brand">
-        <h1>${escapeHtml(venda.empresa?.nome ?? companyName)}</h1>
-        ${linhasCabecalhoLoja(venda, companyName)}
-      </div>
-      <div class="head__doc">
-        <p class="head__doc-title">Recibo de venda</p>
-        <p class="head__doc-meta">
-          Nº <strong>${venda.numero}</strong><br />
-          ${formatDateTime(dataExibicaoVenda(venda))}
-        </p>
-      </div>
-    </header>
+function apenasDigitos(s: string) {
+  return s.replace(/\D/g, '')
+}
 
-    <div class="badges">
-      ${segundaVia ? '<span class="badge badge--2via">2ª via</span>' : ''}
-      ${cancelada ? '<span class="badge badge--cancel">Venda cancelada</span>' : ''}
-    </div>
+/** Chave visual de 44 dígitos (identificação interna, não é chave SEFAZ). */
+function gerarChaveDocumento(venda: VendaDetalhe): string {
+  const cnpj = apenasDigitos(venda.empresa?.cnpj ?? '00000000000000').padStart(14, '0').slice(0, 14)
+  const data = new Date(dataExibicaoVenda(venda))
+  const aa = String(data.getFullYear()).slice(2)
+  const mm = String(data.getMonth() + 1).padStart(2, '0')
+  const num = String(venda.numero).padStart(9, '0')
+  const id = apenasDigitos(venda.id).padStart(8, '0').slice(0, 8)
+  const raw = `${cnpj}${aa}${mm}55${num}${id}`.padEnd(44, '0').slice(0, 44)
+  return raw.replace(/(\d{4})(?=\d)/g, '$1 ').trim()
+}
 
-    <dl class="info-grid">
-      <div>
-        <dt>Cliente</dt>
-        <dd>${escapeHtml(venda.clienteNome ?? 'Consumidor / balcão')}</dd>
-      </div>
-      <div>
-        <dt>${venda.pagamentos.length > 1 ? 'Pagamentos' : 'Forma de pagamento'}</dt>
-        <dd>${escapeHtml(resumoPagamentosVenda(venda.forma_pagamento, venda.pagamentos))}</dd>
-      </div>
-      ${
-        venda.clienteFone
-          ? `<div><dt>Telefone</dt><dd>${escapeHtml(venda.clienteFone)}</dd></div>`
-          : ''
-      }
-    </dl>
-
-    <table>
-      <thead>
-        <tr>
-          <th>Descrição</th>
-          <th class="num">Qtd</th>
-          <th class="num">Valor unit.</th>
-          <th class="num">Subtotal</th>
-        </tr>
-      </thead>
-      <tbody>${linhas.join('')}</tbody>
-    </table>
-
-    <div class="totals-wrap">
-      <dl class="totals">
-        <div class="totals__row">
-          <dt>Subtotal</dt>
-          <dd>${formatBRL(Number(venda.subtotal))}</dd>
-        </div>
-        ${
-          Number(venda.desconto) > 0
-            ? `<div class="totals__row totals__row--disc"><dt>Desconto</dt><dd>− ${formatBRL(Number(venda.desconto))}</dd></div>`
-            : ''
-        }
-        <div class="totals__row totals__row--total">
-          <dt>Total</dt>
-          <dd>${formatBRL(Number(venda.total))}</dd>
-        </div>
-      </dl>
-    </div>
-
-    <p class="foot">
-      Construtivo Pedal — documento sem valor fiscal<br />
-      Impresso em ${formatDateTime(new Date().toISOString())}
-    </p>
-  </div>
-</body>
-</html>`
+function gerarBarcodeSvg(codigo: string): string {
+  const digits = apenasDigitos(codigo).slice(0, 44) || '0'
+  const bars: string[] = []
+  let x = 0
+  const h = 42
+  for (let i = 0; i < digits.length; i++) {
+    const d = Number(digits[i])
+    const w = d % 2 === 0 ? 2 : 3
+    if (i % 2 === 0) {
+      bars.push(`<rect x="${x}" y="0" width="${w}" height="${h}" fill="#000"/>`)
+    }
+    x += w + 1
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${x} ${h}" width="100%" height="${h}" preserveAspectRatio="none">${bars.join('')}</svg>`
 }
 
 function escapeHtml(s: string) {
@@ -361,6 +79,418 @@ function escapeHtml(s: string) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+}
+
+function blocoCampo(label: string, valor: string, classe = '') {
+  return `
+    <div class="campo ${classe}">
+      <span class="campo__label">${label}</span>
+      <span class="campo__valor">${valor}</span>
+    </div>`
+}
+
+export function VendaReciboHtml({ venda, companyName, segundaVia = false }: VendaReciboPrintProps) {
+  const empresa = venda.empresa
+  const loja = venda.loja
+  const nomeEmpresa = empresa?.nome ?? companyName
+  const razaoSocial = empresa?.razaoSocial ?? nomeEmpresa
+  const enderecoEmitente = loja?.endereco ?? empresa?.endereco ?? '—'
+  const cnpjEmitente = empresa?.cnpj ?? '—'
+  const dataVenda = dataExibicaoVenda(venda)
+  const chave = gerarChaveDocumento(venda)
+  const chaveSemEspaco = chave.replace(/\s/g, '')
+  const cancelada = venda.status === 'cancelada'
+  const pagamento = escapeHtml(resumoPagamentosVenda(venda.forma_pagamento, venda.pagamentos))
+  const cliente = escapeHtml(venda.clienteNome ?? 'CONSUMIDOR / BALCÃO')
+  const total = Number(venda.total)
+  const subtotal = Number(venda.subtotal)
+  const desconto = Number(venda.desconto)
+
+  const linhas = venda.itens.map((item, idx) => {
+    const sub = item.quantidade * item.preco_unitario
+    const cod = String(idx + 1).padStart(3, '0')
+    return `
+      <tr>
+        <td class="c c-cod">${cod}</td>
+        <td class="c c-desc">${escapeHtml(item.descricao)}</td>
+        <td class="c c-un">UN</td>
+        <td class="c c-qtd num">${item.quantidade}</td>
+        <td class="c c-unit num">${formatBRL(item.preco_unitario)}</td>
+        <td class="c c-total num">${formatBRL(sub)}</td>
+      </tr>`
+  })
+
+  const avisoCancelada = cancelada
+    ? '<div class="aviso aviso--cancel">DOCUMENTO CANCELADO — SEM VALIDADE</div>'
+    : ''
+  const aviso2Via = segundaVia ? '<div class="aviso aviso--2via">2ª VIA DO DOCUMENTO</div>' : ''
+
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Nota de Compra #${venda.numero}</title>
+  <style>
+    @page { size: A4 portrait; margin: 10mm 12mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 210mm;
+      margin: 0;
+      padding: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 8pt;
+      color: #000;
+      background: #fff;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .danfe {
+      width: 100%;
+      border: 1px solid #000;
+    }
+    .danfe table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .danfe td, .danfe th {
+      border: 1px solid #000;
+      vertical-align: top;
+      padding: 0;
+    }
+    .campo {
+      padding: 2px 4px;
+      min-height: 28px;
+    }
+    .campo__label {
+      display: block;
+      font-size: 5.5pt;
+      font-weight: 400;
+      text-transform: uppercase;
+      line-height: 1.2;
+      margin-bottom: 1px;
+    }
+    .campo__valor {
+      display: block;
+      font-size: 8pt;
+      font-weight: 700;
+      line-height: 1.25;
+      word-break: break-word;
+    }
+    .campo--sm .campo__valor { font-size: 7pt; font-weight: 600; }
+    .campo--lg .campo__valor { font-size: 9pt; }
+    .campo--center { text-align: center; }
+    .campo--right { text-align: right; }
+
+    .head-emit { width: 42%; }
+    .head-emit .emit-nome {
+      font-size: 9pt;
+      font-weight: 700;
+      line-height: 1.2;
+      margin-bottom: 2px;
+    }
+    .head-emit .emit-meta {
+      font-size: 7pt;
+      line-height: 1.35;
+      font-weight: 400;
+    }
+
+    .head-tipo {
+      width: 16%;
+      text-align: center;
+      vertical-align: middle;
+      border-left: 1px solid #000;
+      border-right: 1px solid #000;
+    }
+    .head-tipo__titulo {
+      font-size: 11pt;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      line-height: 1.1;
+      margin-bottom: 2px;
+    }
+    .head-tipo__sub {
+      font-size: 5.5pt;
+      line-height: 1.2;
+      text-transform: uppercase;
+    }
+    .head-tipo__entrada {
+      margin-top: 6px;
+      font-size: 14pt;
+      font-weight: 700;
+      border: 1px solid #000;
+      display: inline-block;
+      padding: 1px 6px;
+    }
+
+    .head-nf { width: 42%; }
+    .head-nf .nf-linha {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 8px;
+      padding: 2px 4px;
+      border-bottom: 1px solid #000;
+      font-size: 7pt;
+    }
+    .head-nf .nf-linha:last-child { border-bottom: none; }
+    .head-nf .nf-linha strong { font-size: 8pt; }
+    .head-nf .nf-num {
+      font-size: 10pt;
+      font-weight: 700;
+      text-align: right;
+      padding: 4px;
+    }
+
+    .chave-row td { border-top: none; }
+    .chave-barcode {
+      padding: 4px 8px 2px;
+      text-align: center;
+    }
+    .chave-barcode svg { display: block; width: 100%; max-height: 42px; }
+    .chave-texto {
+      font-size: 7pt;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-align: center;
+      padding: 2px 4px 4px;
+      font-family: "Courier New", Courier, monospace;
+    }
+
+    .grid-2 td { width: 50%; }
+    .grid-3 td { width: 33.33%; }
+    .grid-4 td { width: 25%; }
+    .grid-5 td { width: 20%; }
+    .grid-6 td { width: 16.66%; }
+
+    .sec-titulo td {
+      background: #e8e8e8;
+      font-size: 5.5pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 2px 4px;
+      letter-spacing: 0.03em;
+    }
+
+    .itens th {
+      font-size: 5.5pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      text-align: center;
+      padding: 3px 2px;
+      background: #f0f0f0;
+      line-height: 1.2;
+    }
+    .itens td.c {
+      font-size: 7pt;
+      padding: 3px 4px;
+      border-top: none;
+    }
+    .itens .c-cod { width: 5%; text-align: center; }
+    .itens .c-desc { width: 49%; }
+    .itens .c-un { width: 6%; text-align: center; }
+    .itens .c-qtd { width: 8%; }
+    .itens .c-unit { width: 16%; }
+    .itens .c-total { width: 16%; }
+    .num { text-align: right; white-space: nowrap; }
+
+    .imposto .campo { min-height: 24px; }
+    .imposto .campo__valor { font-weight: 600; font-size: 7.5pt; }
+
+    .total-destaque td {
+      padding: 4px;
+      font-size: 9pt;
+      font-weight: 700;
+    }
+    .total-destaque .total-valor {
+      text-align: right;
+      font-size: 11pt;
+    }
+
+    .dados-adic {
+      min-height: 48px;
+      font-size: 7pt;
+      line-height: 1.4;
+      padding: 4px;
+    }
+    .dados-adic p { margin: 0 0 2px; }
+
+    .aviso {
+      text-align: center;
+      font-size: 7pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 3px;
+      letter-spacing: 0.06em;
+      border-bottom: 1px solid #000;
+    }
+    .aviso--cancel { background: #000; color: #fff; }
+    .aviso--2via { background: #f5f5f5; }
+
+    .rodape {
+      border-top: 1px solid #000;
+      padding: 4px 6px;
+      font-size: 5.5pt;
+      color: #333;
+      text-align: center;
+      line-height: 1.4;
+    }
+
+    @media screen {
+      body {
+        padding: 10mm;
+        background: #ccc;
+      }
+      .danfe {
+        background: #fff;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+      }
+    }
+    @media print {
+      html, body { width: auto; }
+      body { padding: 0; background: #fff; }
+    }
+  </style>
+</head>
+<body>
+  <div class="danfe">
+    ${avisoCancelada}
+    ${aviso2Via}
+
+    <table>
+      <tr>
+        <td class="head-emit" rowspan="2">
+          <div class="campo">
+            <div class="emit-nome">${escapeHtml(razaoSocial)}</div>
+            <div class="emit-meta">
+              ${escapeHtml(loja?.nome ?? venda.lojaNome)}<br />
+              ${escapeHtml(enderecoEmitente)}<br />
+              ${cnpjEmitente !== '—' ? `CNPJ: ${escapeHtml(cnpjEmitente)}` : ''}
+              ${empresa?.telefone ? `<br />Fone: ${escapeHtml(empresa.telefone)}` : ''}
+              ${empresa?.email ? `<br />${escapeHtml(empresa.email)}` : ''}
+            </div>
+          </div>
+        </td>
+        <td class="head-tipo" rowspan="2">
+          <div class="head-tipo__titulo">NOTA DE<br />COMPRA</div>
+          <div class="head-tipo__sub">Documento auxiliar<br />de compra</div>
+          <div class="head-tipo__entrada">0</div>
+        </td>
+        <td class="head-nf">
+          <div class="nf-num">Nº ${formatNumeroDoc(venda.numero)}</div>
+        </td>
+      </tr>
+      <tr>
+        <td class="head-nf">
+          <div class="nf-linha"><span>SÉRIE</span><strong>001</strong></div>
+          <div class="nf-linha"><span>FOLHA</span><strong>1 / 1</strong></div>
+          <div class="nf-linha"><span>DATA EMISSÃO</span><strong>${formatDate(dataVenda)} ${formatTime(dataVenda)}</strong></div>
+          <div class="nf-linha"><span>DATA SAÍDA</span><strong>${formatDate(dataVenda)}</strong></div>
+        </td>
+      </tr>
+    </table>
+
+    <table class="chave-row">
+      <tr>
+        <td>
+          <div class="chave-barcode">${gerarBarcodeSvg(chaveSemEspaco)}</div>
+          <div class="chave-texto">${escapeHtml(chave)}</div>
+        </td>
+      </tr>
+    </table>
+
+    <table class="grid-2">
+      <tr>
+        ${blocoCampo('Natureza da operação', 'VENDA DE MERCADORIAS E SERVIÇOS', 'campo--lg')}
+        ${blocoCampo('Protocolo de autorização de uso', formatDateTime(dataVenda), 'campo--sm campo--right')}
+      </tr>
+    </table>
+
+    <table class="grid-2">
+      <tr>
+        ${blocoCampo('Inscrição estadual', 'ISENTO')}
+        ${blocoCampo('CNPJ / CPF', escapeHtml(cnpjEmitente))}
+      </tr>
+    </table>
+
+    <table>
+      <tr class="sec-titulo"><td colspan="2">Destinatário / Remetente</td></tr>
+      <tr>
+        ${blocoCampo('Nome / Razão social', cliente, 'campo--lg')}
+        ${blocoCampo(
+          venda.clienteFone ? 'Telefone' : 'CNPJ / CPF',
+          venda.clienteFone ? escapeHtml(venda.clienteFone) : '—',
+        )}
+      </tr>
+      <tr class="grid-3">
+        ${blocoCampo('Endereço', '—')}
+        ${blocoCampo('Bairro / Distrito', '—')}
+        ${blocoCampo('CEP', '—')}
+      </tr>
+      <tr class="grid-3">
+        ${blocoCampo('Município', '—')}
+        ${blocoCampo('UF', '—')}
+        ${blocoCampo('País', 'BRASIL')}
+      </tr>
+    </table>
+
+    <table>
+      <tr class="sec-titulo"><td colspan="6">Dados dos produtos / serviços</td></tr>
+      <tr class="itens">
+        <th>Cód.</th>
+        <th>Descrição do produto / serviço</th>
+        <th>Un.</th>
+        <th>Qtd.</th>
+        <th>V. unit.</th>
+        <th>V. total</th>
+      </tr>
+      ${linhas.join('')}
+    </table>
+
+    <table>
+      <tr class="sec-titulo"><td colspan="6">Cálculo do imposto</td></tr>
+      <tr class="grid-6 imposto">
+        ${blocoCampo('Base cálc. ICMS', formatBRL(0), 'campo--sm campo--right')}
+        ${blocoCampo('Valor ICMS', formatBRL(0), 'campo--sm campo--right')}
+        ${blocoCampo('Base cálc. ICMS ST', formatBRL(0), 'campo--sm campo--right')}
+        ${blocoCampo('Valor ICMS ST', formatBRL(0), 'campo--sm campo--right')}
+        ${blocoCampo('V. total produtos', formatBRL(subtotal), 'campo--sm campo--right')}
+        ${blocoCampo('V. frete', formatBRL(0), 'campo--sm campo--right')}
+      </tr>
+      <tr class="grid-6 imposto">
+        ${blocoCampo('V. seguro', formatBRL(0), 'campo--sm campo--right')}
+        ${blocoCampo('Desconto', desconto > 0 ? formatBRL(desconto) : formatBRL(0), 'campo--sm campo--right')}
+        ${blocoCampo('Outras despesas', formatBRL(0), 'campo--sm campo--right')}
+        ${blocoCampo('V. IPI', formatBRL(0), 'campo--sm campo--right')}
+        ${blocoCampo('V. PIS', formatBRL(0), 'campo--sm campo--right')}
+        ${blocoCampo('V. COFINS', formatBRL(0), 'campo--sm campo--right')}
+      </tr>
+    </table>
+
+    <table class="total-destaque">
+      <tr>
+        <td>VALOR TOTAL DA NOTA</td>
+        <td class="total-valor">${formatBRL(total)}</td>
+      </tr>
+    </table>
+
+    <table>
+      <tr class="sec-titulo"><td>Dados adicionais</td></tr>
+      <tr>
+        <td class="dados-adic">
+          <p><strong>Forma de pagamento:</strong> ${pagamento}</p>
+          <p><strong>Informações complementares:</strong> Documento comprobatório de compra emitido por ${escapeHtml(nomeEmpresa)}.</p>
+          ${venda.observacao ? `<p><strong>Observações:</strong> ${escapeHtml(venda.observacao)}</p>` : ''}
+        </td>
+      </tr>
+    </table>
+
+    <div class="rodape">
+      Documento emitido eletronicamente — comprovante de compra do estabelecimento, sem valor fiscal.<br />
+      Impresso em ${formatDateTime(new Date().toISOString())}
+    </div>
+  </div>
+</body>
+</html>`
 }
 
 export function imprimirReciboVenda(
