@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import { ClientePicker } from '../components/ClientePicker'
+import { imprimirOrdemServico } from '../components/OsPrint'
 import { EstoqueItemPicker } from '../components/EstoqueItemPicker'
 import { ServicoCatalogoPicker } from '../components/ServicoCatalogoPicker'
 import { PagamentoMistoFields, validarPagamentoMisto } from '../components/PagamentoMistoFields'
@@ -98,9 +99,11 @@ function formatShortDate(iso: string) {
 type OficinaPageProps = {
   companyId: string
   activeStoreId: string
+  companyName: string
+  storeName?: string | null
 }
 
-export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
+export function OficinaPage({ companyId, activeStoreId, companyName, storeName }: OficinaPageProps) {
   const [abaOficina, setAbaOficina] = useState<AbaOficina>('ordens')
   const [lista, setLista] = useState<OrdemServicoLista[]>([])
   const [filtro, setFiltro] = useState<FiltroLista>('abertas')
@@ -266,6 +269,14 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
     () => catalogoServicos.filter((s) => s.ativo),
     [catalogoServicos],
   )
+
+  const locaisPorItemId = useMemo(() => {
+    const map: Record<string, { codigo: string | null; nome: string | null }> = {}
+    for (const item of itensEstoque) {
+      map[item.id] = { codigo: item.localCodigo, nome: item.localNome }
+    }
+    return map
+  }, [itensEstoque])
 
   const totalOsValor = useMemo(() => {
     if (!detalhe?.itens.length) return 0
@@ -797,14 +808,33 @@ export function OficinaPage({ companyId, activeStoreId }: OficinaPageProps) {
                     <p className="os-detail__bike os-detail__bike--muted">Sem bicicleta vinculada</p>
                   )}
                 </div>
-                <button
-                  type="button"
-                  className="os-danger-btn"
-                  disabled={excluindoOs || salvandoCabecalho}
-                  onClick={() => void handleExcluirOs()}
-                >
-                  {excluindoOs ? 'Excluindo…' : 'Excluir OS'}
-                </button>
+                <div className="os-detail__actions">
+                  <button
+                    type="button"
+                    className="st-ghost-btn"
+                    onClick={() => {
+                      try {
+                        imprimirOrdemServico(detalhe, companyName, {
+                          storeName,
+                          cabecalho: formDetalhe,
+                          locaisPorItemId,
+                        })
+                      } catch (e: unknown) {
+                        setErro(e instanceof Error ? e.message : 'Erro ao imprimir OS.')
+                      }
+                    }}
+                  >
+                    Imprimir OS
+                  </button>
+                  <button
+                    type="button"
+                    className="os-danger-btn"
+                    disabled={excluindoOs || salvandoCabecalho}
+                    onClick={() => void handleExcluirOs()}
+                  >
+                    {excluindoOs ? 'Excluindo…' : 'Excluir OS'}
+                  </button>
+                </div>
               </div>
 
               <div className="os-detail__grid">

@@ -4156,6 +4156,15 @@ button {
   flex-wrap: wrap;
 }
 
+.os-detail__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .os-danger-btn {
   flex-shrink: 0;
   min-height: 36px;

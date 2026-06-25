@@ -391,7 +391,12 @@ export default function App() {
         <ClientesPage companyId={tenant.companyId} activeStoreId={activeStoreId} />
       )}
       {activeNav === 'oficina' && (
-        <OficinaPage companyId={tenant.companyId} activeStoreId={activeStoreId} />
+        <OficinaPage
+          companyId={tenant.companyId}
+          activeStoreId={activeStoreId}
+          companyName={tenant.companyName}
+          storeName={stores.find((s) => s.id === activeStoreId)?.name}
+        />
       )}
       {activeNav === 'pdv' && (
         <PdvPage companyId={tenant.companyId} activeStoreId={activeStoreId} />
