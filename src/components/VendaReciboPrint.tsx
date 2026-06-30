@@ -57,20 +57,59 @@ function gerarChaveDocumento(venda: VendaDetalhe): string {
   return raw.replace(/(\d{4})(?=\d)/g, '$1 ').trim()
 }
 
+/** Padrões Interleaved 2 of 5 (1 = estreito, 2 = largo). */
+const ITF_PATTERNS: Record<string, [number, number, number, number, number]> = {
+  '0': [1, 1, 2, 2, 1],
+  '1': [2, 1, 1, 1, 2],
+  '2': [1, 2, 1, 1, 2],
+  '3': [2, 2, 1, 1, 1],
+  '4': [1, 1, 2, 1, 2],
+  '5': [2, 1, 2, 1, 1],
+  '6': [1, 2, 2, 1, 1],
+  '7': [1, 1, 1, 2, 2],
+  '8': [2, 1, 1, 2, 1],
+  '9': [1, 2, 1, 2, 1],
+}
+
 function gerarBarcodeSvg(codigo: string): string {
-  const digits = apenasDigitos(codigo).slice(0, 44) || '0'
+  const raw = apenasDigitos(codigo).slice(0, 44) || '0'
+  const digits = raw.length % 2 === 0 ? raw : `0${raw}`
+  const module = 2
+  const h = 42
   const bars: string[] = []
   let x = 0
-  const h = 42
-  for (let i = 0; i < digits.length; i++) {
-    const d = Number(digits[i])
-    const w = d % 2 === 0 ? 2 : 3
-    if (i % 2 === 0) {
-      bars.push(`<rect x="${x}" y="0" width="${w}" height="${h}" fill="#000"/>`)
-    }
-    x += w + 1
+
+  const appendBar = (widthModules: number) => {
+    const w = widthModules * module
+    bars.push(`<rect x="${x}" y="0" width="${w}" height="${h}" fill="#000"/>`)
+    x += w
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${x} ${h}" width="100%" height="${h}" preserveAspectRatio="none">${bars.join('')}</svg>`
+
+  const appendSpace = (widthModules: number) => {
+    x += widthModules * module
+  }
+
+  // Start: barra-espaço-barra-espaço (estreitos)
+  appendBar(1)
+  appendSpace(1)
+  appendBar(1)
+  appendSpace(1)
+
+  for (let i = 0; i < digits.length; i += 2) {
+    const p1 = ITF_PATTERNS[digits[i]] ?? ITF_PATTERNS['0']
+    const p2 = ITF_PATTERNS[digits[i + 1]] ?? ITF_PATTERNS['0']
+    for (let j = 0; j < 5; j++) {
+      appendBar(p1[j])
+      appendSpace(p2[j])
+    }
+  }
+
+  // Stop: barra larga, espaço estreito, barra estreita
+  appendBar(2)
+  appendSpace(1)
+  appendBar(1)
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${x} ${h}" width="100%" height="${h}" preserveAspectRatio="xMidYMid meet">${bars.join('')}</svg>`
 }
 
 function escapeHtml(s: string) {
@@ -102,6 +141,14 @@ export function VendaReciboHtml({ venda, companyName, segundaVia = false }: Vend
   const cancelada = venda.status === 'cancelada'
   const pagamento = escapeHtml(resumoPagamentosVenda(venda.forma_pagamento, venda.pagamentos))
   const cliente = escapeHtml(venda.clienteNome ?? 'CONSUMIDOR / BALCÃO')
+  const clienteDoc = escapeHtml(venda.clienteCpfCnpj ?? '—')
+  const clienteFone = escapeHtml(venda.clienteFone ?? '—')
+  const clienteIe = escapeHtml(venda.clienteInscricaoEstadual ?? '—')
+  const clienteEndereco = escapeHtml(venda.clienteEndereco ?? '—')
+  const clienteBairro = escapeHtml(venda.clienteBairro ?? '—')
+  const clienteCep = escapeHtml(venda.clienteCep ?? '—')
+  const clienteMunicipio = escapeHtml(venda.clienteMunicipio ?? '—')
+  const clienteUf = escapeHtml(venda.clienteUf ?? '—')
   const total = Number(venda.total)
   const subtotal = Number(venda.subtotal)
   const desconto = Number(venda.desconto)
@@ -408,7 +455,7 @@ export function VendaReciboHtml({ venda, companyName, segundaVia = false }: Vend
     <table class="grid-2">
       <tr>
         ${blocoCampo('Inscrição estadual', 'ISENTO')}
-        ${blocoCampo('CNPJ / CPF', escapeHtml(cnpjEmitente))}
+        ${blocoCampo('Inscrição estadual do subst. tributário', '—')}
       </tr>
     </table>
 
@@ -416,19 +463,20 @@ export function VendaReciboHtml({ venda, companyName, segundaVia = false }: Vend
       <tr class="sec-titulo"><td colspan="2">Destinatário / Remetente</td></tr>
       <tr>
         ${blocoCampo('Nome / Razão social', cliente, 'campo--lg')}
-        ${blocoCampo(
-          venda.clienteFone ? 'Telefone' : 'CNPJ / CPF',
-          venda.clienteFone ? escapeHtml(venda.clienteFone) : '—',
-        )}
+        ${blocoCampo('CNPJ / CPF', clienteDoc)}
+      </tr>
+      <tr class="grid-2">
+        ${blocoCampo('Telefone', clienteFone)}
+        ${blocoCampo('Inscrição estadual', clienteIe)}
       </tr>
       <tr class="grid-3">
-        ${blocoCampo('Endereço', '—')}
-        ${blocoCampo('Bairro / Distrito', '—')}
-        ${blocoCampo('CEP', '—')}
+        ${blocoCampo('Endereço', clienteEndereco)}
+        ${blocoCampo('Bairro / Distrito', clienteBairro)}
+        ${blocoCampo('CEP', clienteCep)}
       </tr>
       <tr class="grid-3">
-        ${blocoCampo('Município', '—')}
-        ${blocoCampo('UF', '—')}
+        ${blocoCampo('Município', clienteMunicipio)}
+        ${blocoCampo('UF', clienteUf)}
         ${blocoCampo('País', 'BRASIL')}
       </tr>
     </table>

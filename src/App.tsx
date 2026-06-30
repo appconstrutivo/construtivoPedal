@@ -18,6 +18,7 @@ import { OrcamentoAprovacaoPage } from './pages/OrcamentoAprovacaoPage'
 import { MaisPage } from './pages/MaisPage'
 import { PedidosPecasPage } from './pages/PedidosPecasPage'
 import { contarPedidosAguardandoAviso } from './services/pedidos-pecas.service'
+import { contarPosVendaLembretesPendentes } from './services/pos-venda-lembretes.service'
 import { AuthPages } from './pages/AuthPages'
 import { isSupabaseConfigured, supabase } from './lib/supabaseClient'
 
@@ -59,6 +60,7 @@ export default function App() {
   const [orcAprovacoesPendentes, setOrcAprovacoesPendentes] = useState(0)
   const [contasPagarVencemHoje, setContasPagarVencemHoje] = useState(0)
   const [pedidosAguardandoAviso, setPedidosAguardandoAviso] = useState(0)
+  const [lembretesPosVendaPendentes, setLembretesPosVendaPendentes] = useState(0)
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -287,17 +289,32 @@ export default function App() {
     }
   }, [tenant?.companyId, activeStoreId])
 
+  const recarregarLembretesPosVenda = useCallback(async () => {
+    if (!tenant?.companyId || !activeStoreId) {
+      setLembretesPosVendaPendentes(0)
+      return
+    }
+    try {
+      const total = await contarPosVendaLembretesPendentes(tenant.companyId, activeStoreId)
+      setLembretesPosVendaPendentes(total)
+    } catch {
+      /* mantém último valor */
+    }
+  }, [tenant?.companyId, activeStoreId])
+
   useEffect(() => {
     void recarregarAprovacoesPendentes()
     void recarregarContasPagarVencendoHoje()
     void recarregarPedidosAguardandoAviso()
-  }, [recarregarAprovacoesPendentes, recarregarContasPagarVencendoHoje, recarregarPedidosAguardandoAviso])
+    void recarregarLembretesPosVenda()
+  }, [recarregarAprovacoesPendentes, recarregarContasPagarVencendoHoje, recarregarPedidosAguardandoAviso, recarregarLembretesPosVenda])
 
   useEffect(() => {
     const atualizar = () => {
       void recarregarAprovacoesPendentes()
       void recarregarContasPagarVencendoHoje()
       void recarregarPedidosAguardandoAviso()
+      void recarregarLembretesPosVenda()
     }
     const intervalo = window.setInterval(atualizar, 45_000)
     window.addEventListener('focus', atualizar)
@@ -305,7 +322,7 @@ export default function App() {
       window.clearInterval(intervalo)
       window.removeEventListener('focus', atualizar)
     }
-  }, [recarregarAprovacoesPendentes, recarregarContasPagarVencendoHoje, recarregarPedidosAguardandoAviso])
+  }, [recarregarAprovacoesPendentes, recarregarContasPagarVencendoHoje, recarregarPedidosAguardandoAviso, recarregarLembretesPosVenda])
 
   if (publicOrcamentoToken) {
     return <OrcamentoAprovacaoPage token={publicOrcamentoToken} />
@@ -364,7 +381,9 @@ export default function App() {
         ...(orcAprovacoesPendentes > 0 ? { orcamentos: orcAprovacoesPendentes } : {}),
         ...(contasPagarVencemHoje > 0 ? { financeiro: contasPagarVencemHoje } : {}),
         ...(pedidosAguardandoAviso > 0 ? { pedidos: pedidosAguardandoAviso } : {}),
+        ...(lembretesPosVendaPendentes > 0 ? { clientes: lembretesPosVendaPendentes } : {}),
       }}
+      notificacoesCount={lembretesPosVendaPendentes}
       companyName={tenant.companyName}
       userEmail={session.user.email}
       onSignOut={handleSignOut}
@@ -385,10 +404,15 @@ export default function App() {
           companyId={tenant.companyId}
           activeStoreId={activeStoreId}
           onNavigate={setActiveNav}
+          lembretesPosVendaPendentes={lembretesPosVendaPendentes}
         />
       )}
       {activeNav === 'clientes' && (
-        <ClientesPage companyId={tenant.companyId} activeStoreId={activeStoreId} />
+        <ClientesPage
+          companyId={tenant.companyId}
+          activeStoreId={activeStoreId}
+          onBadgeChange={() => void recarregarLembretesPosVenda()}
+        />
       )}
       {activeNav === 'oficina' && (
         <OficinaPage

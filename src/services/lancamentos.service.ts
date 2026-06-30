@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabaseClient'
 import type { Tables } from '../lib/database.types'
 import { formatarCnpj } from './empresa.service'
+import { formatarCep, formatarCpfCnpj } from '../lib/cpf-cnpj'
 import { labelPagamento, type FormaPagamento } from './pdv.service'
 
 export type PagamentoVendaDetalhe = {
@@ -55,6 +56,13 @@ export type VendaDetalhe = Tables<'vendas'> & {
   os_id?: string | null
   clienteNome: string | null
   clienteFone: string | null
+  clienteCpfCnpj: string | null
+  clienteInscricaoEstadual: string | null
+  clienteEndereco: string | null
+  clienteBairro: string | null
+  clienteCep: string | null
+  clienteMunicipio: string | null
+  clienteUf: string | null
   lojaNome: string
   loja: LojaReciboInfo
   empresa: EmpresaReciboInfo
@@ -149,7 +157,7 @@ export async function obterVendaDetalhe(
   const { data, error } = await (supabase as any)
     .from('vendas')
     .select(
-      '*, clientes(nome, fone), stores(name, address), companies(name, legal_name, cnpj, phone, email, address), venda_itens(id, descricao, quantidade, preco_unitario), venda_pagamentos(forma_pagamento, valor)',
+      '*, clientes(nome, fone, cpf_cnpj, inscricao_estadual, endereco, bairro, cep, municipio, uf), stores(name, address), companies(name, legal_name, cnpj, phone, email, address), venda_itens(id, descricao, quantidade, preco_unitario), venda_pagamentos(forma_pagamento, valor)',
     )
     .eq('id', vendaId)
     .eq('company_id', companyId)
@@ -160,7 +168,17 @@ export async function obterVendaDetalhe(
   if (!data) throw new Error('Venda não encontrada.')
 
   type Raw = Tables<'vendas'> & {
-    clientes?: { nome?: string | null; fone?: string | null } | null
+    clientes?: {
+      nome?: string | null
+      fone?: string | null
+      cpf_cnpj?: string | null
+      inscricao_estadual?: string | null
+      endereco?: string | null
+      bairro?: string | null
+      cep?: string | null
+      municipio?: string | null
+      uf?: string | null
+    } | null
     stores?: { name?: string | null; address?: string | null } | null
     companies?: {
       name?: string | null
@@ -177,10 +195,19 @@ export async function obterVendaDetalhe(
   const row = data as Raw
   const empresaRow = row.companies
 
+  const clienteRow = row.clientes
+
   return {
     ...row,
-    clienteNome: row.clientes?.nome ?? null,
-    clienteFone: row.clientes?.fone ?? null,
+    clienteNome: clienteRow?.nome ?? null,
+    clienteFone: clienteRow?.fone ?? null,
+    clienteCpfCnpj: formatarCpfCnpj(clienteRow?.cpf_cnpj),
+    clienteInscricaoEstadual: clienteRow?.inscricao_estadual?.trim() || null,
+    clienteEndereco: clienteRow?.endereco?.trim() || null,
+    clienteBairro: clienteRow?.bairro?.trim() || null,
+    clienteCep: formatarCep(clienteRow?.cep),
+    clienteMunicipio: clienteRow?.municipio?.trim() || null,
+    clienteUf: clienteRow?.uf?.trim()?.toUpperCase() || null,
     lojaNome: row.stores?.name ?? 'Loja',
     loja: {
       nome: row.stores?.name ?? 'Loja',

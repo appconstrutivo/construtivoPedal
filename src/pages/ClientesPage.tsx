@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import {
   listarClientes,
   criarCliente,
@@ -17,6 +17,18 @@ import {
   type OrcamentoLista,
   type StatusOrcamento,
 } from '../services/orcamento.service'
+import { clienteCorrespondeBusca } from '../lib/cliente-busca'
+import {
+  formatarCep,
+  formatarCpfCnpj,
+  somenteDigitosDoc,
+  validarCpfCnpj,
+} from '../lib/cpf-cnpj'
+import { buscarEnderecoPorCep } from '../lib/viacep'
+import { listarPosVendaLembretesVencidos } from '../services/pos-venda-lembretes.service'
+import { PosVendaLembretesPage } from './PosVendaLembretesPage'
+
+type AbaClientes = 'lista' | 'lembretes'
 
 /* ─── helpers visuais ─────────────────────────────── */
 
@@ -25,7 +37,7 @@ type FilterKey = 'todos' | 'bikes' | 'revisao' | 'inativo'
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: 'todos', label: 'Todos' },
   { key: 'bikes', label: 'Com bike' },
-  { key: 'revisao', label: 'Revisão próxima' },
+  { key: 'revisao', label: 'Contato pendente' },
   { key: 'inativo', label: 'Inativos' },
 ]
 
@@ -235,38 +247,99 @@ type ClienteFormModalProps = {
 function ClienteFormModal({ companyId, activeStoreId, cliente, onClose, onSalvo }: ClienteFormModalProps) {
   const editando = Boolean(cliente)
   const [nome, setNome] = useState(cliente?.nome ?? '')
+  const [cpfCnpj, setCpfCnpj] = useState(formatarCpfCnpj(cliente?.cpf_cnpj) ?? '')
+  const [inscricaoEstadual, setInscricaoEstadual] = useState(cliente?.inscricao_estadual ?? '')
   const [fone, setFone] = useState(cliente?.fone ?? '')
   const [email, setEmail] = useState(cliente?.email ?? '')
   const [endereco, setEndereco] = useState(cliente?.endereco ?? '')
+  const [bairro, setBairro] = useState(cliente?.bairro ?? '')
+  const [cep, setCep] = useState(formatarCep(cliente?.cep) ?? '')
+  const [municipio, setMunicipio] = useState(cliente?.municipio ?? '')
+  const [uf, setUf] = useState(cliente?.uf ?? '')
   const [saving, setSaving] = useState(false)
   const [erro, setErro] = useState('')
+  const [cepBuscando, setCepBuscando] = useState(false)
+  const [cepAviso, setCepAviso] = useState('')
+  const ultimoCepConsultado = useRef(
+    cliente?.cep && somenteDigitosDoc(cliente.cep).length === 8
+      ? somenteDigitosDoc(cliente.cep)
+      : '',
+  )
+
+  useEffect(() => {
+    const digits = somenteDigitosDoc(cep)
+    if (digits.length !== 8) {
+      setCepAviso('')
+      return
+    }
+    if (digits === ultimoCepConsultado.current) return
+
+    let cancelado = false
+    const timer = window.setTimeout(() => {
+      setCepBuscando(true)
+      setCepAviso('')
+      void buscarEnderecoPorCep(digits)
+        .then((enderecoCep) => {
+          if (cancelado) return
+          ultimoCepConsultado.current = digits
+          if (!enderecoCep) {
+            setCepAviso('CEP não encontrado.')
+            return
+          }
+          if (enderecoCep.logradouro) setEndereco(enderecoCep.logradouro)
+          if (enderecoCep.bairro) setBairro(enderecoCep.bairro)
+          if (enderecoCep.municipio) setMunicipio(enderecoCep.municipio)
+          if (enderecoCep.uf) setUf(enderecoCep.uf)
+        })
+        .catch(() => {
+          if (!cancelado) setCepAviso('Não foi possível consultar o CEP. Tente novamente.')
+        })
+        .finally(() => {
+          if (!cancelado) setCepBuscando(false)
+        })
+    }, 400)
+
+    return () => {
+      cancelado = true
+      window.clearTimeout(timer)
+    }
+  }, [cep])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!nome.trim()) { setErro('Nome é obrigatório.'); return }
+    const erroDoc = validarCpfCnpj(cpfCnpj)
+    if (erroDoc) { setErro(erroDoc); return }
     if (!editando && !activeStoreId) {
       setErro('Selecione uma loja no topo da tela.')
       return
+    }
+    const cpfCnpjDigits = somenteDigitosDoc(cpfCnpj) || null
+    const cepDigits = somenteDigitosDoc(cep) || null
+    const ufNorm = uf.trim().toUpperCase().slice(0, 2) || null
+    const payload = {
+      nome: nome.trim(),
+      cpf_cnpj: cpfCnpjDigits,
+      inscricao_estadual: inscricaoEstadual.trim() || null,
+      fone: fone.trim() || null,
+      email: email.trim() || null,
+      endereco: endereco.trim() || null,
+      bairro: bairro.trim() || null,
+      cep: cepDigits,
+      municipio: municipio.trim() || null,
+      uf: ufNorm,
     }
     setSaving(true)
     setErro('')
     try {
       if (editando && cliente) {
-        const atualizado = await atualizarCliente(cliente.id, {
-          nome: nome.trim(),
-          fone: fone.trim() || null,
-          email: email.trim() || null,
-          endereco: endereco.trim() || null,
-        })
+        const atualizado = await atualizarCliente(cliente.id, payload)
         onSalvo({ ...cliente, ...atualizado })
       } else {
         const novo = await criarCliente({
           company_id: companyId,
           store_id: activeStoreId,
-          nome: nome.trim(),
-          fone: fone.trim() || null,
-          email: email.trim() || null,
-          endereco: endereco.trim() || null,
+          ...payload,
           tags: [],
         })
         onSalvo({ ...novo, bicicletas: [], atividades: [], ultima_visita: null })
@@ -299,11 +372,38 @@ function ClienteFormModal({ companyId, activeStoreId, cliente, onClose, onSalvo 
               type="text"
               value={nome}
               onChange={(e) => setNome(e.target.value)}
-              placeholder="Nome completo"
+              placeholder="Nome completo ou razão social"
               autoComplete="name"
               autoFocus
               required
             />
+          </div>
+          <div className="cl-field cl-field--inline-2">
+            <div>
+              <label htmlFor="nc-cpf" className="cl-label">CPF / CNPJ (opcional)</label>
+              <input
+                id="nc-cpf"
+                className="cl-input"
+                type="text"
+                inputMode="numeric"
+                value={cpfCnpj}
+                onChange={(e) => setCpfCnpj(formatarCpfCnpj(e.target.value) ?? e.target.value)}
+                placeholder="000.000.000-00"
+                autoComplete="off"
+              />
+            </div>
+            <div>
+              <label htmlFor="nc-ie" className="cl-label">Inscrição estadual (opcional)</label>
+              <input
+                id="nc-ie"
+                className="cl-input"
+                type="text"
+                value={inscricaoEstadual}
+                onChange={(e) => setInscricaoEstadual(e.target.value)}
+                placeholder="Para pessoa jurídica"
+                autoComplete="off"
+              />
+            </div>
           </div>
           <div className="cl-field">
             <label htmlFor="nc-fone" className="cl-label">Telefone</label>
@@ -329,6 +429,48 @@ function ClienteFormModal({ companyId, activeStoreId, cliente, onClose, onSalvo 
               autoComplete="email"
             />
           </div>
+          <div className="cl-field cl-field--inline-2">
+            <div>
+              <label htmlFor="nc-cep" className="cl-label">CEP</label>
+              <input
+                id="nc-cep"
+                className="cl-input"
+                type="text"
+                inputMode="numeric"
+                value={cep}
+                onChange={(e) => {
+                  const formatado = formatarCep(e.target.value) ?? e.target.value
+                  setCep(formatado)
+                  const digits = somenteDigitosDoc(formatado)
+                  if (digits.length < 8) ultimoCepConsultado.current = ''
+                }}
+                placeholder="00000-000"
+                autoComplete="postal-code"
+                aria-describedby={cepAviso || cepBuscando ? 'nc-cep-aviso' : undefined}
+              />
+              {(cepBuscando || cepAviso) && (
+                <p
+                  id="nc-cep-aviso"
+                  className={cepAviso ? 'cl-form-error cl-cep-aviso' : 'cl-loading-text cl-cep-aviso'}
+                  role={cepAviso ? 'alert' : 'status'}
+                >
+                  {cepBuscando ? 'Buscando endereço…' : cepAviso}
+                </p>
+              )}
+            </div>
+            <div>
+              <label htmlFor="nc-bairro" className="cl-label">Bairro</label>
+              <input
+                id="nc-bairro"
+                className="cl-input"
+                type="text"
+                value={bairro}
+                onChange={(e) => setBairro(e.target.value)}
+                placeholder="Bairro ou distrito"
+                autoComplete="off"
+              />
+            </div>
+          </div>
           <div className="cl-field">
             <label htmlFor="nc-endereco" className="cl-label">Endereço (opcional)</label>
             <input
@@ -337,9 +479,36 @@ function ClienteFormModal({ companyId, activeStoreId, cliente, onClose, onSalvo 
               type="text"
               value={endereco}
               onChange={(e) => setEndereco(e.target.value)}
-              placeholder="Rua, número, bairro, cidade"
+              placeholder="Rua e número"
               autoComplete="street-address"
             />
+          </div>
+          <div className="cl-field cl-field--inline-2">
+            <div>
+              <label htmlFor="nc-municipio" className="cl-label">Município</label>
+              <input
+                id="nc-municipio"
+                className="cl-input"
+                type="text"
+                value={municipio}
+                onChange={(e) => setMunicipio(e.target.value)}
+                placeholder="Cidade"
+                autoComplete="address-level2"
+              />
+            </div>
+            <div>
+              <label htmlFor="nc-uf" className="cl-label">UF</label>
+              <input
+                id="nc-uf"
+                className="cl-input"
+                type="text"
+                value={uf}
+                onChange={(e) => setUf(e.target.value.toUpperCase().slice(0, 2))}
+                placeholder="RJ"
+                autoComplete="address-level1"
+                maxLength={2}
+              />
+            </div>
           </div>
 
           {erro && <p className="cl-form-error" role="alert">{erro}</p>}
@@ -650,15 +819,28 @@ function ClienteDetalhe({
             {cliente.tags?.includes('Inativo') && <span className="cl-tag cl-tag--inactive">Inativo</span>}
           </div>
           <div className="cl-detail__meta">
+            {cliente.cpf_cnpj && (
+              <span className="cl-meta-item">
+                CPF/CNPJ: {formatarCpfCnpj(cliente.cpf_cnpj)}
+              </span>
+            )}
             {cliente.fone && (
               <span className="cl-meta-item"><IconPhone /> {cliente.fone}</span>
             )}
             {cliente.email && (
               <span className="cl-meta-item"><IconMail /> {cliente.email}</span>
             )}
-            {cliente.endereco && (
+            {(cliente.endereco || cliente.bairro || cliente.municipio) && (
               <span className="cl-meta-item">
-                <IconMapPin /> {cliente.endereco}
+                <IconMapPin />{' '}
+                {[
+                  cliente.endereco,
+                  cliente.bairro,
+                  cliente.municipio && cliente.uf ? `${cliente.municipio}/${cliente.uf}` : cliente.municipio,
+                  cliente.cep ? formatarCep(cliente.cep) : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
               </span>
             )}
             <span className="cl-meta-item">
@@ -866,10 +1048,13 @@ function ClienteRow({
 type ClientesPageProps = {
   companyId: string
   activeStoreId: string
+  onBadgeChange?: () => void
 }
 
-export function ClientesPage({ companyId, activeStoreId }: ClientesPageProps) {
+export function ClientesPage({ companyId, activeStoreId, onBadgeChange }: ClientesPageProps) {
+  const [aba, setAba] = useState<AbaClientes>('lista')
   const [clientes, setClientes] = useState<ClienteComRelacoes[]>([])
+  const [clientesComLembrete, setClientesComLembrete] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [busca, setBusca] = useState('')
@@ -880,6 +1065,7 @@ export function ClientesPage({ companyId, activeStoreId }: ClientesPageProps) {
   const carregar = useCallback(async () => {
     if (!activeStoreId) {
       setClientes([])
+      setClientesComLembrete(new Set())
       setSelecionado(null)
       setLoading(false)
       return
@@ -887,8 +1073,12 @@ export function ClientesPage({ companyId, activeStoreId }: ClientesPageProps) {
     setLoading(true)
     setErro(null)
     try {
-      const data = await listarClientes(companyId, activeStoreId)
+      const [data, lembretes] = await Promise.all([
+        listarClientes(companyId, activeStoreId),
+        listarPosVendaLembretesVencidos(companyId, activeStoreId),
+      ])
       setClientes(data)
+      setClientesComLembrete(new Set(lembretes.map((l) => l.cliente_id)))
     } catch (e: unknown) {
       setErro(e instanceof Error ? e.message : 'Erro ao carregar clientes.')
     } finally {
@@ -908,22 +1098,23 @@ export function ClientesPage({ companyId, activeStoreId }: ClientesPageProps) {
 
     if (filtro === 'bikes') lista = lista.filter((c) => c.bicicletas.length > 0)
     else if (filtro === 'revisao')
-      lista = lista.filter((c) => c.atividades.some((a) => a.tipo === 'revisao'))
+      lista = lista.filter((c) => clientesComLembrete.has(c.id))
     else if (filtro === 'inativo')
       lista = lista.filter((c) => c.tags?.includes('Inativo'))
 
     if (busca.trim()) {
-      const q = busca.toLowerCase()
-      lista = lista.filter(
-        (c) =>
-          c.nome.toLowerCase().includes(q) ||
-          (c.fone ?? '').includes(q) ||
-          (c.email ?? '').toLowerCase().includes(q),
-      )
+      lista = lista.filter((c) => clienteCorrespondeBusca(c, busca))
     }
 
     return lista
-  }, [clientes, busca, filtro])
+  }, [clientes, busca, filtro, clientesComLembrete])
+
+  useEffect(() => {
+    if (!busca.trim() || !selecionado) return
+    if (!clientesFiltrados.some((c) => c.id === selecionado.id)) {
+      setSelecionado(null)
+    }
+  }, [busca, clientesFiltrados, selecionado])
 
   const totalBikes = clientes.reduce((acc, c) => acc + c.bicicletas.length, 0)
   const showDetail = selecionado !== null
@@ -990,6 +1181,51 @@ export function ClientesPage({ companyId, activeStoreId }: ClientesPageProps) {
 
   return (
     <>
+      <header className="cl-topbar">
+        <div className="oficina-segmented" role="tablist" aria-label="Seções de clientes">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={aba === 'lista'}
+            className={
+              aba === 'lista'
+                ? 'oficina-segmented__btn oficina-segmented__btn--on'
+                : 'oficina-segmented__btn'
+            }
+            onClick={() => setAba('lista')}
+          >
+            Clientes
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={aba === 'lembretes'}
+            className={
+              aba === 'lembretes'
+                ? 'oficina-segmented__btn oficina-segmented__btn--on'
+                : 'oficina-segmented__btn'
+            }
+            onClick={() => setAba('lembretes')}
+          >
+            Lembretes pós-venda
+            {clientesComLembrete.size > 0 && (
+              <span className="cl-topbar__badge">{clientesComLembrete.size}</span>
+            )}
+          </button>
+        </div>
+      </header>
+
+      {aba === 'lembretes' ? (
+        <PosVendaLembretesPage
+          companyId={companyId}
+          activeStoreId={activeStoreId}
+          onBadgeChange={() => {
+            void carregar()
+            onBadgeChange?.()
+          }}
+        />
+      ) : (
+      <>
       <div className={`cl-page${showDetail ? ' cl-page--detail-open' : ''}`}>
         {/* ── coluna lista ── */}
         <div className={`cl-list-col${showDetail ? ' cl-list-col--hidden-mobile' : ''}`}>
@@ -1115,6 +1351,9 @@ export function ClientesPage({ companyId, activeStoreId }: ClientesPageProps) {
           onSalvo={handleSalvo}
         />
       )}
+      </>
+      )}
+
     </>
   )
 }

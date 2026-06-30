@@ -10,8 +10,10 @@ import {
   filtrarInputQuantidadeInteira,
   parseQuantidadeInteira,
 } from '../lib/quantidade'
+import { linhasPagamentoParaEnvio, novaLinhaPagamento } from '../lib/pagamento-misto'
 import { ClientePicker } from '../components/ClientePicker'
 import { EstoqueItemThumb } from '../components/EstoqueItemThumb'
+import { PagamentoMistoFields, validarPagamentoMisto } from '../components/PagamentoMistoFields'
 import {
   finalizarConversaoPdv,
   lerPrefillPdv,
@@ -24,7 +26,6 @@ import {
   labelPagamento,
   listarVendasRecentes,
   obterResumoVendasHoje,
-  type FormaPagamento,
   type VendaLista,
 } from '../services/pdv.service'
 
@@ -42,18 +43,6 @@ type CarrinhoLinha = {
   saldoMax: number | null
   sku: string | null
   imagemUrl: string | null
-}
-
-type PagamentoLinha = {
-  id: string
-  forma: FormaPagamento
-  valorStr: string
-}
-
-const FORMAS_PAGAMENTO: FormaPagamento[] = ['pix', 'dinheiro', 'credito', 'debito']
-
-function novaLinhaPagamento(forma: FormaPagamento = 'pix'): PagamentoLinha {
-  return { id: crypto.randomUUID(), forma, valorStr: '' }
 }
 
 function formatBRL(v: number) {
@@ -95,7 +84,7 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
   const [carrinho, setCarrinho] = useState<CarrinhoLinha[]>([])
   const [clienteId, setClienteId] = useState('')
   const [bicicletaId, setBicicletaId] = useState('')
-  const [pagamentos, setPagamentos] = useState<PagamentoLinha[]>(() => [novaLinhaPagamento('pix')])
+  const [pagamentos, setPagamentos] = useState(() => [novaLinhaPagamento('pix')])
   const [descontoStr, setDescontoStr] = useState('')
 
   const [loading, setLoading] = useState(true)
@@ -217,17 +206,11 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
   const desconto = parseMoneyInput(descontoStr) ?? 0
   const total = Math.max(subtotal - desconto, 0)
 
-  const somaPagamentos = useMemo(
-    () =>
-      pagamentos.reduce((acc, p) => {
-        const v = parseMoneyInput(p.valorStr)
-        return acc + (v ?? 0)
-      }, 0),
-    [pagamentos],
+  const validacaoPagamento = useMemo(
+    () => validarPagamentoMisto(total, pagamentos),
+    [total, pagamentos],
   )
-
-  const restantePagamento = Math.round((total - somaPagamentos) * 100) / 100
-  const pagamentoOk = total > 0 && Math.abs(restantePagamento) < 0.01
+  const pagamentoOk = validacaoPagamento.ok
 
   function abrirCheckout() {
     if (semLoja) {
@@ -241,30 +224,6 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
     setErro(null)
     setPagamentos([novaLinhaPagamento('pix')])
     setCheckoutAberto(true)
-  }
-
-  function atualizarPagamento(id: string, patch: Partial<PagamentoLinha>) {
-    setPagamentos((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)))
-  }
-
-  function adicionarFormaPagamento() {
-    const usadas = new Set(pagamentos.map((p) => p.forma))
-    const proxima = FORMAS_PAGAMENTO.find((f) => !usadas.has(f)) ?? 'pix'
-    setPagamentos((prev) => [...prev, novaLinhaPagamento(proxima)])
-  }
-
-  function removerFormaPagamento(id: string) {
-    setPagamentos((prev) => (prev.length <= 1 ? prev : prev.filter((p) => p.id !== id)))
-  }
-
-  function preencherRestantePagamento(id: string) {
-    const linha = pagamentos.find((p) => p.id === id)
-    if (!linha) return
-    const outros = pagamentos
-      .filter((p) => p.id !== id)
-      .reduce((acc, p) => acc + (parseMoneyInput(p.valorStr) ?? 0), 0)
-    const falta = Math.max(total - outros, 0)
-    atualizarPagamento(id, { valorStr: falta > 0 ? formatMoneyInput(falta) : '' })
   }
 
   function adicionarProduto(item: EstoqueItemComLocal) {
@@ -352,18 +311,17 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
       setErro(MSG_QUANTIDADE_INTEIRA)
       return
     }
-    const linhasPag = pagamentos
-      .map((p) => ({ forma: p.forma, valor: parseMoneyInput(p.valorStr) ?? 0 }))
-      .filter((p) => p.valor > 0)
+    const linhasPag = linhasPagamentoParaEnvio(pagamentos)
     if (linhasPag.length === 0) {
       setErro('Informe o valor em ao menos uma forma de pagamento.')
       return
     }
     if (!pagamentoOk) {
       setErro(
-        restantePagamento > 0
-          ? `Falta ${formatBRL(restantePagamento)} para fechar o total.`
-          : `Pagamento excede o total em ${formatBRL(-restantePagamento)}.`,
+        validacaoPagamento.erroLiquido ??
+          (validacaoPagamento.restante > 0
+            ? `Falta ${formatBRL(validacaoPagamento.restante)} para fechar o total.`
+            : `Pagamento excede o total em ${formatBRL(-validacaoPagamento.restante)}.`),
       )
       return
     }
@@ -697,79 +655,7 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
                   </div>
                 )}
 
-                <div className="pdv-pay-mixed">
-                  <div className="pdv-pay-mixed__head">
-                    <span className="pdv-field__lbl">Pagamento</span>
-                    <button
-                      type="button"
-                      className="pdv-link-btn"
-                      onClick={adicionarFormaPagamento}
-                      disabled={pagamentos.length >= FORMAS_PAGAMENTO.length}
-                    >
-                      + Forma
-                    </button>
-                  </div>
-                  <ul className="pdv-pay-mixed__list">
-                    {pagamentos.map((p) => (
-                      <li key={p.id} className="pdv-pay-line">
-                        <select
-                          className="pdv-input pdv-pay-line__forma"
-                          value={p.forma}
-                          onChange={(e) =>
-                            atualizarPagamento(p.id, {
-                              forma: e.target.value as FormaPagamento,
-                            })
-                          }
-                        >
-                          {FORMAS_PAGAMENTO.map((fp) => (
-                            <option key={fp} value={fp}>
-                              {labelPagamento(fp)}
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          className="pdv-input pdv-pay-line__valor"
-                          placeholder="0,00"
-                          value={p.valorStr}
-                          onChange={(e) =>
-                            atualizarPagamento(p.id, { valorStr: maskMoneyInput(e.target.value) })
-                          }
-                        />
-                        <button
-                          type="button"
-                          className="pdv-pay-line__fill"
-                          title="Preencher valor restante"
-                          onClick={() => preencherRestantePagamento(p.id)}
-                        >
-                          Restante
-                        </button>
-                        {pagamentos.length > 1 && (
-                          <button
-                            type="button"
-                            className="pdv-icon-btn"
-                            aria-label="Remover forma"
-                            onClick={() => removerFormaPagamento(p.id)}
-                          >
-                            ×
-                          </button>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                  <p
-                    className={`pdv-pay-mixed__hint${!pagamentoOk && somaPagamentos > 0 ? ' pdv-pay-mixed__hint--warn' : ''}`}
-                  >
-                    {pagamentoOk
-                      ? 'Valor do pagamento conferido.'
-                      : restantePagamento > 0
-                        ? `Falta ${formatBRL(restantePagamento)}`
-                        : somaPagamentos > 0
-                          ? `Excedente de ${formatBRL(-restantePagamento)}`
-                          : `Total a pagar: ${formatBRL(total)}`}
-                  </p>
-                </div>
+                <PagamentoMistoFields total={total} linhas={pagamentos} onChange={setPagamentos} />
 
                 <label className="pdv-field">
                   <span className="pdv-field__lbl">Desconto (R$)</span>

@@ -6,7 +6,10 @@ export type FormaPagamento = 'dinheiro' | 'pix' | 'credito' | 'debito' | 'outro'
 
 export type PagamentoVendaInput = {
   forma: FormaPagamento
+  /** Valor pago pelo cliente (bruto). */
   valor: number
+  /** Valor que entra na conta, após taxas — omitir quando igual ao bruto. */
+  valor_liquido?: number
 }
 
 export function labelPagamento(f: string) {
@@ -137,7 +140,16 @@ export async function finalizarVendaPdv(params: {
 
   const payloadPagamentos =
     pagamentos && pagamentos.length > 0
-      ? pagamentos.map((p) => ({ forma: p.forma, valor: p.valor }))
+      ? pagamentos.map((p) => {
+          const row: { forma: FormaPagamento; valor: number; valor_liquido?: number } = {
+            forma: p.forma,
+            valor: p.valor,
+          }
+          if (p.valor_liquido != null && p.valor_liquido < p.valor) {
+            row.valor_liquido = p.valor_liquido
+          }
+          return row
+        })
       : null
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

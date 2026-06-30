@@ -15,7 +15,19 @@ export function balcaoCorrespondeBusca(busca: string): boolean {
   return termos.every((t) => alvo.includes(t) || t.includes('balc') || t.includes('consum'))
 }
 
-export function clienteCorrespondeBusca(cliente: Pick<ClienteRow, 'nome' | 'fone'>, busca: string): boolean {
+/** Remove acentos para busca tolerante (ex.: "max" encontra "Máximo"). */
+function normalizarTextoBusca(valor: string): string {
+  return valor
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+}
+
+export function clienteCorrespondeBusca(
+  cliente: Pick<ClienteRow, 'nome' | 'fone' | 'email' | 'cpf_cnpj'>,
+  busca: string,
+): boolean {
   const termos = busca
     .trim()
     .toLowerCase()
@@ -23,16 +35,23 @@ export function clienteCorrespondeBusca(cliente: Pick<ClienteRow, 'nome' | 'fone
     .filter(Boolean)
   if (termos.length === 0) return true
 
-  const nome = cliente.nome.toLowerCase()
+  const nome = normalizarTextoBusca(cliente.nome)
   const foneRaw = (cliente.fone ?? '').toLowerCase()
   const foneDigits = normalizarTelefone(cliente.fone)
+  const email = (cliente.email ?? '').toLowerCase()
+  const docDigits = normalizarTelefone(cliente.cpf_cnpj)
 
   return termos.every((termo) => {
-    if (nome.includes(termo)) return true
+    const termoNorm = normalizarTextoBusca(termo)
+    if (nome.includes(termoNorm)) return true
     if (foneRaw.includes(termo)) return true
+    if (email.includes(termo)) return true
 
     const termoDigits = termo.replace(/\D/g, '')
-    if (termoDigits.length >= 2 && foneDigits.includes(termoDigits)) return true
+    if (termoDigits.length >= 2) {
+      if (foneDigits.includes(termoDigits)) return true
+      if (docDigits.includes(termoDigits)) return true
+    }
 
     return false
   })

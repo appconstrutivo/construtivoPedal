@@ -9,6 +9,7 @@ type DashboardHomeProps = {
   companyId: string
   activeStoreId: string
   onNavigate: (nav: NavKey) => void
+  lembretesPosVendaPendentes?: number
 }
 
 function IconWorkshop({ className }: { className?: string }) {
@@ -143,7 +144,13 @@ function PlaceholderPanel({ title, hint }: { title: string; hint: string }) {
   )
 }
 
-export function DashboardHome({ activeNav, companyId, activeStoreId, onNavigate }: DashboardHomeProps) {
+export function DashboardHome({
+  activeNav,
+  companyId,
+  activeStoreId,
+  onNavigate,
+  lembretesPosVendaPendentes = 0,
+}: DashboardHomeProps) {
   const [osAbertasCount, setOsAbertasCount] = useState<number | null>(null)
   const [ultimasOs, setUltimasOs] = useState<Array<{ id: string; numero: number; clienteNome: string }>>([])
   const [estoqueCritico, setEstoqueCritico] = useState<number | null>(null)
@@ -277,13 +284,22 @@ export function DashboardHome({ activeNav, companyId, activeStoreId, onNavigate 
               </span>
             </div>
           </li>
-          <li className="cp-kpi cp-kpi--schedule" title="Próximos 7 dias">
+          <li
+            className="cp-kpi cp-kpi--schedule cp-kpi--clickable"
+            title="Contatos pós-venda de bike pendentes"
+            onClick={() => onNavigate('clientes')}
+            onKeyDown={(e) => e.key === 'Enter' && onNavigate('clientes')}
+            role="button"
+            tabIndex={0}
+          >
             <span className="cp-kpi__icon" aria-hidden>
               <IconCalendar />
             </span>
             <div className="cp-kpi__body">
-              <span className="cp-kpi__label">Revisões</span>
-              <span className="cp-kpi__value">—</span>
+              <span className="cp-kpi__label">Pós-venda</span>
+              <span className="cp-kpi__value">
+                {semLoja ? '—' : String(lembretesPosVendaPendentes)}
+              </span>
             </div>
           </li>
           <li className="cp-kpi cp-kpi--sale" title="Total registrado no PDV">

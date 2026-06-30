@@ -712,7 +712,16 @@ export async function registrarRecebimentoConta(params: {
 }): Promise<{ vendaId: string | null; vendaNumero: number | null }> {
   const pagamentosJson =
     params.pagamentos && params.pagamentos.length > 0
-      ? params.pagamentos.map((p) => ({ forma: p.forma, valor: p.valor }))
+      ? params.pagamentos.map((p) => {
+          const row: { forma: FormaPagamento; valor: number; valor_liquido?: number } = {
+            forma: p.forma,
+            valor: p.valor,
+          }
+          if (p.valor_liquido != null && p.valor_liquido < p.valor) {
+            row.valor_liquido = p.valor_liquido
+          }
+          return row
+        })
       : null
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

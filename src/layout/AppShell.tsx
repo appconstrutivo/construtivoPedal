@@ -216,6 +216,8 @@ type AppShellProps = {
   onNavigate?: (key: NavKey) => void
   /** Contadores exibidos no menu (ex.: aprovações de orçamento não vistas). */
   navBadges?: Partial<Record<NavKey, number>>
+  /** Total de notificações operacionais (ex.: lembretes pós-venda). */
+  notificacoesCount?: number
   companyName?: string
   userEmail?: string
   onSignOut?: () => Promise<void> | void
@@ -232,6 +234,7 @@ export function AppShell({
   activeNav: activeNavControlled,
   onNavigate,
   navBadges,
+  notificacoesCount = 0,
   companyName = 'Sua bicicletaria',
   userEmail,
   onSignOut,
@@ -376,8 +379,24 @@ export function AppShell({
               )}
             </div>
           )}
-          <button type="button" className="cp-btn cp-btn--ghost cp-header__notify" aria-label="Notificações">
-            <span className="cp-header__notify-dot" aria-hidden />
+          <button
+            type="button"
+            className="cp-btn cp-btn--ghost cp-header__notify"
+            aria-label={
+              notificacoesCount > 0
+                ? `${notificacoesCount} lembrete(s) pós-venda pendente(s)`
+                : 'Notificações'
+            }
+            onClick={() => onNavigate?.('clientes')}
+            title={
+              notificacoesCount > 0
+                ? 'Ver lembretes pós-venda em Clientes'
+                : 'Notificações'
+            }
+          >
+            {notificacoesCount > 0 && (
+              <span className="cp-header__notify-dot" aria-hidden />
+            )}
           </button>
           <div className="cp-header__account" ref={accountMenuRef}>
             <button

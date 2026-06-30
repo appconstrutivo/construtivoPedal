@@ -508,39 +508,57 @@ export type Database = {
       }
       clientes: {
         Row: {
+          bairro: string | null
+          cep: string | null
           company_id: string
+          cpf_cnpj: string | null
           created_at: string
           endereco: string | null
           email: string | null
           fone: string | null
           id: string
+          inscricao_estadual: string | null
+          municipio: string | null
           nome: string
           observacoes: string | null
           store_id: string | null
           tags: string[]
+          uf: string | null
           updated_at: string
         }
         Insert: {
+          bairro?: string | null
+          cep?: string | null
           company_id: string
+          cpf_cnpj?: string | null
           created_at?: string
           endereco?: string | null
           email?: string | null
           fone?: string | null
           id?: string
+          inscricao_estadual?: string | null
+          municipio?: string | null
           nome: string
           observacoes?: string | null
           store_id?: string | null
           tags?: string[]
+          uf?: string | null
           updated_at?: string
         }
         Update: {
+          bairro?: string | null
+          cep?: string | null
+          cpf_cnpj?: string | null
           endereco?: string | null
           email?: string | null
           fone?: string | null
+          inscricao_estadual?: string | null
+          municipio?: string | null
           nome?: string
           observacoes?: string | null
           store_id?: string | null
           tags?: string[]
+          uf?: string | null
         }
       }
       companies: {
