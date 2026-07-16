@@ -306,6 +306,105 @@ export async function listarMovimentacoesConta(
   }))
 }
 
+export type OrigemMovimentacao = 'manual' | 'conta_pagar' | 'pdv' | 'conta_receber' | string
+
+export type SaidaFluxoItem = {
+  id: string
+  valor: number
+  descricao: string
+  origem: OrigemMovimentacao
+  realizada_em: string
+  contaNome: string | null
+}
+
+export type ResumoFluxoCaixa = {
+  totalSaidas: number
+  quantidadeSaidas: number
+  saidas: SaidaFluxoItem[]
+  porOrigem: { origem: string; label: string; total: number; quantidade: number }[]
+}
+
+const ORIGEM_SAIDA_LABEL: Record<string, string> = {
+  manual: 'Lançamento manual',
+  conta_pagar: 'Conta a pagar',
+  pdv: 'PDV',
+  conta_receber: 'Conta a receber',
+}
+
+export function labelOrigemMovimentacao(origem: string) {
+  return ORIGEM_SAIDA_LABEL[origem] ?? origem
+}
+
+/** Saídas do ledger no período (manual + pagamento de contas), filtradas pela loja. */
+export async function obterResumoFluxoCaixa(
+  companyId: string,
+  storeId: string,
+  desdeIso: string,
+  ateIso: string,
+): Promise<ResumoFluxoCaixa> {
+  if (!storeId) {
+    return { totalSaidas: 0, quantidadeSaidas: 0, saidas: [], porOrigem: [] }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('financeiro_movimentacoes')
+    .select('id, valor, descricao, origem, realizada_em, financeiro_contas(nome)')
+    .eq('company_id', companyId)
+    .eq('store_id', storeId)
+    .eq('tipo', 'saida')
+    .gte('realizada_em', desdeIso)
+    .lte('realizada_em', ateIso)
+    .order('realizada_em', { ascending: false })
+    .limit(200)
+
+  if (error) throw new Error(error.message ?? 'Erro ao carregar saídas do fluxo.')
+
+  type Raw = {
+    id: string
+    valor: number | string
+    descricao: string
+    origem: string
+    realizada_em: string
+    financeiro_contas?: { nome?: string | null } | null
+  }
+
+  const saidas: SaidaFluxoItem[] = ((data ?? []) as Raw[]).map((row) => ({
+    id: row.id,
+    valor: Number(row.valor),
+    descricao: row.descricao,
+    origem: row.origem,
+    realizada_em: row.realizada_em,
+    contaNome: row.financeiro_contas?.nome ?? null,
+  }))
+
+  const totalSaidas = saidas.reduce((acc, s) => acc + s.valor, 0)
+
+  const mapa = new Map<string, { total: number; quantidade: number }>()
+  for (const s of saidas) {
+    const atual = mapa.get(s.origem) ?? { total: 0, quantidade: 0 }
+    atual.total += s.valor
+    atual.quantidade += 1
+    mapa.set(s.origem, atual)
+  }
+
+  const porOrigem = [...mapa.entries()]
+    .map(([origem, v]) => ({
+      origem,
+      label: labelOrigemMovimentacao(origem),
+      total: v.total,
+      quantidade: v.quantidade,
+    }))
+    .sort((a, b) => b.total - a.total)
+
+  return {
+    totalSaidas,
+    quantidadeSaidas: saidas.length,
+    saidas,
+    porOrigem,
+  }
+}
+
 export async function listarContasPagar(
   companyId: string,
   storeId: string,

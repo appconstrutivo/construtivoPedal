@@ -1,12 +1,20 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FinCaixasTab } from '../components/financeiro/FinCaixasTab'
 import { FinContasPagarTab } from '../components/financeiro/FinContasPagarTab'
 import { FinContasReceberTab } from '../components/financeiro/FinContasReceberTab'
 import { obterResumoVendasHoje } from '../services/pdv.service'
-import { obterResumoContasPagar, obterResumoContasReceber } from '../services/financeiro.service'
+import {
+  labelOrigemMovimentacao,
+  obterResumoContasPagar,
+  obterResumoContasReceber,
+  obterResumoFluxoCaixa,
+  type ResumoFluxoCaixa,
+} from '../services/financeiro.service'
 import {
   intervaloPeriodo,
+  tentarIntervaloPersonalizado,
   obterRelatorioConsolidado,
+  type IntervaloRelatorio,
   type PeriodoRelatorio,
   type RelatorioConsolidado,
 } from '../services/relatorios.service'
@@ -21,12 +29,19 @@ type FinanceiroPageProps = {
 
 type AbaFinanceiro = 'visao' | 'fluxo' | 'receber' | 'pagar' | 'contas'
 
-const PERIODOS: { key: PeriodoRelatorio; label: string }[] = [
+const PERIODOS: { key: PeriodoRelatorio | 'custom'; label: string }[] = [
   { key: 'hoje', label: 'Hoje' },
   { key: '7d', label: '7 dias' },
   { key: '30d', label: '30 dias' },
   { key: 'mes', label: 'Mês' },
+  { key: 'custom', label: 'Personalizado' },
 ]
+
+function hojeIsoLocal(): string {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
 
 const ABAS: { key: AbaFinanceiro; label: string }[] = [
   { key: 'visao', label: 'Visão geral' },
@@ -77,14 +92,13 @@ function BarraProporcional({
   )
 }
 
-function PainelEmBreve({ titulo, descricao }: { titulo: string; descricao: string }) {
-  return (
-    <section className="fin-soon">
-      <h2 className="fin-soon__title">{titulo}</h2>
-      <p className="fin-soon__text">{descricao}</p>
-      <p className="fin-soon__badge">Em desenvolvimento</p>
-    </section>
-  )
+function formatShortDateTime(iso: string) {
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(iso))
 }
 
 function AbaVisaoGeral({
@@ -92,13 +106,19 @@ function AbaVisaoGeral({
   dados,
   resumoPagar,
   resumoReceber,
+  fluxo,
+  onIrFluxo,
 }: {
   vendasHoje: { quantidade: number; total: number } | null
   dados: RelatorioConsolidado & { intervalo: { label: string } }
   resumoPagar: { pendentes: number; vencidas: number; totalPendente: number } | null
   resumoReceber: { pendentes: number; totalPendente: number; recebidoMesOs: number } | null
+  fluxo: ResumoFluxoCaixa | null
+  onIrFluxo: () => void
 }) {
   const { vendas } = dados
+  const saldo =
+    fluxo != null ? vendas.faturamento - fluxo.totalSaidas : null
 
   return (
     <>
@@ -115,7 +135,24 @@ function AbaVisaoGeral({
           value={formatBRL(vendas.faturamento)}
           hint={`${vendas.quantidade} vendas no período`}
         />
-        <KpiCard tom="violet" label="Ticket médio" value={formatBRL(vendas.ticketMedio)} />
+        <KpiCard
+          tom="rose"
+          label={`Saídas · ${dados.intervalo.label}`}
+          value={fluxo ? formatBRL(fluxo.totalSaidas) : '—'}
+          hint={
+            fluxo
+              ? fluxo.quantidadeSaidas > 0
+                ? `${fluxo.quantidadeSaidas} lançamento(s)`
+                : 'Nenhuma saída no período'
+              : undefined
+          }
+        />
+        <KpiCard
+          tom="slate"
+          label="Saldo do período"
+          value={saldo != null ? formatBRL(saldo) : '—'}
+          hint="Faturamento PDV − saídas do caixa"
+        />
         <KpiCard
           tom="amber"
           label="A pagar (pendente)"
@@ -161,44 +198,78 @@ function AbaVisaoGeral({
         </section>
 
         <section className="rl-card">
-          <h2 className="rl-sec__title">Próximos passos</h2>
+          <h2 className="rl-sec__title">Controle do caixa</h2>
           <ul className="fin-roadmap">
             <li>
               <strong>Fluxo de caixa</strong>
-              <span>Entradas e saídas consolidadas, com lançamentos manuais.</span>
+              <span>Compare entradas do PDV com saídas lançadas no período.</span>
             </li>
             <li>
-              <strong>Contas a receber</strong>
-              <span>Vendas a prazo, OS faturadas e crediário de clientes.</span>
-            </li>
-            <li>
-              <strong>Contas a pagar</strong>
-              <span>Fornecedores, despesas fixas e alertas de vencimento.</span>
+              <strong>A pagar</strong>
+              <span>Despesas de fornecedores, fixas e impostos — pagamentos geram saída.</span>
             </li>
             <li>
               <strong>Caixas e contas</strong>
-              <span>Caixa da loja, bancos e abertura/fechamento de turno.</span>
+              <span>Saídas avulsas e saldo por conta (caixa, banco, PIX).</span>
             </li>
           </ul>
           <p className="rl-card__hint">
-            Vendas do PDV e recebimentos de OS entram automaticamente no caixa. Use A pagar para despesas.
+            Vendas do PDV entram no caixa automaticamente. Lance despesas em A pagar ou saídas
+            avulsas em Caixas.
           </p>
+          <button type="button" className="cp-btn cp-btn--ghost fin-link-fluxo" onClick={onIrFluxo}>
+            Ver fluxo de caixa
+          </button>
         </section>
       </div>
     </>
   )
 }
 
-function AbaFluxo({ dados }: { dados: RelatorioConsolidado }) {
+function AbaFluxo({
+  dados,
+  fluxo,
+  onIrCaixas,
+  onIrPagar,
+}: {
+  dados: RelatorioConsolidado
+  fluxo: ResumoFluxoCaixa | null
+  onIrCaixas: () => void
+  onIrPagar: () => void
+}) {
   const { vendas } = dados
+  const totalSaidas = fluxo?.totalSaidas ?? 0
+  const saldo = vendas.faturamento - totalSaidas
 
   return (
     <>
       <div className="rl-kpi-grid rl-kpi-grid--3">
-        <KpiCard tom="teal" label="Entradas (PDV)" value={formatBRL(vendas.faturamento)} />
-        <KpiCard tom="rose" label="Saídas" value="—" hint="Lançamentos manuais em breve" />
-        <KpiCard tom="slate" label="Saldo projetado" value="—" hint="Entradas − saídas" />
+        <KpiCard
+          tom="teal"
+          label="Entradas (PDV)"
+          value={formatBRL(vendas.faturamento)}
+          hint={`${vendas.quantidade} venda(s) no período`}
+        />
+        <KpiCard
+          tom="rose"
+          label="Saídas"
+          value={fluxo ? formatBRL(totalSaidas) : '—'}
+          hint={
+            fluxo
+              ? fluxo.quantidadeSaidas > 0
+                ? `${fluxo.quantidadeSaidas} lançamento(s)`
+                : 'Nenhuma saída no período'
+              : undefined
+          }
+        />
+        <KpiCard
+          tom="slate"
+          label="Saldo do período"
+          value={fluxo ? formatBRL(saldo) : '—'}
+          hint="Entradas PDV − saídas do caixa"
+        />
       </div>
+
       <section className="rl-card">
         <h2 className="rl-sec__title">Movimentações automáticas · PDV</h2>
         {vendas.quantidade === 0 ? (
@@ -216,10 +287,63 @@ function AbaFluxo({ dados }: { dados: RelatorioConsolidado }) {
           </ul>
         )}
       </section>
-      <PainelEmBreve
-        titulo="Despesas e transferências"
-        descricao="Registre saídas avulsas, pagamentos a fornecedores e movimentações entre contas."
-      />
+
+      <section className="rl-card">
+        <div className="fin-fluxo-head">
+          <div>
+            <h2 className="rl-sec__title">Despesas e saídas</h2>
+            <p className="rl-card__hint fin-fluxo-head__hint">
+              Pagamentos de contas e lançamentos manuais no caixa da loja.
+            </p>
+          </div>
+          <div className="fin-fluxo-actions">
+            <button type="button" className="cp-btn cp-btn--ghost" onClick={onIrPagar}>
+              A pagar
+            </button>
+            <button type="button" className="cp-btn cp-btn--primary" onClick={onIrCaixas}>
+              Lançar saída
+            </button>
+          </div>
+        </div>
+
+        {fluxo && fluxo.porOrigem.length > 0 ? (
+          <ul className="rl-metrics fin-fluxo-origem">
+            {fluxo.porOrigem.map((o) => (
+              <li key={o.origem}>
+                <span>
+                  {o.label}
+                  <small className="fin-fluxo-origem__qtd"> · {o.quantidade}</small>
+                </span>
+                <strong className="fin-valor--saida">− {formatBRL(o.total)}</strong>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
+        {!fluxo || fluxo.saidas.length === 0 ? (
+          <p className="rl-empty">
+            Nenhuma saída no período. Use <strong>A pagar</strong> para despesas ou{' '}
+            <strong>Caixas e contas</strong> para saídas avulsas.
+          </p>
+        ) : (
+          <ul className="fin-fluxo-saidas">
+            {fluxo.saidas.map((s) => (
+              <li key={s.id} className="fin-fluxo-saida">
+                <div className="fin-fluxo-saida__main">
+                  <span className="fin-fluxo-saida__desc">{s.descricao}</span>
+                  <span className="fin-fluxo-saida__meta">
+                    {formatShortDateTime(s.realizada_em)}
+                    {' · '}
+                    {labelOrigemMovimentacao(s.origem)}
+                    {s.contaNome ? ` · ${s.contaNome}` : ''}
+                  </span>
+                </div>
+                <strong className="fin-valor--saida">− {formatBRL(s.valor)}</strong>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </>
   )
 }
@@ -231,7 +355,9 @@ export function FinanceiroPage({
   onContasPagarChange,
 }: FinanceiroPageProps) {
   const [aba, setAba] = useState<AbaFinanceiro>('visao')
-  const [periodo, setPeriodo] = useState<PeriodoRelatorio>('mes')
+  const [periodo, setPeriodo] = useState<PeriodoRelatorio | 'custom'>('mes')
+  const [dataInicio, setDataInicio] = useState(hojeIsoLocal)
+  const [dataFim, setDataFim] = useState(hojeIsoLocal)
   const [dados, setDados] = useState<(RelatorioConsolidado & { intervalo: { label: string } }) | null>(
     null,
   )
@@ -246,11 +372,17 @@ export function FinanceiroPage({
     totalPendente: number
     recebidoMesOs: number
   } | null>(null)
+  const [fluxo, setFluxo] = useState<ResumoFluxoCaixa | null>(null)
   const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
 
   const semLoja = !activeStoreId
   const periodoDesabilitado = aba === 'receber' || aba === 'pagar' || aba === 'contas'
+
+  const intervalo = useMemo((): IntervaloRelatorio | null => {
+    if (periodo === 'custom') return tentarIntervaloPersonalizado(dataInicio, dataFim)
+    return intervaloPeriodo(periodo)
+  }, [periodo, dataInicio, dataFim])
 
   const carregar = useCallback(async () => {
     if (!activeStoreId) {
@@ -258,36 +390,67 @@ export function FinanceiroPage({
       setVendasHoje(null)
       setResumoPagar(null)
       setResumoReceber(null)
+      setFluxo(null)
       setLoading(false)
       return
     }
+    if (periodo === 'custom' && !intervalo) {
+      setErro(null)
+      setDados(null)
+      setFluxo(null)
+      setLoading(false)
+      return
+    }
+    if (periodo === 'custom' && dataInicio > dataFim) {
+      setErro('A data inicial não pode ser posterior à data final.')
+      setDados(null)
+      setFluxo(null)
+      setLoading(false)
+      return
+    }
+    if (!intervalo) return
+
     setLoading(true)
     setErro(null)
     try {
-      const [relatorio, hoje, resumo, resumoRec] = await Promise.all([
-        obterRelatorioConsolidado(companyId, activeStoreId, intervaloPeriodo(periodo)),
+      const [relatorio, hoje, resumo, resumoRec, resumoFluxo] = await Promise.all([
+        obterRelatorioConsolidado(companyId, activeStoreId, intervalo),
         obterResumoVendasHoje(companyId, activeStoreId),
         obterResumoContasPagar(companyId, activeStoreId),
         obterResumoContasReceber(companyId, activeStoreId),
+        obterResumoFluxoCaixa(companyId, activeStoreId, intervalo.desde, intervalo.ate),
       ])
       setDados(relatorio)
       setVendasHoje(hoje)
       setResumoPagar(resumo)
       setResumoReceber(resumoRec)
+      setFluxo(resumoFluxo)
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao carregar dados financeiros.')
       setDados(null)
       setVendasHoje(null)
       setResumoPagar(null)
       setResumoReceber(null)
+      setFluxo(null)
     } finally {
       setLoading(false)
     }
-  }, [companyId, activeStoreId, periodo])
+  }, [companyId, activeStoreId, intervalo, periodo, dataInicio, dataFim])
 
   useEffect(() => {
     void carregar()
   }, [carregar])
+
+  const abaAnteriorRef = useRef(aba)
+  useEffect(() => {
+    const anterior = abaAnteriorRef.current
+    abaAnteriorRef.current = aba
+    const veioDeOperacional =
+      anterior === 'receber' || anterior === 'pagar' || anterior === 'contas'
+    if (veioDeOperacional && (aba === 'visao' || aba === 'fluxo')) {
+      void carregar()
+    }
+  }, [aba, carregar])
 
   return (
     <div className="cp-page fin-page">
@@ -297,7 +460,7 @@ export function FinanceiroPage({
           <p className="rl-head__sub">
             {semLoja
               ? 'Selecione uma loja no topo da tela.'
-              : `${storeName ?? 'Loja ativa'} · gestão financeira da empresa`}
+              : `${storeName ?? 'Loja ativa'} · ${intervalo?.label ?? 'período personalizado'}`}
           </p>
         </div>
         <button
@@ -331,6 +494,28 @@ export function FinanceiroPage({
             </button>
           ))}
         </div>
+        {periodo === 'custom' && !periodoDesabilitado ? (
+          <div className="rl-custom-period">
+            <label className="rl-custom-period__field">
+              <span>De</span>
+              <input
+                type="date"
+                value={dataInicio}
+                onChange={(e) => setDataInicio(e.target.value)}
+                disabled={semLoja}
+              />
+            </label>
+            <label className="rl-custom-period__field">
+              <span>Até</span>
+              <input
+                type="date"
+                value={dataFim}
+                onChange={(e) => setDataFim(e.target.value)}
+                disabled={semLoja}
+              />
+            </label>
+          </div>
+        ) : null}
         <nav className="rl-tabs" aria-label="Área financeira">
           {ABAS.map((t) => (
             <button
@@ -369,6 +554,10 @@ export function FinanceiroPage({
         <FinContasReceberTab companyId={companyId} storeId={activeStoreId} />
       ) : aba === 'contas' ? (
         <FinCaixasTab companyId={companyId} storeId={activeStoreId} />
+      ) : periodo === 'custom' && !intervalo ? (
+        <section className="cp-panel cp-panel--muted">
+          <p className="cp-panel__hint">Informe a data inicial e a data final para analisar o período.</p>
+        </section>
       ) : loading && !dados ? (
         <div className="rl-loading" role="status">
           <span className="cp-auth-loading__spinner" aria-hidden />
@@ -382,9 +571,18 @@ export function FinanceiroPage({
               dados={dados}
               resumoPagar={resumoPagar}
               resumoReceber={resumoReceber}
+              fluxo={fluxo}
+              onIrFluxo={() => setAba('fluxo')}
             />
           )}
-          {aba === 'fluxo' && <AbaFluxo dados={dados} />}
+          {aba === 'fluxo' && (
+            <AbaFluxo
+              dados={dados}
+              fluxo={fluxo}
+              onIrCaixas={() => setAba('contas')}
+              onIrPagar={() => setAba('pagar')}
+            />
+          )}
         </div>
       ) : null}
     </div>

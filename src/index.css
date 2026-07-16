@@ -5564,13 +5564,7 @@ button {
   gap: 8px;
 }
 
-.pdv-pay-line {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(88px, 120px) auto auto;
-  gap: 6px;
-  align-items: center;
-}
-
+.pdv-pay-line,
 .pdv-pay-line--stacked {
   display: flex;
   flex-direction: column;
@@ -5580,9 +5574,11 @@ button {
 
 .pdv-pay-line__main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(88px, 120px) auto auto;
+  grid-template-columns: minmax(8rem, 1fr) minmax(5.5rem, 1.1fr) auto auto;
   gap: 6px;
   align-items: center;
+  width: 100%;
+  min-width: 0;
 }
 
 .pdv-pay-line__liquido {
@@ -5617,10 +5613,13 @@ button {
 }
 
 .pdv-pay-line__forma {
-  min-width: 0;
+  min-width: 8rem;
+  width: 100%;
 }
 
 .pdv-pay-line__valor {
+  min-width: 0;
+  width: 100%;
   text-align: right;
 }
 
@@ -6654,6 +6653,80 @@ button {
 
 .fin-valor--entrada {
   color: var(--cp-tone-teal);
+}
+
+.fin-link-fluxo {
+  margin-top: 12px;
+}
+
+.fin-fluxo-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 16px;
+  margin-bottom: 8px;
+}
+
+.fin-fluxo-head .rl-sec__title {
+  margin-bottom: 4px;
+}
+
+.fin-fluxo-head__hint {
+  margin: 0;
+}
+
+.fin-fluxo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fin-fluxo-origem {
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--cp-border);
+}
+
+.fin-fluxo-origem__qtd {
+  color: var(--cp-text-muted);
+  font-weight: 500;
+}
+
+.fin-fluxo-saidas {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fin-fluxo-saida {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--cp-border);
+}
+
+.fin-fluxo-saida:last-child {
+  border-bottom: none;
+}
+
+.fin-fluxo-saida__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fin-fluxo-saida__desc {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.fin-fluxo-saida__meta {
+  color: var(--cp-text-muted);
+  font-size: 0.82rem;
 }
 
 .fin-soon {

@@ -502,15 +502,7 @@ export function VendaReciboHtml({ venda, companyName, segundaVia = false }: Vend
         ${blocoCampo('Base cálc. ICMS ST', formatBRL(0), 'campo--sm campo--right')}
         ${blocoCampo('Valor ICMS ST', formatBRL(0), 'campo--sm campo--right')}
         ${blocoCampo('V. total produtos', formatBRL(subtotal), 'campo--sm campo--right')}
-        ${blocoCampo('V. frete', formatBRL(0), 'campo--sm campo--right')}
-      </tr>
-      <tr class="grid-6 imposto">
-        ${blocoCampo('V. seguro', formatBRL(0), 'campo--sm campo--right')}
         ${blocoCampo('Desconto', desconto > 0 ? formatBRL(desconto) : formatBRL(0), 'campo--sm campo--right')}
-        ${blocoCampo('Outras despesas', formatBRL(0), 'campo--sm campo--right')}
-        ${blocoCampo('V. IPI', formatBRL(0), 'campo--sm campo--right')}
-        ${blocoCampo('V. PIS', formatBRL(0), 'campo--sm campo--right')}
-        ${blocoCampo('V. COFINS', formatBRL(0), 'campo--sm campo--right')}
       </tr>
     </table>
 
