@@ -74,6 +74,12 @@ function statusChipClass(s: string) {
   return 'os-chip'
 }
 
+/** Guia da lista onde a OS deve aparecer, conforme o status operacional. */
+function filtroParaStatus(status: StatusOrdemServico): FiltroLista {
+  if (status === 'entregue' || status === 'cancelada') return 'encerradas'
+  return 'abertas'
+}
+
 function formatBRL(v: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
 }
@@ -292,15 +298,32 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
     totalOsValor > 0 &&
     !contaReceberOs
 
+  /** OS faturada (pendente) ou recebida: bloqueia inclusão/remoção de peças e serviços. */
+  const osItensTravados =
+    !!detalhe &&
+    (detalhe.status === 'cancelada' ||
+      contaReceberOs?.status === 'pendente' ||
+      contaReceberOs?.status === 'recebido')
+
+  const msgOsItensTravados =
+    detalhe?.status === 'cancelada'
+      ? 'OS cancelada: não é possível incluir ou remover peças e serviços.'
+      : contaReceberOs?.status === 'recebido'
+        ? 'OS já recebida: para incluir peças ou serviços, cancele o recebimento em Lançamentos e altere o status para Aberta.'
+        : 'OS faturada: para incluir peças ou serviços, cancele o faturamento (ou altere o status para Aberta) e edite os itens.'
+
   useEffect(() => {
-    if (listaFiltrada.length === 0) {
-      if (selectedId !== null) setSelectedId(null)
+    // Só troca a seleção se a OS sumiu da lista completa (ex.: excluída / outra loja).
+    // Se apenas saiu do filtro da guia atual (mudança de status), mantém a OS em foco.
+    if (!selectedId) {
+      if (listaFiltrada.length > 0) setSelectedId(listaFiltrada[0].id)
       return
     }
-    if (!selectedId || !listaFiltrada.some((r) => r.id === selectedId)) {
-      setSelectedId(listaFiltrada[0].id)
+    const aindaNaLista = lista.some((r) => r.id === selectedId)
+    if (!aindaNaLista) {
+      setSelectedId(listaFiltrada[0]?.id ?? null)
     }
-  }, [listaFiltrada, selectedId])
+  }, [lista, listaFiltrada, selectedId])
 
   async function handleSalvarCabecalho() {
     if (!detalhe) return
@@ -314,9 +337,30 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
       )
       return
     }
+    // Reabrir para Aberta com recebimento quitado exige estorno prévio em Lançamentos.
+    if (
+      formDetalhe.status === 'aberta' &&
+      detalhe.status !== 'aberta' &&
+      contaReceberOs?.status === 'recebido'
+    ) {
+      setErro(
+        'Esta OS já foi recebida. Cancele o recebimento em Lançamentos antes de alterar o status para Aberta e editar os itens.',
+      )
+      return
+    }
+    const osId = detalhe.id
+    const novoStatus = formDetalhe.status
     setSalvandoCabecalho(true)
     setErro(null)
     try {
+      // Reabrir para Aberta com faturamento pendente: cancela a conta para liberar edição.
+      if (
+        formDetalhe.status === 'aberta' &&
+        detalhe.status !== 'aberta' &&
+        contaReceberOs?.status === 'pendente'
+      ) {
+        await cancelarContaReceber(contaReceberOs.id)
+      }
       await atualizarOrdemServico(detalhe.id, {
         status: formDetalhe.status,
         store_id: activeStoreId,
@@ -332,7 +376,13 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
         await cancelarContaReceber(contaReceberOs.id)
       }
       await carregarLista({ silencioso: true })
-      await recarregarDetalhe(detalhe.id, { silencioso: true })
+      // Mantém o usuário na mesma OS; se o status saiu da guia atual, troca a guia.
+      const guiaAlvo = filtroParaStatus(novoStatus)
+      if (filtro !== 'todas' && filtro !== guiaAlvo) {
+        setFiltro(guiaAlvo)
+      }
+      setSelectedId(osId)
+      await recarregarDetalhe(osId, { silencioso: true })
     } catch (e: unknown) {
       setErro(e instanceof Error ? e.message : 'Erro ao salvar.')
     } finally {
@@ -454,6 +504,11 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
       setModalNovaOpen(false)
       setNovaOs({ clienteId: '', bicicletaId: '', problema: '' })
       await carregarLista()
+      // Troca filtro + seleção no mesmo batch após a lista incluir a OS nova,
+      // para o efeito de listaFiltrada não manter a OS anterior (ex.: em Encerradas).
+      setFiltro('abertas')
+      setBusca('')
+      setAbaOficina('ordens')
       setSelectedId(row.id)
     } catch (e: unknown) {
       setErro(e instanceof Error ? e.message : 'Erro ao criar OS.')
@@ -541,6 +596,10 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
       setErro('Selecione uma peça no estoque antes de incluir.')
       return
     }
+    if (osItensTravados) {
+      setErro(msgOsItensTravados)
+      return
+    }
     const item = itensEstoque.find((x) => x.id === pecaForm.itemId)
     if (!item) {
       setErro('Peça não encontrada na loja ativa. Recarregue a página ou selecione outro item.')
@@ -579,6 +638,10 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
 
   async function addServico() {
     if (!detalhe) return
+    if (osItensTravados) {
+      setErro(msgOsItensTravados)
+      return
+    }
     const q = parseQuantidadeInteira(servicoForm.qtd)
     const p = parseMoneyInput(servicoForm.preco) ?? 0
     if (!(q > 0)) {
@@ -630,6 +693,10 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
 
   async function removerItem(row: OsItemRow) {
     if (!detalhe) return
+    if (osItensTravados) {
+      setErro(msgOsItensTravados)
+      return
+    }
     try {
       await excluirOsItem(row)
       await recarregarDetalhe(detalhe.id, { silencioso: true })
@@ -932,6 +999,11 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
 
                 <div className="os-card os-card--wide">
                   <h3 className="os-card__title">Peças e serviços</h3>
+                  {osItensTravados ? (
+                    <p className="os-hint" role="status">
+                      {msgOsItensTravados}
+                    </p>
+                  ) : null}
                   <div className="os-split-2">
                     <div>
                       <p className="os-mini-title">Peça (estoque)</p>
@@ -939,6 +1011,7 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
                         itens={itensEstoque}
                         value={pecaForm.itemId}
                         onChange={selecionarPecaEstoque}
+                        disabled={osItensTravados}
                       />
                       <label className="os-field">
                         <span>Quantidade</span>
@@ -949,6 +1022,7 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
                           step={1}
                           inputMode="numeric"
                           value={pecaForm.qtd}
+                          disabled={osItensTravados}
                           onChange={(e) =>
                             setPecaForm((f) => ({
                               ...f,
@@ -964,6 +1038,7 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
                           inputMode="decimal"
                           placeholder="0,00"
                           value={pecaForm.preco}
+                          disabled={osItensTravados}
                           onChange={(e) => setPecaForm((f) => ({ ...f, preco: e.target.value }))}
                         />
                       </label>
@@ -973,10 +1048,16 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
                           className="os-input"
                           placeholder={pecaForm.itemId ? 'Sobrescreve o nome exibido' : 'Selecione uma peça'}
                           value={pecaForm.descricao}
+                          disabled={osItensTravados}
                           onChange={(e) => setPecaForm((f) => ({ ...f, descricao: e.target.value }))}
                         />
                       </label>
-                      <button type="button" className="st-ghost-btn" onClick={() => void addPeca()}>
+                      <button
+                        type="button"
+                        className="st-ghost-btn"
+                        disabled={osItensTravados}
+                        onClick={() => void addPeca()}
+                      >
                         Incluir peça
                       </button>
                     </div>
@@ -990,6 +1071,7 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
                           onChange={selecionarServicoCatalogo}
                           formatPreco={formatBRL}
                           permitirAvulso
+                          disabled={osItensTravados}
                           placeholder={
                             servicosAtivosParaOs.length === 0
                               ? 'Sem serviços ativos — use avulso abaixo'
@@ -1005,6 +1087,7 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
                           className="os-input"
                           placeholder="Preenchida pelo catálogo ou digite à mão (serviço avulso)"
                           value={servicoForm.desc}
+                          disabled={osItensTravados}
                           onChange={(e) => setServicoForm((f) => ({ ...f, desc: e.target.value }))}
                         />
                       </label>
@@ -1017,6 +1100,7 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
                           step={1}
                           inputMode="numeric"
                           value={servicoForm.qtd}
+                          disabled={osItensTravados}
                           onChange={(e) =>
                             setServicoForm((f) => ({
                               ...f,
@@ -1032,10 +1116,16 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
                           inputMode="decimal"
                           placeholder="0,00"
                           value={servicoForm.preco}
+                          disabled={osItensTravados}
                           onChange={(e) => setServicoForm((f) => ({ ...f, preco: e.target.value }))}
                         />
                       </label>
-                      <button type="button" className="st-ghost-btn" onClick={() => void addServico()}>
+                      <button
+                        type="button"
+                        className="st-ghost-btn"
+                        disabled={osItensTravados}
+                        onClick={() => void addServico()}
+                      >
                         Incluir serviço
                       </button>
                     </div>
@@ -1087,7 +1177,12 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
                               </button>
                             ) : null}
                             {!it.movimentacao_id ? (
-                              <button type="button" className="os-icon-btn" onClick={() => void removerItem(it)}>
+                              <button
+                                type="button"
+                                className="os-icon-btn"
+                                disabled={osItensTravados}
+                                onClick={() => void removerItem(it)}
+                              >
                                 Remover
                               </button>
                             ) : null}

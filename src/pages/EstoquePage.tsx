@@ -837,12 +837,12 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
     const kitItem = kits.find((k) => k.item_resultante_id === item.id)
     const custo = kitItem
       ? calcularCustoComposicaoKit(
-          kitItem.componentes.map((c) => ({
-            componenteItemId: c.componenteItemId,
-            quantidade: c.quantidade,
-          })),
-          itens,
-        )
+        kitItem.componentes.map((c) => ({
+          componenteItemId: c.componenteItemId,
+          quantidade: c.quantidade,
+        })),
+        itens,
+      )
       : item.custo_medio
     const pv = item.preco_varejo ?? 0
     const pa = item.preco_atacado ?? 0
@@ -908,12 +908,12 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
     const estoqueMinimo = parseQuantidadeInteira(itemForm.estoqueMinimo)
     const custoMedio = kitDoItemEmEdicao
       ? calcularCustoComposicaoKit(
-          kitDoItemEmEdicao.componentes.map((c) => ({
-            componenteItemId: c.componenteItemId,
-            quantidade: c.quantidade,
-          })),
-          itens,
-        )
+        kitDoItemEmEdicao.componentes.map((c) => ({
+          componenteItemId: c.componenteItemId,
+          quantidade: c.quantidade,
+        })),
+        itens,
+      )
       : Number(itemForm.custoMedio)
     const precoVarejo = Number(itemForm.precoVarejo)
     const precoAtacado = Number(itemForm.precoAtacado)
@@ -1269,14 +1269,14 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
 
     const faltas = kitMontagemSelecionado
       ? verificarEstoqueMontagemKit(
-          kitMontagemSelecionado.componentes.map((c) => ({
-            componenteItemId: c.componenteItemId,
-            componenteNome: c.componenteNome,
-            quantidade: c.quantidade,
-          })),
-          quantidade,
-          itens.map((i) => ({ id: i.id, nome: i.nome, saldo_atual: i.saldo_atual })),
-        )
+        kitMontagemSelecionado.componentes.map((c) => ({
+          componenteItemId: c.componenteItemId,
+          componenteNome: c.componenteNome,
+          quantidade: c.quantidade,
+        })),
+        quantidade,
+        itens.map((i) => ({ id: i.id, nome: i.nome, saldo_atual: i.saldo_atual })),
+      )
       : []
 
     if (faltas.length > 0) {
@@ -1683,43 +1683,43 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
               </article>
             ) : (
               <>
-            <section className="st-panel">
-              <h2 className="st-panel__title">Movimentações de hoje</h2>
-            {loading ? (
-              <p className="st-panel__hint">Carregando movimentações...</p>
-            ) : movimentacoes.length === 0 ? (
-              <p className="st-panel__hint">Sem movimentações hoje.</p>
-            ) : (
-              <ul className="st-mov-list">
-                {movimentacoes.map((mov) => {
-                  const tipo = toTipoMovimentacao(mov.tipo)
-                  return (
-                    <li key={mov.id} className="st-mov">
-                      <div className="st-mov__head">
-                        <span className={`st-mov__type st-mov__type--${tipo}`}>{tipo}</span>
-                        <span className="st-mov__time">{horaMovimentacao(mov.created_at)}</span>
-                      </div>
-                      <strong className="st-mov__item">{mov.itemNome}</strong>
-                      <span className="st-mov__meta">
-                        {mov.quantidade > 0 ? '+' : ''}
-                        {formatQuantidadeInteira(mov.quantidade)} un
-                        {mov.origem ? ` · ${mov.origem}` : ''}
-                      </span>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-          </section>
+                <section className="st-panel">
+                  <h2 className="st-panel__title">Movimentações de hoje</h2>
+                  {loading ? (
+                    <p className="st-panel__hint">Carregando movimentações...</p>
+                  ) : movimentacoes.length === 0 ? (
+                    <p className="st-panel__hint">Sem movimentações hoje.</p>
+                  ) : (
+                    <ul className="st-mov-list">
+                      {movimentacoes.map((mov) => {
+                        const tipo = toTipoMovimentacao(mov.tipo)
+                        return (
+                          <li key={mov.id} className="st-mov">
+                            <div className="st-mov__head">
+                              <span className={`st-mov__type st-mov__type--${tipo}`}>{tipo}</span>
+                              <span className="st-mov__time">{horaMovimentacao(mov.created_at)}</span>
+                            </div>
+                            <strong className="st-mov__item">{mov.itemNome}</strong>
+                            <span className="st-mov__meta">
+                              {mov.quantidade > 0 ? '+' : ''}
+                              {formatQuantidadeInteira(mov.quantidade)} un
+                              {mov.origem ? ` · ${mov.origem}` : ''}
+                            </span>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+                </section>
 
-          <section className="st-panel">
-            <h2 className="st-panel__title">Ações sugeridas</h2>
-            <ul className="st-tips">
-              <li>Programar compra de correntes 11v para cobertura de 15 dias.</li>
-              <li>Sincronizar baixa de cassete com OS para evitar ruptura na oficina.</li>
-              <li>Criar alerta por loja quando saldo ficar abaixo de 50% do mínimo.</li>
-            </ul>
-          </section>
+                <section className="st-panel">
+                  <h2 className="st-panel__title">Ações sugeridas</h2>
+                  <ul className="st-tips">
+                    <li>Programar compra de correntes 11v para cobertura de 15 dias.</li>
+                    <li>Sincronizar baixa de cassete com OS para evitar ruptura na oficina.</li>
+                    <li>Criar alerta por loja quando saldo ficar abaixo de 50% do mínimo.</li>
+                  </ul>
+                </section>
               </>
             )}
           </div>
@@ -2128,364 +2128,364 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
               </div>
 
               <div className="st-modal__body">
-              <div
-                id="st-item-panel-dados"
-                role="tabpanel"
-                aria-labelledby="st-item-tab-dados"
-                hidden={modalItemAba !== 'dados'}
-                className="st-modal-tabpanel"
-              >
-              <div className="st-form-grid">
-                <label className="st-field">
-                  <span>SKU</span>
-                  <input
-                    className="st-input"
-                    value={itemSkuLoading && !itemEditandoId ? '' : itemForm.sku}
-                    placeholder={itemSkuLoading && !itemEditandoId ? 'Gerando…' : undefined}
-                    readOnly
-                    aria-readonly="true"
-                    aria-busy={itemSkuLoading && !itemEditandoId}
-                  />
-                </label>
-                <label className="st-field">
-                  <span>Nome *</span>
-                  <input
-                    className="st-input"
-                    value={itemForm.nome}
-                    onChange={(e) => setItemForm((prev) => ({ ...prev, nome: e.target.value }))}
-                    required
-                  />
-                </label>
-              </div>
-              <div className="st-form-grid">
-                <label className="st-field">
-                  <span>Categoria</span>
-                  <select
-                    className="st-input"
-                    value={itemForm.categoria}
-                    onChange={(e) =>
-                      setItemForm((prev) => ({ ...prev, categoria: e.target.value as CategoriaEstoque }))
-                    }
-                  >
-                    <option value="peca">Peça</option>
-                    <option value="bike">Bike</option>
-                    <option value="acessorio">Acessórios</option>
-                  </select>
-                </label>
-                <label className="st-field">
-                  <span>Unidade</span>
-                  <input
-                    className="st-input"
-                    value={itemForm.unidade}
-                    onChange={(e) => setItemForm((prev) => ({ ...prev, unidade: e.target.value }))}
-                  />
-                </label>
-              </div>
-              <div className="st-form-grid">
-                <label className="st-field">
-                  <span>Fornecedor</span>
-                  <select
-                    className="st-input"
-                    value={itemForm.fornecedorId}
-                    onChange={(e) => setItemForm((prev) => ({ ...prev, fornecedorId: e.target.value }))}
-                  >
-                    <option value="">Sem fornecedor</option>
-                    {fornecedores.map((fornecedor) => (
-                      <option key={fornecedor.id} value={fornecedor.id}>
-                        {fornecedor.nome}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="st-field">
-                  <span title="Código do produto no catálogo ou planilha do fornecedor (diferente do SKU interno da loja)">
-                    SKU do fornecedor
-                  </span>
-                  <input
-                    className="st-input"
-                    value={itemForm.skuFornecedor}
-                    onChange={(e) =>
-                      setItemForm((prev) => ({ ...prev, skuFornecedor: e.target.value }))
-                    }
-                    placeholder="Ex.: código na tabela do fornecedor"
-                    autoComplete="off"
-                  />
-                </label>
-              </div>
-              <label className="st-field">
-                <span>Local de estoque</span>
-                <select
-                  className="st-input"
-                  value={itemForm.localId}
-                  onChange={(e) => setItemForm((prev) => ({ ...prev, localId: e.target.value }))}
+                <div
+                  id="st-item-panel-dados"
+                  role="tabpanel"
+                  aria-labelledby="st-item-tab-dados"
+                  hidden={modalItemAba !== 'dados'}
+                  className="st-modal-tabpanel"
                 >
-                  <option value="">Sem local definido</option>
-                  {locais.map((local) => (
-                    <option key={local.id} value={local.id}>
-                      {local.codigo} — {local.nome}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="st-form-grid">
-                <label className="st-field">
-                  <span title="Custo pago ao fornecedor">Custo (R$)</span>
-                  <input
-                    className="st-input"
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={
-                      custoItemKitEmEdicao !== null
-                        ? String(custoItemKitEmEdicao)
-                        : itemForm.custoMedio
-                    }
-                    readOnly={custoItemKitEmEdicao !== null}
-                    aria-readonly={custoItemKitEmEdicao !== null}
-                    onChange={(e) => {
-                      if (custoItemKitEmEdicao !== null) return
-                      const raw = e.target.value
-                      setItemForm((prev) => {
-                        const custo = parseDecimalInput(raw)
-                        const next = { ...prev, custoMedio: raw }
-                        if (!(custo > 0)) {
-                          return next
+                  <div className="st-form-grid">
+                    <label className="st-field">
+                      <span>SKU</span>
+                      <input
+                        className="st-input"
+                        value={itemSkuLoading && !itemEditandoId ? '' : itemForm.sku}
+                        placeholder={itemSkuLoading && !itemEditandoId ? 'Gerando…' : undefined}
+                        readOnly
+                        aria-readonly="true"
+                        aria-busy={itemSkuLoading && !itemEditandoId}
+                      />
+                    </label>
+                    <label className="st-field">
+                      <span>Nome *</span>
+                      <input
+                        className="st-input"
+                        value={itemForm.nome}
+                        onChange={(e) => setItemForm((prev) => ({ ...prev, nome: e.target.value }))}
+                        required
+                      />
+                    </label>
+                  </div>
+                  <div className="st-form-grid">
+                    <label className="st-field">
+                      <span>Categoria</span>
+                      <select
+                        className="st-input"
+                        value={itemForm.categoria}
+                        onChange={(e) =>
+                          setItemForm((prev) => ({ ...prev, categoria: e.target.value as CategoriaEstoque }))
                         }
-                        let nv = next
-                        const mv = parseDecimalInput(prev.markupVarejo)
-                        if (prev.markupVarejo.trim() !== '' && Number.isFinite(mv)) {
-                          nv = { ...nv, precoVarejo: priceFromCostAndMarkup(custo, mv) }
-                        } else {
-                          const pv = parseDecimalInput(prev.precoVarejo)
-                          if (Number.isFinite(pv)) {
-                            nv = { ...nv, markupVarejo: markupPctFromCostAndPrice(custo, pv) }
-                          }
+                      >
+                        <option value="peca">Peça</option>
+                        <option value="bike">Bike</option>
+                        <option value="acessorio">Acessórios</option>
+                      </select>
+                    </label>
+                    <label className="st-field">
+                      <span>Unidade</span>
+                      <input
+                        className="st-input"
+                        value={itemForm.unidade}
+                        onChange={(e) => setItemForm((prev) => ({ ...prev, unidade: e.target.value }))}
+                      />
+                    </label>
+                  </div>
+                  <div className="st-form-grid">
+                    <label className="st-field">
+                      <span>Fornecedor</span>
+                      <select
+                        className="st-input"
+                        value={itemForm.fornecedorId}
+                        onChange={(e) => setItemForm((prev) => ({ ...prev, fornecedorId: e.target.value }))}
+                      >
+                        <option value="">Sem fornecedor</option>
+                        {fornecedores.map((fornecedor) => (
+                          <option key={fornecedor.id} value={fornecedor.id}>
+                            {fornecedor.nome}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="st-field">
+                      <span title="Código do produto no catálogo ou planilha do fornecedor (diferente do SKU interno da loja)">
+                        SKU do fornecedor
+                      </span>
+                      <input
+                        className="st-input"
+                        value={itemForm.skuFornecedor}
+                        onChange={(e) =>
+                          setItemForm((prev) => ({ ...prev, skuFornecedor: e.target.value }))
                         }
-                        const ma = parseDecimalInput(prev.markupAtacado)
-                        if (prev.markupAtacado.trim() !== '' && Number.isFinite(ma)) {
-                          nv = { ...nv, precoAtacado: priceFromCostAndMarkup(custo, ma) }
-                        } else {
-                          const pa = parseDecimalInput(prev.precoAtacado)
-                          if (Number.isFinite(pa)) {
-                            nv = { ...nv, markupAtacado: markupPctFromCostAndPrice(custo, pa) }
-                          }
+                        placeholder="Ex.: código na tabela do fornecedor"
+                        autoComplete="off"
+                      />
+                    </label>
+                  </div>
+                  <label className="st-field">
+                    <span>Local de estoque</span>
+                    <select
+                      className="st-input"
+                      value={itemForm.localId}
+                      onChange={(e) => setItemForm((prev) => ({ ...prev, localId: e.target.value }))}
+                    >
+                      <option value="">Sem local definido</option>
+                      {locais.map((local) => (
+                        <option key={local.id} value={local.id}>
+                          {local.codigo} — {local.nome}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="st-form-grid">
+                    <label className="st-field">
+                      <span title="Custo pago ao fornecedor">Custo (R$)</span>
+                      <input
+                        className="st-input"
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={
+                          custoItemKitEmEdicao !== null
+                            ? String(custoItemKitEmEdicao)
+                            : itemForm.custoMedio
                         }
-                        return nv
-                      })
-                    }}
-                  />
-                  {custoItemKitEmEdicao !== null && (
-                    <span className="st-field__hint">
-                      Calculado pela composição do kit. Para alterar, edite os componentes em Kits
-                      montáveis.
-                    </span>
-                  )}
-                </label>
-              </div>
-              <div className="st-form-grid">
-                <label className="st-field">
-                  <span>
-                    Quantidade {itemEditandoId ? 'em estoque' : 'inicial'}
-                    {itemEditandoId && (
-                      <span className="st-field__hint"> — ajuste fino pela movimentação</span>
-                    )}
-                  </span>
-                  <input
-                    className="st-input"
-                    type="number"
-                    min={0}
-                    step={1}
-                    inputMode="numeric"
-                    value={itemForm.quantidadeInicial}
-                    onChange={(e) =>
-                      setItemForm((prev) => ({
-                        ...prev,
-                        quantidadeInicial: filtrarInputQuantidadeInteira(e.target.value),
-                      }))
-                    }
-                    readOnly={!!itemEditandoId}
-                    aria-readonly={itemEditandoId ? true : undefined}
-                  />
-                </label>
-                <label className="st-field">
-                  <span>Estoque mínimo</span>
-                  <input
-                    className="st-input"
-                    type="number"
-                    min={0}
-                    step={1}
-                    inputMode="numeric"
-                    value={itemForm.estoqueMinimo}
-                    onChange={(e) =>
-                      setItemForm((prev) => ({
-                        ...prev,
-                        estoqueMinimo: filtrarInputQuantidadeInteira(e.target.value),
-                      }))
-                    }
-                  />
-                </label>
-              </div>
+                        readOnly={custoItemKitEmEdicao !== null}
+                        aria-readonly={custoItemKitEmEdicao !== null}
+                        onChange={(e) => {
+                          if (custoItemKitEmEdicao !== null) return
+                          const raw = e.target.value
+                          setItemForm((prev) => {
+                            const custo = parseDecimalInput(raw)
+                            const next = { ...prev, custoMedio: raw }
+                            if (!(custo > 0)) {
+                              return next
+                            }
+                            let nv = next
+                            const mv = parseDecimalInput(prev.markupVarejo)
+                            if (prev.markupVarejo.trim() !== '' && Number.isFinite(mv)) {
+                              nv = { ...nv, precoVarejo: priceFromCostAndMarkup(custo, mv) }
+                            } else {
+                              const pv = parseDecimalInput(prev.precoVarejo)
+                              if (Number.isFinite(pv)) {
+                                nv = { ...nv, markupVarejo: markupPctFromCostAndPrice(custo, pv) }
+                              }
+                            }
+                            const ma = parseDecimalInput(prev.markupAtacado)
+                            if (prev.markupAtacado.trim() !== '' && Number.isFinite(ma)) {
+                              nv = { ...nv, precoAtacado: priceFromCostAndMarkup(custo, ma) }
+                            } else {
+                              const pa = parseDecimalInput(prev.precoAtacado)
+                              if (Number.isFinite(pa)) {
+                                nv = { ...nv, markupAtacado: markupPctFromCostAndPrice(custo, pa) }
+                              }
+                            }
+                            return nv
+                          })
+                        }}
+                      />
+                      {custoItemKitEmEdicao !== null && (
+                        <span className="st-field__hint">
+                          Calculado pela composição do kit. Para alterar, edite os componentes em Kits
+                          montáveis.
+                        </span>
+                      )}
+                    </label>
+                  </div>
+                  <div className="st-form-grid">
+                    <label className="st-field">
+                      <span>
+                        Quantidade {itemEditandoId ? 'em estoque' : 'inicial'}
+                        {itemEditandoId && (
+                          <span className="st-field__hint"> — ajuste fino pela movimentação</span>
+                        )}
+                      </span>
+                      <input
+                        className="st-input"
+                        type="number"
+                        min={0}
+                        step={1}
+                        inputMode="numeric"
+                        value={itemForm.quantidadeInicial}
+                        onChange={(e) =>
+                          setItemForm((prev) => ({
+                            ...prev,
+                            quantidadeInicial: filtrarInputQuantidadeInteira(e.target.value),
+                          }))
+                        }
+                        readOnly={!!itemEditandoId}
+                        aria-readonly={itemEditandoId ? true : undefined}
+                      />
+                    </label>
+                    <label className="st-field">
+                      <span>Estoque mínimo</span>
+                      <input
+                        className="st-input"
+                        type="number"
+                        min={0}
+                        step={1}
+                        inputMode="numeric"
+                        value={itemForm.estoqueMinimo}
+                        onChange={(e) =>
+                          setItemForm((prev) => ({
+                            ...prev,
+                            estoqueMinimo: filtrarInputQuantidadeInteira(e.target.value),
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
 
-              <p className="st-pricing-hint">
-                Preços de venda: informe o valor em reais ou o markup (%) sobre o custo — um atualiza o
-                outro automaticamente.
-              </p>
-              <div className="st-form-grid st-form-grid--precos">
-                <label className="st-field">
-                  <span>Preço varejo (R$)</span>
-                  <input
-                    className="st-input"
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={itemForm.precoVarejo}
-                    onChange={(e) => {
-                      const val = e.target.value
-                      setItemForm((prev) => {
-                        const custo = parseDecimalInput(prev.custoMedio)
-                        const preco = parseDecimalInput(val)
-                        const markup =
-                          custo > 0 && Number.isFinite(preco)
-                            ? markupPctFromCostAndPrice(custo, preco)
-                            : ''
-                        return { ...prev, precoVarejo: val, markupVarejo: markup }
-                      })
-                    }}
-                  />
-                </label>
-                <label className="st-field">
-                  <span>Markup varejo (%)</span>
-                  <input
-                    className="st-input"
-                    type="number"
-                    step="0.01"
-                    value={itemForm.markupVarejo}
-                    onChange={(e) => {
-                      const val = e.target.value
-                      setItemForm((prev) => {
-                        const custo = parseDecimalInput(prev.custoMedio)
-                        const m = parseDecimalInput(val)
-                        const preco =
-                          custo >= 0 && Number.isFinite(m)
-                            ? priceFromCostAndMarkup(custo, m)
-                            : prev.precoVarejo
-                        return { ...prev, markupVarejo: val, precoVarejo: preco }
-                      })
-                    }}
-                  />
-                </label>
-              </div>
-              <div className="st-form-grid st-form-grid--precos">
-                <label className="st-field">
-                  <span>Preço atacado (R$)</span>
-                  <input
-                    className="st-input"
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={itemForm.precoAtacado}
-                    onChange={(e) => {
-                      const val = e.target.value
-                      setItemForm((prev) => {
-                        const custo = parseDecimalInput(prev.custoMedio)
-                        const preco = parseDecimalInput(val)
-                        const markup =
-                          custo > 0 && Number.isFinite(preco)
-                            ? markupPctFromCostAndPrice(custo, preco)
-                            : ''
-                        return { ...prev, precoAtacado: val, markupAtacado: markup }
-                      })
-                    }}
-                  />
-                </label>
-                <label className="st-field">
-                  <span>Markup atacado (%)</span>
-                  <input
-                    className="st-input"
-                    type="number"
-                    step="0.01"
-                    value={itemForm.markupAtacado}
-                    onChange={(e) => {
-                      const val = e.target.value
-                      setItemForm((prev) => {
-                        const custo = parseDecimalInput(prev.custoMedio)
-                        const m = parseDecimalInput(val)
-                        const preco =
-                          custo >= 0 && Number.isFinite(m)
-                            ? priceFromCostAndMarkup(custo, m)
-                            : prev.precoAtacado
-                        return { ...prev, markupAtacado: val, precoAtacado: preco }
-                      })
-                    }}
-                  />
-                </label>
-              </div>
-              </div>
-
-              <div
-                id="st-item-panel-detalhes"
-                role="tabpanel"
-                aria-labelledby="st-item-tab-detalhes"
-                hidden={modalItemAba !== 'detalhes'}
-                className="st-modal-tabpanel"
-              >
-                <label className="st-field">
-                  <span>Link da foto (opcional)</span>
-                  <input
-                    className="st-input"
-                    type="url"
-                    inputMode="url"
-                    placeholder="https://exemplo.com/imagem.jpg"
-                    value={itemForm.imagemLink}
-                    onChange={(e) =>
-                      setItemForm((prev) => ({ ...prev, imagemLink: e.target.value }))
-                    }
-                  />
-                  <p className="st-field__hint">
-                    Cole a URL pública da imagem (http ou https). Deixe em branco para remover a foto.
+                  <p className="st-pricing-hint">
+                    Preços de venda: informe o valor em reais ou o markup (%) sobre o custo — um atualiza o
+                    outro automaticamente.
                   </p>
-                </label>
-                {itemFormImagemPreview ? (
-                  <div className="st-item-form-preview">
-                    <img
-                      src={itemFormImagemPreview}
-                      alt="Prévia da foto"
-                      className="st-item-form-preview__img"
-                      referrerPolicy="no-referrer"
+                  <div className="st-form-grid st-form-grid--precos">
+                    <label className="st-field">
+                      <span>Preço varejo (R$)</span>
+                      <input
+                        className="st-input"
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={itemForm.precoVarejo}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          setItemForm((prev) => {
+                            const custo = parseDecimalInput(prev.custoMedio)
+                            const preco = parseDecimalInput(val)
+                            const markup =
+                              custo > 0 && Number.isFinite(preco)
+                                ? markupPctFromCostAndPrice(custo, preco)
+                                : ''
+                            return { ...prev, precoVarejo: val, markupVarejo: markup }
+                          })
+                        }}
+                      />
+                    </label>
+                    <label className="st-field">
+                      <span>Markup varejo (%)</span>
+                      <input
+                        className="st-input"
+                        type="number"
+                        step="0.01"
+                        value={itemForm.markupVarejo}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          setItemForm((prev) => {
+                            const custo = parseDecimalInput(prev.custoMedio)
+                            const m = parseDecimalInput(val)
+                            const preco =
+                              custo >= 0 && Number.isFinite(m)
+                                ? priceFromCostAndMarkup(custo, m)
+                                : prev.precoVarejo
+                            return { ...prev, markupVarejo: val, precoVarejo: preco }
+                          })
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <div className="st-form-grid st-form-grid--precos">
+                    <label className="st-field">
+                      <span>Preço atacado (R$)</span>
+                      <input
+                        className="st-input"
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={itemForm.precoAtacado}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          setItemForm((prev) => {
+                            const custo = parseDecimalInput(prev.custoMedio)
+                            const preco = parseDecimalInput(val)
+                            const markup =
+                              custo > 0 && Number.isFinite(preco)
+                                ? markupPctFromCostAndPrice(custo, preco)
+                                : ''
+                            return { ...prev, precoAtacado: val, markupAtacado: markup }
+                          })
+                        }}
+                      />
+                    </label>
+                    <label className="st-field">
+                      <span>Markup atacado (%)</span>
+                      <input
+                        className="st-input"
+                        type="number"
+                        step="0.01"
+                        value={itemForm.markupAtacado}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          setItemForm((prev) => {
+                            const custo = parseDecimalInput(prev.custoMedio)
+                            const m = parseDecimalInput(val)
+                            const preco =
+                              custo >= 0 && Number.isFinite(m)
+                                ? priceFromCostAndMarkup(custo, m)
+                                : prev.precoAtacado
+                            return { ...prev, markupAtacado: val, precoAtacado: preco }
+                          })
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <div
+                  id="st-item-panel-detalhes"
+                  role="tabpanel"
+                  aria-labelledby="st-item-tab-detalhes"
+                  hidden={modalItemAba !== 'detalhes'}
+                  className="st-modal-tabpanel"
+                >
+                  <label className="st-field">
+                    <span>Link da foto (opcional)</span>
+                    <input
+                      className="st-input"
+                      type="url"
+                      inputMode="url"
+                      placeholder="https://exemplo.com/imagem.jpg"
+                      value={itemForm.imagemLink}
+                      onChange={(e) =>
+                        setItemForm((prev) => ({ ...prev, imagemLink: e.target.value }))
+                      }
                     />
-                  </div>
-                ) : (
-                  <div className="st-item-form-preview st-item-form-preview--empty" aria-hidden>
-                    <span>Prévia da foto</span>
-                  </div>
-                )}
-                {itemEditandoId &&
-                  (() => {
-                    const emEdicao = itens.find((i) => i.id === itemEditandoId)
-                    const ref = emEdicao?.imagem_url?.trim()
-                    if (ref && !/^https?:\/\//i.test(ref) && !itemForm.imagemLink.trim()) {
-                      return (
-                        <p className="st-field__hint">
-                          Este item possui foto armazenada no sistema legado. Informe um link para
-                          substituir ou salve em branco para manter o arquivo atual.
-                        </p>
-                      )
-                    }
-                    return null
-                  })()}
-                <label className="st-field">
-                  <span>Descrição do produto (opcional)</span>
-                  <textarea
-                    className="st-input st-textarea"
-                    rows={5}
-                    placeholder="Detalhes técnicos, composição, observações para venda⬦"
-                    value={itemForm.descricao}
-                    onChange={(e) =>
-                      setItemForm((prev) => ({ ...prev, descricao: e.target.value }))
-                    }
-                  />
-                </label>
-              </div>
+                    <p className="st-field__hint">
+                      Cole a URL pública da imagem (http ou https). Deixe em branco para remover a foto.
+                    </p>
+                  </label>
+                  {itemFormImagemPreview ? (
+                    <div className="st-item-form-preview">
+                      <img
+                        src={itemFormImagemPreview}
+                        alt="Prévia da foto"
+                        className="st-item-form-preview__img"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
+                  ) : (
+                    <div className="st-item-form-preview st-item-form-preview--empty" aria-hidden>
+                      <span>Prévia da foto</span>
+                    </div>
+                  )}
+                  {itemEditandoId &&
+                    (() => {
+                      const emEdicao = itens.find((i) => i.id === itemEditandoId)
+                      const ref = emEdicao?.imagem_url?.trim()
+                      if (ref && !/^https?:\/\//i.test(ref) && !itemForm.imagemLink.trim()) {
+                        return (
+                          <p className="st-field__hint">
+                            Este item possui foto armazenada no sistema legado. Informe um link para
+                            substituir ou salve em branco para manter o arquivo atual.
+                          </p>
+                        )
+                      }
+                      return null
+                    })()}
+                  <label className="st-field">
+                    <span>Descrição do produto (opcional)</span>
+                    <textarea
+                      className="st-input st-textarea"
+                      rows={5}
+                      placeholder="Detalhes técnicos, composição, observações para venda⬦"
+                      value={itemForm.descricao}
+                      onChange={(e) =>
+                        setItemForm((prev) => ({ ...prev, descricao: e.target.value }))
+                      }
+                    />
+                  </label>
+                </div>
               </div>
 
               {formError && <p className="st-form-error st-form-error--modal-foot">{formError}</p>}
@@ -2617,127 +2617,127 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
             </div>
             <form className="st-form st-form--modal-scroll" onSubmit={handleSalvarKit}>
               <div className="st-modal__body">
-              {kitReceitaOrigemNome ? (
-                <p className="st-field__hint st-kit-receita-origem">
-                  Receita base: <strong>{kitReceitaOrigemNome}</strong>. Os componentes foram copiados —
-                  ajuste o nome, escolha o <strong>item resultante</strong> e salve como um kit novo.
-                </p>
-              ) : null}
-              <div className="st-form-grid">
+                {kitReceitaOrigemNome ? (
+                  <p className="st-field__hint st-kit-receita-origem">
+                    Receita base: <strong>{kitReceitaOrigemNome}</strong>. Os componentes foram copiados —
+                    ajuste o nome, escolha o <strong>item resultante</strong> e salve como um kit novo.
+                  </p>
+                ) : null}
+                <div className="st-form-grid">
+                  <label className="st-field">
+                    <span>SKU do kit</span>
+                    <input
+                      className="st-input"
+                      value={kitSkuLoading ? '' : kitForm.sku}
+                      placeholder={kitSkuLoading ? 'Gerando…' : undefined}
+                      readOnly
+                      aria-readonly="true"
+                      aria-busy={kitSkuLoading}
+                    />
+                  </label>
+                  <label className="st-field">
+                    <span>Nome do kit *</span>
+                    <input
+                      className="st-input"
+                      value={kitForm.nome}
+                      onChange={(e) => setKitForm((prev) => ({ ...prev, nome: e.target.value }))}
+                      required
+                    />
+                  </label>
+                </div>
                 <label className="st-field">
-                  <span>SKU do kit</span>
-                  <input
-                    className="st-input"
-                    value={kitSkuLoading ? '' : kitForm.sku}
-                    placeholder={kitSkuLoading ? 'Gerando…' : undefined}
-                    readOnly
-                    aria-readonly="true"
-                    aria-busy={kitSkuLoading}
-                  />
-                </label>
-                <label className="st-field">
-                  <span>Nome do kit *</span>
-                  <input
-                    className="st-input"
-                    value={kitForm.nome}
-                    onChange={(e) => setKitForm((prev) => ({ ...prev, nome: e.target.value }))}
+                  <span>Item resultante (entrada) *</span>
+                  <EstoqueItemPicker
+                    itens={itens}
+                    value={kitForm.itemResultanteId}
+                    onChange={definirItemResultanteKit}
+                    placeholder="Buscar produto montado (nome ou SKU)…"
                     required
                   />
                 </label>
-              </div>
-              <label className="st-field">
-                <span>Item resultante (entrada) *</span>
-                <EstoqueItemPicker
-                  itens={itens}
-                  value={kitForm.itemResultanteId}
-                  onChange={definirItemResultanteKit}
-                  placeholder="Buscar produto montado (nome ou SKU)…"
-                  required
-                />
-              </label>
-              <div className="st-kit-comp">
-                <div className="st-kit-comp__head">
-                  <span className="st-kit-comp__title">Componentes (saída no estoque) *</span>
-                  <button
-                    type="button"
-                    className="st-link-btn"
-                    onClick={adicionarLinhaComponenteKit}
-                  >
-                    + Adicionar item
-                  </button>
-                </div>
-                <p className="st-field__hint">
-                  Liste todas as peças consumidas na montagem. Linhas em branco são ignoradas ao salvar.
-                  {kitEditandoId && (
-                    <>
-                      {' '}
-                      Alterações valem para novas montagens; movimentações já registradas não são alteradas.
-                    </>
-                  )}
-                </p>
-                <ul className="st-kit-comp__list" aria-label="Lista de componentes do kit">
-                  {kitForm.componentes.map((linha, index) => {
-                    const ehLinhaNova = !linha.itemId.trim()
-                    const ehUltimaLinha = index === kitForm.componentes.length - 1
-                    const bloquearRemoverLinhaNova = ehLinhaNova && ehUltimaLinha
-
-                    return (
-                    <li
-                      key={linha.id}
-                      className={`st-kit-comp__row${ehLinhaNova && ehUltimaLinha ? ' is-nova-linha' : ''}`}
+                <div className="st-kit-comp">
+                  <div className="st-kit-comp__head">
+                    <span className="st-kit-comp__title">Componentes (saída no estoque) *</span>
+                    <button
+                      type="button"
+                      className="st-link-btn"
+                      onClick={adicionarLinhaComponenteKit}
                     >
-                      <label className="st-field st-kit-comp__item">
-                        <span>
-                          {ehLinhaNova && ehUltimaLinha
-                            ? 'Novo componente'
-                            : `Item ${index + 1}`}
-                        </span>
-                        <EstoqueItemPicker
-                          itens={itensParaComponenteKit}
-                          value={linha.itemId}
-                          onChange={(itemId) =>
-                            atualizarLinhaComponenteKit(linha.id, { itemId })
-                          }
-                          placeholder="Buscar peça (nome ou SKU)…"
-                        />
-                      </label>
-                      <label className="st-field st-kit-comp__qtd">
-                        <span>Qtd.</span>
-                        <input
-                          className="st-input"
-                          type="number"
-                          step={1}
-                          min={1}
-                          inputMode="numeric"
-                          value={linha.quantidade}
-                          onChange={(e) =>
-                            atualizarLinhaComponenteKit(linha.id, {
-                              quantidade: filtrarInputQuantidadeInteira(e.target.value),
-                            })
-                          }
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        className="st-kit-comp__remove"
-                        aria-label={`Remover componente ${index + 1}`}
-                        onClick={() => removerLinhaComponenteKit(linha.id)}
-                        disabled={bloquearRemoverLinhaNova}
-                      >
-                        ×
-                      </button>
-                    </li>
-                    )
-                  })}
-                </ul>
-              </div>
-              <div className="st-kit-custo-total" aria-live="polite">
-                <span className="st-kit-custo-total__label">Custo total do kit (1 un.)</span>
-                <strong className="st-kit-custo-total__valor">{formatBRL(custoKitForm)}</strong>
-                <span className="st-kit-custo-total__hint">
-                  Soma do custo médio de cada componente × quantidade na receita.
-                </span>
-              </div>
+                      + Adicionar item
+                    </button>
+                  </div>
+                  <p className="st-field__hint">
+                    Liste todas as peças consumidas na montagem. Linhas em branco são ignoradas ao salvar.
+                    {kitEditandoId && (
+                      <>
+                        {' '}
+                        Alterações valem para novas montagens; movimentações já registradas não são alteradas.
+                      </>
+                    )}
+                  </p>
+                  <ul className="st-kit-comp__list" aria-label="Lista de componentes do kit">
+                    {kitForm.componentes.map((linha, index) => {
+                      const ehLinhaNova = !linha.itemId.trim()
+                      const ehUltimaLinha = index === kitForm.componentes.length - 1
+                      const bloquearRemoverLinhaNova = ehLinhaNova && ehUltimaLinha
+
+                      return (
+                        <li
+                          key={linha.id}
+                          className={`st-kit-comp__row${ehLinhaNova && ehUltimaLinha ? ' is-nova-linha' : ''}`}
+                        >
+                          <label className="st-field st-kit-comp__item">
+                            <span>
+                              {ehLinhaNova && ehUltimaLinha
+                                ? 'Novo componente'
+                                : `Item ${index + 1}`}
+                            </span>
+                            <EstoqueItemPicker
+                              itens={itensParaComponenteKit}
+                              value={linha.itemId}
+                              onChange={(itemId) =>
+                                atualizarLinhaComponenteKit(linha.id, { itemId })
+                              }
+                              placeholder="Buscar peça (nome ou SKU)…"
+                            />
+                          </label>
+                          <label className="st-field st-kit-comp__qtd">
+                            <span>Qtd.</span>
+                            <input
+                              className="st-input"
+                              type="number"
+                              step={1}
+                              min={1}
+                              inputMode="numeric"
+                              value={linha.quantidade}
+                              onChange={(e) =>
+                                atualizarLinhaComponenteKit(linha.id, {
+                                  quantidade: filtrarInputQuantidadeInteira(e.target.value),
+                                })
+                              }
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            className="st-kit-comp__remove"
+                            aria-label={`Remover componente ${index + 1}`}
+                            onClick={() => removerLinhaComponenteKit(linha.id)}
+                            disabled={bloquearRemoverLinhaNova}
+                          >
+                            ×
+                          </button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+                <div className="st-kit-custo-total" aria-live="polite">
+                  <span className="st-kit-custo-total__label">Custo total do kit (1 un.)</span>
+                  <strong className="st-kit-custo-total__valor">{formatBRL(custoKitForm)}</strong>
+                  <span className="st-kit-custo-total__hint">
+                    Soma do custo médio de cada componente × quantidade na receita.
+                  </span>
+                </div>
               </div>
               {formError && <p className="st-form-error st-form-error--modal-foot">{formError}</p>}
               <div className="st-form-actions st-form-actions--modal-foot">
@@ -2783,85 +2783,85 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
             </div>
             <form className="st-form st-form--modal-scroll" onSubmit={handleDesmontarKit}>
               <div className="st-modal__body">
-              <label className="st-field">
-                <span>Kit *</span>
-                <select
-                  className="st-input"
-                  value={desmontagemForm.kitId}
-                  onChange={(e) =>
-                    setDesmontagemForm((prev) => ({ ...prev, kitId: e.target.value }))
-                  }
-                  required
-                >
-                  <option value="">Selecione...</option>
-                  {kits.map((kit) => (
-                    <option key={kit.id} value={kit.id}>
-                      {kit.sku} — {kit.nome}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="st-form-grid">
                 <label className="st-field">
-                  <span>Quantidade a desmontar *</span>
-                  <input
+                  <span>Kit *</span>
+                  <select
                     className="st-input"
-                    type="number"
-                    step={1}
-                    min={1}
-                    inputMode="numeric"
-                    value={desmontagemForm.quantidade}
+                    value={desmontagemForm.kitId}
                     onChange={(e) =>
-                      setDesmontagemForm((prev) => ({
-                        ...prev,
-                        quantidade: filtrarInputQuantidadeInteira(e.target.value),
-                      }))
+                      setDesmontagemForm((prev) => ({ ...prev, kitId: e.target.value }))
                     }
                     required
-                  />
-                  {saldoItemResultanteDesmontagem !== null && (
-                    <span className="st-field__hint">
-                      Estoque do item montado:{' '}
-                      <strong>{formatQuantidadeInteira(saldoItemResultanteDesmontagem)}</strong> un.
-                      {qtdDesmontagemNum > saldoItemResultanteDesmontagem && (
-                        <span className="st-form-error"> — quantidade acima do disponível</span>
-                      )}
-                    </span>
-                  )}
+                  >
+                    <option value="">Selecione...</option>
+                    {kits.map((kit) => (
+                      <option key={kit.id} value={kit.id}>
+                        {kit.sku} — {kit.nome}
+                      </option>
+                    ))}
+                  </select>
                 </label>
-                <label className="st-field">
-                  <span>Origem</span>
-                  <input
-                    className="st-input"
-                    value={desmontagemForm.origem}
-                    onChange={(e) =>
-                      setDesmontagemForm((prev) => ({ ...prev, origem: e.target.value }))
-                    }
-                    placeholder="Ex.: estorno montagem acidental"
-                  />
-                </label>
-              </div>
-              {kitDesmontagemSelecionado && (
-                <div className="st-kit-montagem-preview">
-                  <p className="st-kit-montagem-preview__title">Movimentações desta desmontagem</p>
-                  <ul>
-                    <li>
-                      <span className="st-kit-montagem-preview__saida">
-                        Saída: {formatQuantidadeInteira(qtdDesmontagemNum)}×{' '}
-                        {kitDesmontagemSelecionado.itemResultanteNome ?? 'item montado'}
+                <div className="st-form-grid">
+                  <label className="st-field">
+                    <span>Quantidade a desmontar *</span>
+                    <input
+                      className="st-input"
+                      type="number"
+                      step={1}
+                      min={1}
+                      inputMode="numeric"
+                      value={desmontagemForm.quantidade}
+                      onChange={(e) =>
+                        setDesmontagemForm((prev) => ({
+                          ...prev,
+                          quantidade: filtrarInputQuantidadeInteira(e.target.value),
+                        }))
+                      }
+                      required
+                    />
+                    {saldoItemResultanteDesmontagem !== null && (
+                      <span className="st-field__hint">
+                        Estoque do item montado:{' '}
+                        <strong>{formatQuantidadeInteira(saldoItemResultanteDesmontagem)}</strong> un.
+                        {qtdDesmontagemNum > saldoItemResultanteDesmontagem && (
+                          <span className="st-form-error"> — quantidade acima do disponível</span>
+                        )}
                       </span>
-                    </li>
-                    {kitDesmontagemSelecionado.componentes.map((c) => (
-                      <li key={c.id}>
-                        <span className="st-kit-montagem-preview__entrada">
-                          Entrada: {formatQuantidadeInteira(c.quantidade * qtdDesmontagemNum)}×{' '}
-                          {c.componenteNome}
+                    )}
+                  </label>
+                  <label className="st-field">
+                    <span>Origem</span>
+                    <input
+                      className="st-input"
+                      value={desmontagemForm.origem}
+                      onChange={(e) =>
+                        setDesmontagemForm((prev) => ({ ...prev, origem: e.target.value }))
+                      }
+                      placeholder="Ex.: estorno montagem acidental"
+                    />
+                  </label>
+                </div>
+                {kitDesmontagemSelecionado && (
+                  <div className="st-kit-montagem-preview">
+                    <p className="st-kit-montagem-preview__title">Movimentações desta desmontagem</p>
+                    <ul>
+                      <li>
+                        <span className="st-kit-montagem-preview__saida">
+                          Saída: {formatQuantidadeInteira(qtdDesmontagemNum)}×{' '}
+                          {kitDesmontagemSelecionado.itemResultanteNome ?? 'item montado'}
                         </span>
                       </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+                      {kitDesmontagemSelecionado.componentes.map((c) => (
+                        <li key={c.id}>
+                          <span className="st-kit-montagem-preview__entrada">
+                            Entrada: {formatQuantidadeInteira(c.quantidade * qtdDesmontagemNum)}×{' '}
+                            {c.componenteNome}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
               {formError && <p className="st-form-error st-form-error--modal-foot">{formError}</p>}
               <div className="st-form-actions st-form-actions--modal-foot">
@@ -2905,92 +2905,92 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
             </div>
             <form className="st-form st-form--modal-scroll" onSubmit={handleMontarKit}>
               <div className="st-modal__body">
-              <label className="st-field">
-                <span>Kit *</span>
-                <select
-                  className="st-input"
-                  value={montagemForm.kitId}
-                  onChange={(e) => setMontagemForm((prev) => ({ ...prev, kitId: e.target.value }))}
-                  required
-                >
-                  <option value="">Selecione...</option>
-                  {kits.map((kit) => (
-                    <option key={kit.id} value={kit.id}>
-                      {kit.sku} — {kit.nome}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="st-form-grid">
                 <label className="st-field">
-                  <span>Quantidade *</span>
-                  <input
+                  <span>Kit *</span>
+                  <select
                     className="st-input"
-                    type="number"
-                    step={1}
-                    min={1}
-                    inputMode="numeric"
-                    value={montagemForm.quantidade}
-                    onChange={(e) =>
-                      setMontagemForm((prev) => ({
-                        ...prev,
-                        quantidade: filtrarInputQuantidadeInteira(e.target.value),
-                      }))
-                    }
+                    value={montagemForm.kitId}
+                    onChange={(e) => setMontagemForm((prev) => ({ ...prev, kitId: e.target.value }))}
                     required
-                  />
+                  >
+                    <option value="">Selecione...</option>
+                    {kits.map((kit) => (
+                      <option key={kit.id} value={kit.id}>
+                        {kit.sku} — {kit.nome}
+                      </option>
+                    ))}
+                  </select>
                 </label>
-                <label className="st-field">
-                  <span>Origem</span>
-                  <input
-                    className="st-input"
-                    value={montagemForm.origem}
-                    onChange={(e) => setMontagemForm((prev) => ({ ...prev, origem: e.target.value }))}
-                    placeholder="Ex.: OS #1234"
-                  />
-                </label>
-              </div>
-              {kitMontagemSelecionado && (
-                <div
-                  className={`st-kit-montagem-preview${faltasEstoqueMontagem.length > 0 ? ' has-falta' : ''}`}
-                >
-                  <p className="st-kit-montagem-preview__title">Movimentações desta montagem</p>
-                  <ul>
-                    {kitMontagemSelecionado.componentes.map((c) => {
-                      const qtdSaida = c.quantidade * qtdMontagemNum
-                      const saldo = saldoComponenteMontagemPorId.get(c.componenteItemId) ?? 0
-                      const insuficiente = qtdMontagemNum > 0 && saldo < qtdSaida
-
-                      return (
-                        <li key={c.id}>
-                          <span
-                            className={`st-kit-montagem-preview__saida${insuficiente ? ' is-insuficiente' : ''}`}
-                          >
-                            Saída: {formatQuantidadeInteira(qtdSaida)}× {c.componenteNome}
-                            {qtdMontagemNum > 0 && (
-                              <span className="st-kit-montagem-preview__saldo">
-                                {' '}
-                                (estoque: {formatQuantidadeInteira(saldo)})
-                              </span>
-                            )}
-                          </span>
-                        </li>
-                      )
-                    })}
-                    <li>
-                      <span className="st-kit-montagem-preview__entrada">
-                        Entrada: {formatQuantidadeInteira(qtdMontagemNum)}×{' '}
-                        {kitMontagemSelecionado.itemResultanteNome ?? 'item resultante'}
-                      </span>
-                    </li>
-                  </ul>
-                  {faltasEstoqueMontagem.length > 0 && (
-                    <p className="st-kit-montagem-preview__alert" role="alert">
-                      {mensagemFaltaEstoqueMontagemKit(faltasEstoqueMontagem)}
-                    </p>
-                  )}
+                <div className="st-form-grid">
+                  <label className="st-field">
+                    <span>Quantidade *</span>
+                    <input
+                      className="st-input"
+                      type="number"
+                      step={1}
+                      min={1}
+                      inputMode="numeric"
+                      value={montagemForm.quantidade}
+                      onChange={(e) =>
+                        setMontagemForm((prev) => ({
+                          ...prev,
+                          quantidade: filtrarInputQuantidadeInteira(e.target.value),
+                        }))
+                      }
+                      required
+                    />
+                  </label>
+                  <label className="st-field">
+                    <span>Origem</span>
+                    <input
+                      className="st-input"
+                      value={montagemForm.origem}
+                      onChange={(e) => setMontagemForm((prev) => ({ ...prev, origem: e.target.value }))}
+                      placeholder="Ex.: OS #1234"
+                    />
+                  </label>
                 </div>
-              )}
+                {kitMontagemSelecionado && (
+                  <div
+                    className={`st-kit-montagem-preview${faltasEstoqueMontagem.length > 0 ? ' has-falta' : ''}`}
+                  >
+                    <p className="st-kit-montagem-preview__title">Movimentações desta montagem</p>
+                    <ul>
+                      {kitMontagemSelecionado.componentes.map((c) => {
+                        const qtdSaida = c.quantidade * qtdMontagemNum
+                        const saldo = saldoComponenteMontagemPorId.get(c.componenteItemId) ?? 0
+                        const insuficiente = qtdMontagemNum > 0 && saldo < qtdSaida
+
+                        return (
+                          <li key={c.id}>
+                            <span
+                              className={`st-kit-montagem-preview__saida${insuficiente ? ' is-insuficiente' : ''}`}
+                            >
+                              Saída: {formatQuantidadeInteira(qtdSaida)}× {c.componenteNome}
+                              {qtdMontagemNum > 0 && (
+                                <span className="st-kit-montagem-preview__saldo">
+                                  {' '}
+                                  (estoque: {formatQuantidadeInteira(saldo)})
+                                </span>
+                              )}
+                            </span>
+                          </li>
+                        )
+                      })}
+                      <li>
+                        <span className="st-kit-montagem-preview__entrada">
+                          Entrada: {formatQuantidadeInteira(qtdMontagemNum)}×{' '}
+                          {kitMontagemSelecionado.itemResultanteNome ?? 'item resultante'}
+                        </span>
+                      </li>
+                    </ul>
+                    {faltasEstoqueMontagem.length > 0 && (
+                      <p className="st-kit-montagem-preview__alert" role="alert">
+                        {mensagemFaltaEstoqueMontagemKit(faltasEstoqueMontagem)}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
               {formError && (
                 <p className="st-form-error st-form-error--modal-foot st-form-error--pre">{formError}</p>

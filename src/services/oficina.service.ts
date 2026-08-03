@@ -309,7 +309,41 @@ export async function excluirChecklistItem(id: string): Promise<void> {
   if (error) throw new Error(error.message ?? 'Erro ao remover checklist.')
 }
 
+const MSG_OS_ITENS_FATURADA =
+  'Não é possível alterar itens de OS faturada ou recebida. Cancele o faturamento/recebimento e altere o status para Aberta para editar os itens.'
+
+/** True quando a OS tem faturamento ativo (pendente) ou já foi recebida. */
+export async function osTemFaturamentoAtivo(osId: string): Promise<boolean> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('financeiro_contas_receber')
+    .select('id')
+    .eq('os_id', osId)
+    .in('status', ['pendente', 'recebido'])
+    .limit(1)
+  if (error) throw new Error(error.message ?? 'Erro ao verificar faturamento da OS.')
+  return Array.isArray(data) && data.length > 0
+}
+
+async function assertOsPermiteEditarItens(osId: string): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: os, error } = await (supabase as any)
+    .from('ordens_servico')
+    .select('status')
+    .eq('id', osId)
+    .maybeSingle()
+  if (error) throw new Error(error.message ?? 'Erro ao validar OS.')
+  if (!os) throw new Error('Ordem de serviço inválida.')
+  if ((os as { status: string }).status === 'cancelada') {
+    throw new Error('Não é possível alterar itens de OS cancelada.')
+  }
+  if (await osTemFaturamentoAtivo(osId)) {
+    throw new Error(MSG_OS_ITENS_FATURADA)
+  }
+}
+
 export async function adicionarOsItem(payload: TablesInsert<'os_itens'>): Promise<OsItemRow> {
+  await assertOsPermiteEditarItens(payload.os_id)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any).from('os_itens').insert(payload).select().single()
   if (error) throw new Error(error.message ?? 'Erro ao adicionar item na OS.')
@@ -320,6 +354,7 @@ export async function excluirOsItem(row: OsItemRow): Promise<void> {
   if (row.movimentacao_id) {
     throw new Error('Não é possível remover item já baixado do estoque.')
   }
+  await assertOsPermiteEditarItens(row.os_id)
   const { error } = await supabase.from('os_itens').delete().eq('id', row.id)
   if (error) throw new Error(error.message ?? 'Erro ao remover item.')
 }

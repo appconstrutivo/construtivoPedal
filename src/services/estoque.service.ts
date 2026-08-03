@@ -451,8 +451,7 @@ export async function importarItensPlanilhaEstoque(params: {
       }
     } catch (err: unknown) {
       erros.push(
-        `Linha ${linha.linhaPlanilha} (${linha.skuFornecedor}): ${
-          err instanceof Error ? err.message : 'Erro ao importar.'
+        `Linha ${linha.linhaPlanilha} (${linha.skuFornecedor}): ${err instanceof Error ? err.message : 'Erro ao importar.'
         }`,
       )
     }
