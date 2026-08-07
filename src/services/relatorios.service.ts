@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabaseClient'
 import { obterResumoEstoqueLoja, listarItensEstoque } from './estoque.service'
 import type { FormaPagamento } from './pdv.service'
+import { totalOperacionalVenda, valorOperacionalPagamento } from '../lib/venda-valores'
 
 export type PeriodoRelatorio = 'hoje' | '7d' | '30d' | 'mes'
 
@@ -196,13 +197,16 @@ export async function obterRelatorioVendas(
   for (const f of FORMAS_PAGAMENTO) porForma.set(f, { quantidade: 0, total: 0 })
 
   const vendaIds = rows.map((r) => r.id)
-  const pagamentosPorVenda = new Map<string, Array<{ forma_pagamento: string; valor: number }>>()
+  const pagamentosPorVenda = new Map<
+    string,
+    Array<{ forma_pagamento: string; valor: number; valor_liquido: number | null }>
+  >()
 
   if (vendaIds.length > 0) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: pagRows, error: pagErr } = await (supabase as any)
       .from('venda_pagamentos')
-      .select('venda_id, forma_pagamento, valor')
+      .select('venda_id, forma_pagamento, valor, valor_liquido')
       .eq('company_id', companyId)
       .in('venda_id', vendaIds)
 
@@ -214,9 +218,14 @@ export async function obterRelatorioVendas(
       venda_id: string
       forma_pagamento: string
       valor: number
+      valor_liquido?: number | null
     }>) {
       const list = pagamentosPorVenda.get(p.venda_id) ?? []
-      list.push({ forma_pagamento: p.forma_pagamento, valor: Number(p.valor) })
+      list.push({
+        forma_pagamento: p.forma_pagamento,
+        valor: Number(p.valor),
+        valor_liquido: p.valor_liquido != null ? Number(p.valor_liquido) : null,
+      })
       pagamentosPorVenda.set(p.venda_id, list)
     }
   }
@@ -228,7 +237,8 @@ export async function obterRelatorioVendas(
   let quantidadeOficina = 0
   let descontos = 0
   for (const v of rows) {
-    const total = Number(v.total)
+    const pagamentos = pagamentosPorVenda.get(v.id) ?? []
+    const total = totalOperacionalVenda(Number(v.total), pagamentos)
     faturamento += total
     descontos += Number(v.desconto)
     if (v.os_id) {
@@ -239,15 +249,14 @@ export async function obterRelatorioVendas(
       quantidadeBalcao += 1
     }
 
-    const pagamentos = pagamentosPorVenda.get(v.id)
-    if (pagamentos && pagamentos.length > 0) {
+    if (pagamentos.length > 0) {
       for (const p of pagamentos) {
         const forma = (FORMAS_PAGAMENTO.includes(p.forma_pagamento as FormaPagamento)
           ? p.forma_pagamento
           : 'outro') as FormaPagamento
         const agg = porForma.get(forma)!
         agg.quantidade += 1
-        agg.total += Number(p.valor)
+        agg.total += valorOperacionalPagamento(p)
       }
     } else {
       const forma = (FORMAS_PAGAMENTO.includes(v.forma_pagamento as FormaPagamento)
@@ -398,7 +407,7 @@ export async function obterRelatorioOficina(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: vendasOs, error: vendasOsErr } = await (supabase as any)
     .from('vendas')
-    .select('total')
+    .select('id, total, venda_pagamentos(valor, valor_liquido)')
     .eq('company_id', companyId)
     .eq('store_id', storeId)
     .eq('status', 'finalizada')
@@ -413,8 +422,12 @@ export async function obterRelatorioOficina(
   }
 
   let faturamentoRecebido = 0
-  for (const v of (vendasOs ?? []) as Array<{ total: number }>) {
-    faturamentoRecebido += Number(v.total)
+  for (const v of (vendasOs ?? []) as Array<{
+    id: string
+    total: number
+    venda_pagamentos?: Array<{ valor: number; valor_liquido?: number | null }> | null
+  }>) {
+    faturamentoRecebido += totalOperacionalVenda(Number(v.total), v.venda_pagamentos)
   }
   faturamentoRecebido = round2(faturamentoRecebido)
 

@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabaseClient'
 import { dataExibicaoVenda, resumoPagamentosVenda } from './lancamentos.service'
 import { labelPagamento, type FormaPagamento } from './pdv.service'
+import { totalOperacionalVenda, valorOperacionalPagamento } from '../lib/venda-valores'
 import {
   obterRelatorioVendas,
   type IntervaloRelatorio,
@@ -83,7 +84,11 @@ type VendaRaw = {
   realizada_em?: string | null
   created_at: string
   clientes?: { nome?: string | null } | null
-  venda_pagamentos?: Array<{ forma_pagamento: string; valor: number }>
+  venda_pagamentos?: Array<{
+    forma_pagamento: string
+    valor: number
+    valor_liquido?: number | null
+  }>
   venda_itens?: Array<{ id: string }>
 }
 
@@ -150,7 +155,7 @@ export async function obterRelatorioVendasDetalhado(
   let q = (supabase as any)
     .from('vendas')
     .select(
-      'id, numero, total, desconto, forma_pagamento, os_id, cliente_id, realizada_em, created_at, clientes(nome), venda_pagamentos(forma_pagamento, valor), venda_itens(id)',
+      'id, numero, total, desconto, forma_pagamento, os_id, cliente_id, realizada_em, created_at, clientes(nome), venda_pagamentos(forma_pagamento, valor, valor_liquido), venda_itens(id)',
     )
     .eq('company_id', companyId)
     .eq('store_id', storeId)
@@ -195,23 +200,24 @@ export async function obterRelatorioVendasDetalhado(
     }
   }
 
-  const porVenda: VendaRelatorioLinha[] = rows.map((v) => ({
-    id: v.id,
-    numero: v.numero,
-    realizadaEm: dataExibicaoVenda(v),
-    clienteNome: v.clientes?.nome ?? null,
-    origem: v.os_id ? 'oficina' : 'balcao',
-    total: Number(v.total),
-    desconto: Number(v.desconto),
-    pagamentoResumo: resumoPagamentosVenda(
-      v.forma_pagamento,
-      (v.venda_pagamentos ?? []).map((p) => ({
-        forma_pagamento: p.forma_pagamento,
-        valor: Number(p.valor),
-      })),
-    ),
-    qtdItens: v.venda_itens?.length ?? itensPorVenda.get(v.id)?.length ?? 0,
-  }))
+  const porVenda: VendaRelatorioLinha[] = rows.map((v) => {
+    const pags = (v.venda_pagamentos ?? []).map((p) => ({
+      forma_pagamento: p.forma_pagamento,
+      valor: Number(p.valor),
+      valor_liquido: p.valor_liquido != null ? Number(p.valor_liquido) : null,
+    }))
+    return {
+      id: v.id,
+      numero: v.numero,
+      realizadaEm: dataExibicaoVenda(v),
+      clienteNome: v.clientes?.nome ?? null,
+      origem: v.os_id ? ('oficina' as const) : ('balcao' as const),
+      total: totalOperacionalVenda(Number(v.total), pags),
+      desconto: Number(v.desconto),
+      pagamentoResumo: resumoPagamentosVenda(v.forma_pagamento, pags, { modo: 'operacional' }),
+      qtdItens: v.venda_itens?.length ?? itensPorVenda.get(v.id)?.length ?? 0,
+    }
+  })
 
   const itemMap = new Map<string, { sku: string | null; quantidade: number; faturamento: number; vendas: Set<string> }>()
   const servicoMap = new Map<string, { quantidade: number; faturamento: number; vendas: Set<string> }>()
@@ -234,7 +240,12 @@ export async function obterRelatorioVendasDetalhado(
   for (const f of FORMAS_PAGAMENTO) porForma.set(f, { quantidade: 0, total: 0 })
 
   for (const v of rows) {
-    const total = Number(v.total)
+    const pags = (v.venda_pagamentos ?? []).map((p) => ({
+      forma_pagamento: p.forma_pagamento,
+      valor: Number(p.valor),
+      valor_liquido: p.valor_liquido != null ? Number(p.valor_liquido) : null,
+    }))
+    const total = totalOperacionalVenda(Number(v.total), pags)
     const quando = dataExibicaoVenda(v)
     const diaKey = dataLocalKey(quando)
     const isOficina = Boolean(v.os_id)
@@ -249,15 +260,14 @@ export async function obterRelatorioVendasDetalhado(
       quantidadeBalcao += 1
     }
 
-    const pagamentos = v.venda_pagamentos ?? []
-    if (pagamentos.length > 0) {
-      for (const p of pagamentos) {
+    if (pags.length > 0) {
+      for (const p of pags) {
         const formaKey = (FORMAS_PAGAMENTO.includes(p.forma_pagamento as FormaPagamento)
           ? p.forma_pagamento
           : 'outro') as FormaPagamento
         const agg = porForma.get(formaKey)!
         agg.quantidade += 1
-        agg.total += Number(p.valor)
+        agg.total += valorOperacionalPagamento(p)
       }
     } else {
       const formaKey = (FORMAS_PAGAMENTO.includes(v.forma_pagamento as FormaPagamento)

@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabaseClient'
 import type { Tables } from '../lib/database.types'
+import { totalOperacionalVenda } from '../lib/venda-valores'
 
 export type VendaRow = Tables<'vendas'>
 export type FormaPagamento = 'dinheiro' | 'pix' | 'credito' | 'debito' | 'outro'
@@ -27,6 +28,8 @@ export function labelPagamento(f: string) {
 export type VendaLista = VendaRow & {
   clienteNome: string | null
   qtdItens: number
+  /** Valor de caixa (líquido) — preferir este nas telas internas. */
+  totalOperacional: number
 }
 
 export type ResumoVendasHoje = {
@@ -57,7 +60,7 @@ export async function listarVendasRecentes(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('vendas')
-    .select('*, clientes(nome), venda_itens(id)')
+    .select('*, clientes(nome), venda_itens(id), venda_pagamentos(valor, valor_liquido)')
     .eq('company_id', companyId)
     .eq('store_id', storeId)
     .eq('status', 'finalizada')
@@ -69,12 +72,14 @@ export async function listarVendasRecentes(
   type Raw = VendaRow & {
     clientes?: { nome?: string | null } | null
     venda_itens?: Array<{ id: string }>
+    venda_pagamentos?: Array<{ valor: number; valor_liquido?: number | null }> | null
   }
 
   return ((data ?? []) as Raw[]).map((v) => ({
     ...v,
     clienteNome: v.clientes?.nome ?? null,
     qtdItens: v.venda_itens?.length ?? 0,
+    totalOperacional: totalOperacionalVenda(Number(v.total), v.venda_pagamentos),
   }))
 }
 
@@ -90,7 +95,7 @@ export async function obterResumoVendasHoje(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('vendas')
-    .select('total')
+    .select('total, venda_pagamentos(valor, valor_liquido)')
     .eq('company_id', companyId)
     .eq('store_id', storeId)
     .eq('status', 'finalizada')
@@ -98,10 +103,24 @@ export async function obterResumoVendasHoje(
 
   if (error) throw new Error((error as { message?: string }).message ?? 'Erro ao resumir vendas.')
 
-  const rows = (data ?? []) as Array<{ total: number }>
+  type Row = {
+    total: number
+    venda_pagamentos?: Array<{ valor: number; valor_liquido: number | null }> | null
+  }
+  const rows = (data ?? []) as Row[]
   return {
     quantidade: rows.length,
-    total: rows.reduce((acc, r) => acc + Number(r.total), 0),
+    // Faturamento operacional = o que entrou no caixa (líquido), não o juros da nota.
+    total: rows.reduce((acc, r) => {
+      const pags = r.venda_pagamentos ?? []
+      if (pags.length > 0) {
+        return (
+          acc +
+          pags.reduce((s, p) => s + Number(p.valor_liquido ?? p.valor), 0)
+        )
+      }
+      return acc + Number(r.total)
+    }, 0),
   }
 }
 

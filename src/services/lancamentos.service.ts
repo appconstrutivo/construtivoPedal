@@ -3,10 +3,17 @@ import type { Tables } from '../lib/database.types'
 import { formatarCnpj } from './empresa.service'
 import { formatarCep, formatarCpfCnpj } from '../lib/cpf-cnpj'
 import { labelPagamento, type FormaPagamento } from './pdv.service'
+import { totalOperacionalVenda, valorOperacionalPagamento } from '../lib/venda-valores'
+
+export type { PagamentoValorRef } from '../lib/venda-valores'
+export { totalOperacionalVenda, valorOperacionalPagamento } from '../lib/venda-valores'
 
 export type PagamentoVendaDetalhe = {
   forma_pagamento: string
+  /** Valor pago pelo cliente (nota/recibo). */
   valor: number
+  /** Valor que entra no caixa — quando omitido, usa `valor`. */
+  valor_liquido?: number | null
 }
 
 export type VendaStatus = 'finalizada' | 'cancelada'
@@ -21,6 +28,8 @@ export type VendaLancamentoLista = Tables<'vendas'> & {
   clienteNome: string | null
   qtdItens: number
   pagamentos: PagamentoVendaDetalhe[]
+  /** Valor interno (caixa) — não usar `total` da nota nas telas operacionais. */
+  totalOperacional: number
 }
 
 export type VendasLancamentosPagina = {
@@ -79,18 +88,30 @@ function mapVendasLancamentosRaw(data: unknown[]): VendaLancamentoLista[] {
   type Raw = Tables<'vendas'> & {
     clientes?: { nome?: string | null } | null
     venda_itens?: Array<{ id: string }>
-    venda_pagamentos?: PagamentoVendaDetalhe[]
+    venda_pagamentos?: Array<{
+      forma_pagamento: string
+      valor: number
+      valor_liquido?: number | null
+    }>
   }
 
-  return (data as Raw[]).map((v) => ({
-    ...v,
-    clienteNome: v.clientes?.nome ?? null,
-    qtdItens: v.venda_itens?.length ?? 0,
-    pagamentos: (v.venda_pagamentos ?? []).map((p) => ({
+  return (data as Raw[]).map((v) => {
+    const pagamentos: PagamentoVendaDetalhe[] = (v.venda_pagamentos ?? []).map((p) => ({
       forma_pagamento: p.forma_pagamento,
       valor: Number(p.valor),
-    })),
-  }))
+      valor_liquido:
+        p.valor_liquido != null && p.valor_liquido !== undefined
+          ? Number(p.valor_liquido)
+          : null,
+    }))
+    return {
+      ...v,
+      clienteNome: v.clientes?.nome ?? null,
+      qtdItens: v.venda_itens?.length ?? 0,
+      pagamentos,
+      totalOperacional: totalOperacionalVenda(Number(v.total), pagamentos),
+    }
+  })
 }
 
 export async function listarVendasLancamentos(
@@ -113,8 +134,8 @@ export async function listarVendasLancamentos(
 
   const buscaPorCliente = Boolean(busca) && !/^\d+$/.test(busca)
   const selectCols = buscaPorCliente
-    ? '*, clientes!inner(nome), venda_itens(id), venda_pagamentos(forma_pagamento, valor)'
-    : '*, clientes(nome), venda_itens(id), venda_pagamentos(forma_pagamento, valor)'
+    ? '*, clientes!inner(nome), venda_itens(id), venda_pagamentos(forma_pagamento, valor, valor_liquido)'
+    : '*, clientes(nome), venda_itens(id), venda_pagamentos(forma_pagamento, valor, valor_liquido)'
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let q = (supabase as any)
@@ -157,7 +178,7 @@ export async function obterVendaDetalhe(
   const { data, error } = await (supabase as any)
     .from('vendas')
     .select(
-      '*, clientes(nome, fone, cpf_cnpj, inscricao_estadual, endereco, bairro, cep, municipio, uf), stores(name, address), companies(name, legal_name, cnpj, phone, email, address), venda_itens(id, descricao, quantidade, preco_unitario), venda_pagamentos(forma_pagamento, valor)',
+      '*, clientes(nome, fone, cpf_cnpj, inscricao_estadual, endereco, bairro, cep, municipio, uf), stores(name, address), companies(name, legal_name, cnpj, phone, email, address), venda_itens(id, descricao, quantidade, preco_unitario), venda_pagamentos(forma_pagamento, valor, valor_liquido)',
     )
     .eq('id', vendaId)
     .eq('company_id', companyId)
@@ -230,6 +251,10 @@ export async function obterVendaDetalhe(
     pagamentos: (row.venda_pagamentos ?? []).map((p) => ({
       forma_pagamento: p.forma_pagamento,
       valor: Number(p.valor),
+      valor_liquido:
+        p.valor_liquido != null && p.valor_liquido !== undefined
+          ? Number(p.valor_liquido)
+          : null,
     })),
   }
 }
@@ -241,10 +266,15 @@ function formatBRL(v: number) {
 export function resumoPagamentosVenda(
   formaCabecalho: string,
   pagamentos: PagamentoVendaDetalhe[],
+  opts?: { modo?: 'nota' | 'operacional' },
 ): string {
+  const modo = opts?.modo ?? 'nota'
   if (pagamentos.length > 0) {
     return pagamentos
-      .map((p) => `${labelPagamento(p.forma_pagamento)} ${formatBRL(p.valor)}`)
+      .map((p) => {
+        const valor = modo === 'operacional' ? valorOperacionalPagamento(p) : Number(p.valor)
+        return `${labelPagamento(p.forma_pagamento)} ${formatBRL(valor)}`
+      })
       .join(' · ')
   }
   return labelPagamento(formaCabecalho)

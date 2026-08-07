@@ -167,8 +167,8 @@ export function LancamentosPage({ companyId, companyName, activeStoreId }: Lanca
     const deOs = vendaOriginadaDeOs(v)
     const ok = window.confirm(
       deOs
-        ? `Cancelar o recebimento da venda #${v.numero} (${formatBRL(Number(v.total))})?\n\nO valor será estornado do caixa e a OS poderá ser editada e faturada novamente. O estoque da oficina não é alterado.`
-        : `Cancelar a venda #${v.numero} (${formatBRL(Number(v.total))})?\n\nO estoque dos produtos será estornado automaticamente.`,
+        ? `Cancelar o recebimento da venda #${v.numero} (${formatBRL(v.totalOperacional)})?\n\nO valor será estornado do caixa e a OS poderá ser editada e faturada novamente. O estoque da oficina não é alterado.`
+        : `Cancelar a venda #${v.numero} (${formatBRL(v.totalOperacional)})?\n\nO estoque dos produtos será estornado automaticamente.`,
     )
     if (!ok) return
 
@@ -266,7 +266,9 @@ export function LancamentosPage({ companyId, companyName, activeStoreId }: Lanca
                       {v.clienteNome ? ` · ${v.clienteNome}` : ' · Balcão'}
                       {vendaOriginadaDeOs(v) ? ' · OS' : ''}
                       {' · '}
-                      {resumoPagamentosVenda(v.forma_pagamento, v.pagamentos)}
+                      {resumoPagamentosVenda(v.forma_pagamento, v.pagamentos, {
+                        modo: 'operacional',
+                      })}
                       {v.qtdItens > 0 ? ` · ${v.qtdItens} itens` : ''}
                     </span>
                     <span
@@ -274,7 +276,7 @@ export function LancamentosPage({ companyId, companyName, activeStoreId }: Lanca
                     >
                       {labelStatusVenda(v.status)}
                     </span>
-                    <span className="lc-row__total">{formatBRL(Number(v.total))}</span>
+                    <span className="lc-row__total">{formatBRL(v.totalOperacional)}</span>
                   </div>
                   <div className="lc-row__actions">
                     <button

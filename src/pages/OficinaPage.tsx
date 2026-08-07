@@ -20,6 +20,7 @@ import {
   baixarPecaNaOs,
   carregarOrdemDetalhe,
   criarOrdemServico,
+  estornarPecaNaOs,
   excluirAnexoOs,
   excluirChecklistItem,
   excluirOrdemServico,
@@ -691,6 +692,25 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
     }
   }
 
+  async function retornarItemEstoque(row: OsItemRow) {
+    if (!detalhe) return
+    if (osItensTravados) {
+      setErro(msgOsItensTravados)
+      return
+    }
+    setBusyItemId(row.id)
+    setErro(null)
+    try {
+      await estornarPecaNaOs(row)
+      await recarregarDetalhe(detalhe.id, { silencioso: true })
+      await carregarLista({ silencioso: true })
+    } catch (e: unknown) {
+      setErro(e instanceof Error ? e.message : 'Erro ao retornar peça ao estoque.')
+    } finally {
+      setBusyItemId(null)
+    }
+  }
+
   async function removerItem(row: OsItemRow) {
     if (!detalhe) return
     if (osItensTravados) {
@@ -1174,6 +1194,18 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
                                 onClick={() => void baixarItem(it)}
                               >
                                 {busyItemId === it.id ? '…' : 'Baixar'}
+                              </button>
+                            ) : null}
+                            {it.tipo === 'peca' && it.estoque_item_id && it.movimentacao_id ? (
+                              <button
+                                type="button"
+                                className="os-icon-btn os-icon-btn--return"
+                                title="Retornar peça ao estoque"
+                                aria-label="Retornar peça ao estoque"
+                                disabled={busyItemId === it.id || osItensTravados}
+                                onClick={() => void retornarItemEstoque(it)}
+                              >
+                                {busyItemId === it.id ? '…' : '↩ Retornar'}
                               </button>
                             ) : null}
                             {!it.movimentacao_id ? (

@@ -368,6 +368,19 @@ export async function baixarPecaNaOs(osItemId: string): Promise<string> {
   return data as string
 }
 
+/** Devolve a peça ao estoque (estorna a baixa) e libera remoção/substituição do item. */
+export async function estornarPecaNaOs(row: OsItemRow): Promise<void> {
+  if (!row.movimentacao_id) {
+    throw new Error('Este item ainda não foi baixado do estoque.')
+  }
+  await assertOsPermiteEditarItens(row.os_id)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).rpc('os_estornar_item_estoque', {
+    p_os_item_id: row.id,
+  })
+  if (error) throw new Error(error.message ?? 'Erro ao retornar peça ao estoque.')
+}
+
 export async function uploadAnexoOs(
   companyId: string,
   osId: string,

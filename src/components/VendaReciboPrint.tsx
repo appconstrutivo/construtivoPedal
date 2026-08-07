@@ -152,6 +152,8 @@ export function VendaReciboHtml({ venda, companyName, segundaVia = false }: Vend
   const total = Number(venda.total)
   const subtotal = Number(venda.subtotal)
   const desconto = Number(venda.desconto)
+  const totalProdutos = Math.max(subtotal - desconto, 0)
+  const acrescimoPagamento = Math.max(total - totalProdutos, 0)
 
   const linhas = venda.itens.map((item, idx) => {
     const sub = item.quantidade * item.preco_unitario
@@ -504,6 +506,17 @@ export function VendaReciboHtml({ venda, companyName, segundaVia = false }: Vend
         ${blocoCampo('V. total produtos', formatBRL(subtotal), 'campo--sm campo--right')}
         ${blocoCampo('Desconto', desconto > 0 ? formatBRL(desconto) : formatBRL(0), 'campo--sm campo--right')}
       </tr>
+      ${acrescimoPagamento > 0.009
+      ? `<tr class="grid-6 imposto">
+        ${blocoCampo('Acréscimo (taxa/juros)', formatBRL(acrescimoPagamento), 'campo--sm campo--right')}
+        ${blocoCampo('', '', 'campo--sm')}
+        ${blocoCampo('', '', 'campo--sm')}
+        ${blocoCampo('', '', 'campo--sm')}
+        ${blocoCampo('', '', 'campo--sm')}
+        ${blocoCampo('', '', 'campo--sm')}
+      </tr>`
+      : ''
+    }
     </table>
 
     <table class="total-destaque">

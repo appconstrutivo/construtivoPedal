@@ -190,7 +190,7 @@ export function DashboardHome({
         const ultima = vendasRecentes[0]
         setUltimaVendaTexto(
           ultima
-            ? `Venda #${ultima.numero} — ${formatBRL(Number(ultima.total))}`
+            ? `Venda #${ultima.numero} — ${formatBRL(ultima.totalOperacional)}`
             : null,
         )
       } catch {

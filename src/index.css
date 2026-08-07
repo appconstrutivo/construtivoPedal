@@ -4394,6 +4394,15 @@ button {
   color: #b91c1c;
 }
 
+.os-icon-btn--return:hover {
+  color: #0f766e;
+}
+
+.os-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .os-hint {
   margin: 0;
   font-size: 0.78rem;
@@ -5582,33 +5591,48 @@ button {
 
 .pdv-pay-line__liquido {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding-left: 2px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: var(--cp-radius-sm);
+  background: color-mix(in srgb, var(--cp-surface-2, #f1f5f9) 80%, transparent);
+  border: 1px solid var(--cp-border);
 }
 
-.pdv-pay-line__liquido-lbl {
-  display: flex;
-  align-items: center;
+.pdv-pay-line__liquido-row {
+  display: grid;
+  grid-template-columns: auto minmax(7rem, 1fr) auto;
   gap: 8px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--cp-text-muted);
-  flex: 1;
+  align-items: center;
+  width: 100%;
   min-width: 0;
 }
 
+.pdv-pay-line__liquido-lbl {
+  display: block;
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--cp-text-muted);
+  white-space: nowrap;
+  flex: none;
+}
+
 .pdv-pay-line__liquido-input {
-  max-width: 120px;
+  width: 100%;
+  min-width: 7rem;
+  max-width: none;
   text-align: right;
-  font-size: 0.82rem;
+  font-size: 0.88rem;
+  font-weight: 700;
 }
 
 .pdv-pay-line__liquido-hint {
   font-size: 0.68rem;
+  line-height: 1.35;
   color: var(--cp-text-muted);
-  opacity: 0.85;
+  opacity: 0.9;
 }
 
 .pdv-pay-line__forma {
@@ -5675,6 +5699,19 @@ button {
 
 .pdv-totals__row--disc dd {
   color: var(--cp-tone-rose);
+}
+
+.pdv-totals__row--taxa dd {
+  color: var(--cp-tone-amber, #b45309);
+}
+
+.pdv-totals__row--caixa {
+  font-size: 0.82rem;
+}
+
+.pdv-totals__row--caixa dd {
+  font-weight: 700;
+  color: var(--cp-tone-teal, #0f766e);
 }
 
 .pdv-totals__row--total {

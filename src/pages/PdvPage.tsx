@@ -321,7 +321,7 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
         validacaoPagamento.erroLiquido ??
           (validacaoPagamento.restante > 0
             ? `Falta ${formatBRL(validacaoPagamento.restante)} para fechar o total.`
-            : `Pagamento excede o total em ${formatBRL(-validacaoPagamento.restante)}.`),
+            : `Pagamento excede o total. Informe a entrada líquida igual a ${formatBRL(total)} (o valor cheio pago pelo cliente continua registrado).`),
       )
       return
     }
@@ -350,7 +350,10 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
       if (prefill?.orcamentoId) {
         await finalizarConversaoPdv(prefill.orcamentoId, resultado.vendaId)
       }
-      setSucesso({ numero: resultado.numero, total: resultado.total })
+      setSucesso({
+        numero: resultado.numero,
+        total: validacaoPagamento.somaLiquido || resultado.total,
+      })
       setCheckoutAberto(false)
       limparCarrinho()
       setClienteId('')
@@ -671,7 +674,7 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
 
                 <dl className="pdv-totals">
                   <div className="pdv-totals__row">
-                    <dt>Subtotal</dt>
+                    <dt>Produtos</dt>
                     <dd>{formatBRL(subtotal)}</dd>
                   </div>
                   {desconto > 0 && (
@@ -680,10 +683,23 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
                       <dd>− {formatBRL(desconto)}</dd>
                     </div>
                   )}
+                  {validacaoPagamento.acrescimoPagamento > 0 && (
+                    <div className="pdv-totals__row pdv-totals__row--taxa">
+                      <dt>Taxa / juros cartão</dt>
+                      <dd>+ {formatBRL(validacaoPagamento.acrescimoPagamento)}</dd>
+                    </div>
+                  )}
                   <div className="pdv-totals__row pdv-totals__row--total">
-                    <dt>Total</dt>
-                    <dd>{formatBRL(total)}</dd>
+                    <dt>Total na nota</dt>
+                    <dd>{formatBRL(validacaoPagamento.ok ? validacaoPagamento.totalNota : total)}</dd>
                   </div>
+                  {validacaoPagamento.ok &&
+                    validacaoPagamento.somaLiquido < validacaoPagamento.soma - 0.001 && (
+                      <div className="pdv-totals__row pdv-totals__row--caixa">
+                        <dt>Entrada no caixa</dt>
+                        <dd>{formatBRL(validacaoPagamento.somaLiquido)}</dd>
+                      </div>
+                    )}
                 </dl>
 
                 <button
@@ -692,7 +708,9 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
                   disabled={finalizando || !pagamentoOk}
                   onClick={() => void handleFinalizar()}
                 >
-                  {finalizando ? 'Finalizando…' : `Confirmar — ${formatBRL(total)}`}
+                  {finalizando
+                    ? 'Finalizando…'
+                    : `Confirmar — ${formatBRL(pagamentoOk ? validacaoPagamento.totalNota : total)}`}
                 </button>
               </div>
             </div>
@@ -740,7 +758,7 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
                         {formatShortTime(dataExibicaoVenda(v))}
                         {v.clienteNome ? ` · ${v.clienteNome}` : ''}
                       </span>
-                      <span className="pdv-recent-item__total">{formatBRL(Number(v.total))}</span>
+                      <span className="pdv-recent-item__total">{formatBRL(v.totalOperacional)}</span>
                       <span className="pdv-recent-item__pay">{labelPagamento(v.forma_pagamento)}</span>
                     </li>
                   ))

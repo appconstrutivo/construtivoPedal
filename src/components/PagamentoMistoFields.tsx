@@ -4,11 +4,12 @@ import {
   adicionarLinhaPagamento,
   pagamentoAceitaValorLiquido,
   preencherRestanteLinha,
+  preencherRestanteLiquidoLinha,
   removerLinhaPagamento,
   validarPagamentoMisto,
   type PagamentoLinha,
 } from '../lib/pagamento-misto'
-import { maskMoneyInput, parseMoneyInput } from '../lib/money'
+import { maskMoneyInput, parseMoneyInput, formatMoneyInput } from '../lib/money'
 
 type PagamentoMistoFieldsProps = {
   total: number
@@ -100,22 +101,34 @@ export function PagamentoMistoFields({
               </div>
               {mostraLiquido ? (
                 <div className="pdv-pay-line__liquido">
-                  <label className="pdv-pay-line__liquido-lbl">
-                    Entrada líquida
+                  <div className="pdv-pay-line__liquido-row">
+                    <label className="pdv-pay-line__liquido-lbl" htmlFor={`pdv-liq-${p.id}`}>
+                      Entrada líquida
+                    </label>
                     <input
+                      id={`pdv-liq-${p.id}`}
                       type="text"
                       inputMode="numeric"
                       className="pdv-input pdv-pay-line__liquido-input"
-                      placeholder={p.valorStr || 'Após taxas'}
+                      placeholder={formatMoneyInput(total) || '0,00'}
                       title="Quanto de fato entrará na conta (após taxas do cartão/adquirente)"
                       value={p.valorLiquidoStr ?? ''}
                       onChange={(e) =>
                         atualizar(p.id, { valorLiquidoStr: maskMoneyInput(e.target.value) })
                       }
                     />
-                  </label>
+                    <button
+                      type="button"
+                      className="pdv-pay-line__fill"
+                      title="Preencher o que falta na entrada líquida para fechar o total"
+                      onClick={() => onChange(preencherRestanteLiquidoLinha(linhas, p.id, total))}
+                    >
+                      Restante
+                    </button>
+                  </div>
                   <span className="pdv-pay-line__liquido-hint">
-                    Deixe em branco se o valor pago for igual ao recebido.
+                    O que entra no caixa. Na nota o cliente vê o valor pago (
+                    {p.valorStr || '—'}).
                   </span>
                 </div>
               ) : null}
@@ -127,10 +140,10 @@ export function PagamentoMistoFields({
         {erroLiquido
           ? erroLiquido
           : ok
-            ? 'Valor do pagamento conferido.'
+            ? 'Ok: nota no valor pago; caixa na entrada líquida.'
             : restante > 0
-              ? `Falta ${formatBRL(restante)}`
-              : `Total a pagar: ${formatBRL(total)}`}
+              ? `Falta ${formatBRL(restante)} para cobrir os produtos`
+              : `Valor pago maior que os produtos. Ajuste a entrada líquida para ${formatBRL(total)}.`}
       </p>
     </div>
   )
