@@ -7,6 +7,7 @@ import {
   criarBicicleta,
   atualizarBicicleta,
   excluirBicicleta,
+  normalizarDataCompra,
   type ClienteComRelacoes,
   type BicicletaRow,
   type AtividadeRow,
@@ -387,7 +388,7 @@ function ClienteFormModal({ companyId, activeStoreId, cliente, onClose, onSalvo 
 
   return (
     <div className="cl-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-      <div className="cl-modal">
+      <div className="cl-modal cl-modal--scroll">
         <div className="cl-modal__head">
           <h2 id="modal-title" className="cl-modal__title">
             {editando ? 'Editar cliente' : 'Novo cliente'}
@@ -590,7 +591,7 @@ function BicicletaFormModal({
   const [quilometragem, setQuilometragem] = useState(
     bike?.quilometragem != null ? String(bike.quilometragem) : '',
   )
-  const [dataCompra, setDataCompra] = useState(bike?.data_compra ?? '')
+  const [dataCompra, setDataCompra] = useState(normalizarDataCompra(bike?.data_compra) ?? '')
   const [compradaNaLoja, setCompradaNaLoja] = useState(bike?.comprada_na_loja ?? true)
   const [observacoes, setObservacoes] = useState(bike?.observacoes ?? '')
   const [saving, setSaving] = useState(false)
@@ -627,7 +628,7 @@ function BicicletaFormModal({
         cor: cor.trim() || null,
         numero_serie: numeroSerie.trim() || null,
         quilometragem: km,
-        data_compra: dataCompra.trim() || null,
+        data_compra: normalizarDataCompra(dataCompra),
         comprada_na_loja: compradaNaLoja,
         observacoes: observacoes.trim() || null,
       }
@@ -651,7 +652,7 @@ function BicicletaFormModal({
 
   return (
     <div className="cl-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-bike-title">
-      <div className="cl-modal">
+      <div className="cl-modal cl-modal--scroll">
         <div className="cl-modal__head">
           <h2 id="modal-bike-title" className="cl-modal__title">
             {editando ? 'Editar bicicleta' : 'Nova bicicleta'}
@@ -718,26 +719,30 @@ function BicicletaFormModal({
               autoComplete="off"
             />
           </div>
-          <div className="cl-field">
-            <label htmlFor="nb-km" className="cl-label">Quilometragem (opcional)</label>
-            <input
-              id="nb-km"
-              className="cl-input"
-              inputMode="decimal"
-              value={quilometragem}
-              onChange={(e) => setQuilometragem(e.target.value)}
-              placeholder="0"
-            />
-          </div>
-          <div className="cl-field">
-            <label htmlFor="nb-compra" className="cl-label">Data da compra</label>
-            <input
-              id="nb-compra"
-              type="date"
-              className="cl-input"
-              value={dataCompra}
-              onChange={(e) => setDataCompra(e.target.value)}
-            />
+          <div className="cl-field cl-field--inline-2">
+            <div>
+              <label htmlFor="nb-km" className="cl-label">Quilometragem (opcional)</label>
+              <input
+                id="nb-km"
+                className="cl-input"
+                inputMode="decimal"
+                value={quilometragem}
+                onChange={(e) => setQuilometragem(e.target.value)}
+                placeholder="0"
+              />
+            </div>
+            <div>
+              <label htmlFor="nb-compra" className="cl-label">Data da compra</label>
+              <input
+                id="nb-compra"
+                type="date"
+                className="cl-input"
+                min="1990-01-01"
+                max="2100-12-31"
+                value={dataCompra}
+                onChange={(e) => setDataCompra(normalizarDataCompra(e.target.value) ?? '')}
+              />
+            </div>
           </div>
           <label className="cl-check">
             <input

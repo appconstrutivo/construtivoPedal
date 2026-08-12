@@ -12,6 +12,9 @@ export type ManualRevisaoSlot = {
   os_numero: number | null
   atrasada?: boolean
   prazo_em?: string | null
+  descricao?: string | null
+  dias_apos_venda?: number | null
+  regra_titulo?: string | null
 }
 
 export type ManualManutencaoItem = {

@@ -11,6 +11,16 @@ export type ClienteComRelacoes = ClienteRow & {
   ultima_visita: string | null
 }
 
+/** Ignora datas sentinela (ex.: 0001-01-01) que o input date às vezes carrega. */
+export function normalizarDataCompra(value: string | null | undefined): string | null {
+  if (!value) return null
+  const iso = value.trim().slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null
+  const ano = Number(iso.slice(0, 4))
+  if (ano < 1990 || ano > 2100) return null
+  return iso
+}
+
 /* ─── leitura ───────────────────────────────────────── */
 
 export async function listarClientes(

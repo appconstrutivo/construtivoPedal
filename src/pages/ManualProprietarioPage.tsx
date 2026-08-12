@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import {
   applyManualManifest,
   ensureInstallPromptListener,
@@ -80,6 +80,67 @@ function IconBack() {
   )
 }
 
+function IconChevron() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M9 6l6 6-6 6"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function IconClose() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M6 6l12 12M18 6L6 18"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+function labelIntervalo(slot: ManualRevisaoSlot): string | null {
+  if (!slot.dias_apos_venda) return null
+  if (slot.tipo === 'verificacao_30') return `${slot.dias_apos_venda} dias após a compra`
+  return `A cada ${slot.dias_apos_venda} dias`
+}
+
+function DescricaoRevisao({ texto }: { texto: string }) {
+  const paragrafos = texto
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+
+  if (paragrafos.length === 0) return null
+
+  return (
+    <div className="man-pub__detalhe-desc">
+      {paragrafos.map((p, i) => {
+        const isObs = /^obs\.?/i.test(p)
+        const linhas = p.split('\n').map((l) => l.trim()).filter(Boolean)
+        return (
+          <p key={i} className={isObs ? 'man-pub__detalhe-obs' : undefined}>
+            {linhas.map((linha, j) => (
+              <span key={j}>
+                {j > 0 && <br />}
+                {linha}
+              </span>
+            ))}
+          </p>
+        )
+      })}
+    </div>
+  )
+}
+
 function tipoTone(tipo: TipoRevisaoManual | string): string {
   switch (tipo) {
     case 'verificacao_30':
@@ -95,14 +156,23 @@ function tipoTone(tipo: TipoRevisaoManual | string): string {
   }
 }
 
-function SlotCard({ slot, destaque }: { slot: ManualRevisaoSlot; destaque?: boolean }) {
+function SlotCard({
+  slot,
+  destaque,
+  onOpen,
+}: {
+  slot: ManualRevisaoSlot
+  destaque?: boolean
+  onOpen: (slot: ManualRevisaoSlot) => void
+}) {
   const feita = slot.status === 'realizada'
   const atrasada = Boolean(slot.atrasada) && !feita
   const data = formatDate(slot.realizada_em)
   const prazo = formatDate(slot.prazo_em ?? null)
 
   return (
-    <article
+    <button
+      type="button"
       className={[
         'man-pub__slot',
         feita ? 'man-pub__slot--feita' : 'man-pub__slot--pendente',
@@ -112,12 +182,14 @@ function SlotCard({ slot, destaque }: { slot: ManualRevisaoSlot; destaque?: bool
       ]
         .filter(Boolean)
         .join(' ')}
+      onClick={() => onOpen(slot)}
+      aria-haspopup="dialog"
     >
       <div className="man-pub__slot-seq" aria-hidden>
         {feita ? <IconCheck /> : atrasada ? '!' : <span>{slot.sequencia}</span>}
       </div>
       <div className="man-pub__slot-body">
-        <h3 className="man-pub__slot-title">{slot.titulo}</h3>
+        <span className="man-pub__slot-title">{slot.titulo}</span>
         <p className="man-pub__slot-tipo">{labelTipoRevisao(slot.tipo)}</p>
         {feita ? (
           <div className="man-pub__carimbo">
@@ -138,8 +210,99 @@ function SlotCard({ slot, destaque }: { slot: ManualRevisaoSlot; destaque?: bool
         ) : (
           <p className="man-pub__slot-hint">Aguardando</p>
         )}
+        <span className="man-pub__slot-more">O que é feito</span>
       </div>
-    </article>
+      <span className="man-pub__slot-chevron" aria-hidden>
+        <IconChevron />
+      </span>
+    </button>
+  )
+}
+
+function DetalheRevisao({
+  slot,
+  onClose,
+}: {
+  slot: ManualRevisaoSlot
+  onClose: () => void
+}) {
+  const titleId = useId()
+  const feita = slot.status === 'realizada'
+  const atrasada = Boolean(slot.atrasada) && !feita
+  const intervalo = labelIntervalo(slot)
+  const descricao = slot.descricao?.trim() ?? ''
+  const data = formatDate(slot.realizada_em)
+  const prazo = formatDate(slot.prazo_em ?? null)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div
+      className="man-pub__detalhe-overlay"
+      role="presentation"
+      onClick={onClose}
+    >
+      <div
+        className={`man-pub__detalhe man-pub__detalhe--${tipoTone(slot.tipo)}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="man-pub__detalhe-handle" aria-hidden />
+        <header className="man-pub__detalhe-head">
+          <div>
+            <p className="man-pub__detalhe-kicker">O que é feito</p>
+            <h3 id={titleId} className="man-pub__detalhe-title">
+              {slot.titulo}
+            </h3>
+          </div>
+          <button
+            type="button"
+            className="man-pub__detalhe-close"
+            onClick={onClose}
+            aria-label="Fechar"
+          >
+            <IconClose />
+          </button>
+        </header>
+
+        <div className="man-pub__detalhe-meta">
+          <span className="man-pub__detalhe-chip">{labelTipoRevisao(slot.tipo)}</span>
+          {intervalo && <span className="man-pub__detalhe-chip">{intervalo}</span>}
+          {feita && <span className="man-pub__detalhe-chip man-pub__detalhe-chip--ok">Realizada</span>}
+          {atrasada && (
+            <span className="man-pub__detalhe-chip man-pub__detalhe-chip--warn">Prazo vencido</span>
+          )}
+        </div>
+
+        {descricao ? (
+          <DescricaoRevisao texto={descricao} />
+        ) : (
+          <p className="man-pub__detalhe-empty">
+            A oficina ainda não detalhou o que é feito nesta revisão. Pergunte no balcão.
+          </p>
+        )}
+
+        {feita && (
+          <p className="man-pub__detalhe-foot">
+            Carimbada
+            {data ? ` em ${data}` : ''}
+            {slot.loja_nome ? ` · ${slot.loja_nome}` : ''}
+            {slot.os_numero != null ? ` · OS #${slot.os_numero}` : ''}
+          </p>
+        )}
+        {atrasada && prazo && (
+          <p className="man-pub__detalhe-foot">Prazo original: até {prazo}.</p>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -280,6 +443,7 @@ function SecaoUso() {
 }
 
 function SecaoRevisoes({ dados }: { dados: ManualProprietarioPublico }) {
+  const [slotAberto, setSlotAberto] = useState<ManualRevisaoSlot | null>(null)
   const feitas = dados.revisoes.filter((r) => r.status === 'realizada').length
   const proxSeq = dados.proxima?.sequencia ?? null
   const atrasada30 = Boolean(dados.verificacao_30_atrasada)
@@ -288,8 +452,9 @@ function SecaoRevisoes({ dados }: { dados: ManualProprietarioPublico }) {
   return (
     <div className="man-pub__sec-body">
       <p className="man-pub__lead">
-        Quadro de revisões programadas. Quando a oficina concluir uma revisão na Ordem de Servilo, o carimbo
-        aparece aqui com a data e o nome da loja.
+        Quadro de revisões programadas. Toque em um card para ver o que a oficina faz em cada revisão.
+        Quando a oficina concluir uma na Ordem de Serviço, o carimbo aparece aqui com a data e o nome da
+        loja.
       </p>
 
       {atrasada30 && (
@@ -327,9 +492,14 @@ function SecaoRevisoes({ dados }: { dados: ManualProprietarioPublico }) {
             key={slot.sequencia}
             slot={slot}
             destaque={proxSeq != null && slot.sequencia === proxSeq}
+            onOpen={setSlotAberto}
           />
         ))}
       </div>
+
+      {slotAberto && (
+        <DetalheRevisao slot={slotAberto} onClose={() => setSlotAberto(null)} />
+      )}
     </div>
   )
 }
