@@ -3,6 +3,7 @@ import { listarClientes } from '../../services/clientes.service'
 import type { FormaPagamento } from '../../services/pdv.service'
 import {
   obterRelatorioVendasDetalhado,
+  type CategoriaProdutoFiltro,
   type FiltrosRelatorioVendas,
   type OrigemVendaFiltro,
   type RelatorioVendasDetalhado,
@@ -39,6 +40,13 @@ const FORMAS: { key: FormaPagamento | 'todas'; label: string }[] = [
   { key: 'credito', label: 'Crédito' },
   { key: 'debito', label: 'Débito' },
   { key: 'outro', label: 'Outro' },
+]
+
+const CATEGORIAS: { key: CategoriaProdutoFiltro; label: string }[] = [
+  { key: 'todas', label: 'Todas as categorias' },
+  { key: 'peca', label: 'Peças' },
+  { key: 'bike', label: 'Bikes' },
+  { key: 'acessorio', label: 'Acessórios' },
 ]
 
 function formatBRL(v: number) {
@@ -354,6 +362,7 @@ export function RelatorioVendasPanel({ companyId, activeStoreId, intervalo }: Re
   const [visao, setVisao] = useState<VisaoVendas>('resumo')
   const [origem, setOrigem] = useState<OrigemVendaFiltro>('todas')
   const [formaPagamento, setFormaPagamento] = useState<FormaPagamento | 'todas'>('todas')
+  const [categoria, setCategoria] = useState<CategoriaProdutoFiltro>('todas')
   const [clienteId, setClienteId] = useState<string>('')
   const [clientes, setClientes] = useState<Array<{ id: string; nome: string }>>([])
   const [dados, setDados] = useState<RelatorioVendasDetalhado | null>(null)
@@ -364,6 +373,7 @@ export function RelatorioVendasPanel({ companyId, activeStoreId, intervalo }: Re
     setClienteId('')
     setOrigem('todas')
     setFormaPagamento('todas')
+    setCategoria('todas')
     void listarClientes(companyId, activeStoreId)
       .then((rows) => setClientes(rows.map((c) => ({ id: c.id, nome: c.nome }))))
       .catch(() => setClientes([]))
@@ -380,6 +390,7 @@ export function RelatorioVendasPanel({ companyId, activeStoreId, intervalo }: Re
       const filtros: FiltrosRelatorioVendas = {
         origem,
         formaPagamento,
+        categoria,
         clienteId: clienteId || null,
       }
       const res = await obterRelatorioVendasDetalhado(companyId, activeStoreId, intervalo, filtros)
@@ -390,7 +401,7 @@ export function RelatorioVendasPanel({ companyId, activeStoreId, intervalo }: Re
     } finally {
       setLoading(false)
     }
-  }, [companyId, activeStoreId, intervalo, origem, formaPagamento, clienteId])
+  }, [companyId, activeStoreId, intervalo, origem, formaPagamento, categoria, clienteId])
 
   useEffect(() => {
     void carregar()
@@ -438,6 +449,20 @@ export function RelatorioVendasPanel({ companyId, activeStoreId, intervalo }: Re
             {FORMAS.map((f) => (
               <option key={f.key} value={f.key}>
                 {f.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="rl-vendas-filters__field">
+          <span>Categoria</span>
+          <select
+            value={categoria}
+            onChange={(e) => setCategoria(e.target.value as CategoriaProdutoFiltro)}
+            disabled={loading}
+          >
+            {CATEGORIAS.map((c) => (
+              <option key={c.key} value={c.key}>
+                {c.label}
               </option>
             ))}
           </select>

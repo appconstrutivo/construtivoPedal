@@ -6619,7 +6619,13 @@ button {
 
 @media (min-width: 640px) {
   .rl-vendas-filters {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 960px) {
+  .rl-vendas-filters {
+    grid-template-columns: repeat(4, 1fr);
   }
 }
 

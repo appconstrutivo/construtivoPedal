@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabaseClient'
 import { dataExibicaoVenda, resumoPagamentosVenda } from './lancamentos.service'
 import { labelPagamento, type FormaPagamento } from './pdv.service'
 import { totalOperacionalVenda, valorOperacionalPagamento } from '../lib/venda-valores'
+import { selectAllPages, selectByIdsInBatches } from '../lib/supabase-batch'
 import {
   obterRelatorioVendas,
   type IntervaloRelatorio,
@@ -10,10 +11,14 @@ import {
 
 export type OrigemVendaFiltro = 'todas' | 'balcao' | 'oficina'
 
+export type CategoriaProdutoFiltro = 'todas' | 'peca' | 'bike' | 'acessorio'
+
 export type FiltrosRelatorioVendas = {
   clienteId?: string | null
   origem?: OrigemVendaFiltro
   formaPagamento?: FormaPagamento | 'todas'
+  /** Filtra vendas/itens pela categoria do produto de estoque. */
+  categoria?: CategoriaProdutoFiltro
 }
 
 export type VendaRelatorioLinha = {
@@ -98,11 +103,31 @@ type ItemRaw = {
   quantidade: number
   preco_unitario: number
   estoque_item_id: string | null
-  estoque_itens?: { sku?: string | null; sku_fornecedor?: string | null } | null
+  estoque_itens?: {
+    sku?: string | null
+    sku_fornecedor?: string | null
+    categoria?: string | null
+  } | null
 }
 
 function round2(n: number) {
   return Math.round(n * 100) / 100
+}
+
+/** Normaliza categoria do estoque para o filtro do relatório (componente → acessório). */
+export function normalizarCategoriaProduto(
+  categoria: string | null | undefined,
+): Exclude<CategoriaProdutoFiltro, 'todas'> {
+  const c = (categoria ?? '').trim().toLowerCase()
+  if (c === 'bike') return 'bike'
+  if (c === 'acessorio' || c === 'componente') return 'acessorio'
+  return 'peca'
+}
+
+function itemPassaCategoria(item: ItemRaw, categoria: CategoriaProdutoFiltro): boolean {
+  if (categoria === 'todas') return true
+  if (!item.estoque_item_id) return false
+  return normalizarCategoriaProduto(item.estoque_itens?.categoria) === categoria
 }
 
 function dataLocalKey(iso: string): string {
@@ -150,28 +175,31 @@ export async function obterRelatorioVendasDetalhado(
 
   const origem = filtros.origem ?? 'todas'
   const forma = filtros.formaPagamento ?? 'todas'
+  const categoria = filtros.categoria ?? 'todas'
+  const filtrarPorCategoria = categoria !== 'todas'
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q = (supabase as any)
-    .from('vendas')
-    .select(
-      'id, numero, total, desconto, forma_pagamento, os_id, cliente_id, realizada_em, created_at, clientes(nome), venda_pagamentos(forma_pagamento, valor, valor_liquido), venda_itens(id)',
-    )
-    .eq('company_id', companyId)
-    .eq('store_id', storeId)
-    .eq('status', 'finalizada')
-    .gte('realizada_em', intervalo.desde)
-    .lte('realizada_em', intervalo.ate)
-    .order('realizada_em', { ascending: false })
+  let rows = await selectAllPages<VendaRaw>((from, to) => {
+    let q = (supabase as any)
+      .from('vendas')
+      .select(
+        'id, numero, total, desconto, forma_pagamento, os_id, cliente_id, realizada_em, created_at, clientes(nome), venda_pagamentos(forma_pagamento, valor, valor_liquido), venda_itens(id)',
+      )
+      .eq('company_id', companyId)
+      .eq('store_id', storeId)
+      .eq('status', 'finalizada')
+      .gte('realizada_em', intervalo.desde)
+      .lte('realizada_em', intervalo.ate)
+      .order('realizada_em', { ascending: false })
+      .order('id', { ascending: true })
+      .range(from, to)
 
-  if (filtros.clienteId) q = q.eq('cliente_id', filtros.clienteId)
-  if (origem === 'balcao') q = q.is('os_id', null)
-  if (origem === 'oficina') q = q.not('os_id', 'is', null)
+    if (filtros.clienteId) q = q.eq('cliente_id', filtros.clienteId)
+    if (origem === 'balcao') q = q.is('os_id', null)
+    if (origem === 'oficina') q = q.not('os_id', 'is', null)
+    return q
+  })
 
-  const { data, error } = await q
-  if (error) throw new Error((error as { message?: string }).message ?? 'Erro ao carregar vendas.')
-
-  let rows = (data ?? []) as VendaRaw[]
   if (forma !== 'todas') {
     rows = rows.filter((v) => vendaPassaFormaPagamento(v, forma))
   }
@@ -180,24 +208,34 @@ export async function obterRelatorioVendasDetalhado(
   const itensPorVenda = new Map<string, ItemRaw[]>()
 
   if (vendaIds.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: itens, error: itensErr } = await (supabase as any)
-      .from('venda_itens')
-      .select(
-        'venda_id, descricao, quantidade, preco_unitario, estoque_item_id, estoque_itens(sku, sku_fornecedor)',
-      )
-      .eq('company_id', companyId)
-      .in('venda_id', vendaIds)
+    const itens = await selectByIdsInBatches<ItemRaw>(vendaIds, (chunk) =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any)
+        .from('venda_itens')
+        .select(
+          'venda_id, descricao, quantidade, preco_unitario, estoque_item_id, estoque_itens(sku, sku_fornecedor, categoria)',
+        )
+        .eq('company_id', companyId)
+        .in('venda_id', chunk),
+    )
 
-    if (itensErr) {
-      throw new Error((itensErr as { message?: string }).message ?? 'Erro ao carregar itens.')
-    }
-
-    for (const item of (itens ?? []) as ItemRaw[]) {
+    for (const item of itens) {
+      if (!itemPassaCategoria(item, categoria)) continue
       const list = itensPorVenda.get(item.venda_id) ?? []
       list.push(item)
       itensPorVenda.set(item.venda_id, list)
     }
+  }
+
+  if (filtrarPorCategoria) {
+    rows = rows.filter((v) => (itensPorVenda.get(v.id)?.length ?? 0) > 0)
+  }
+
+  const totalItensVenda = (vendaId: string) => {
+    const itens = itensPorVenda.get(vendaId) ?? []
+    return round2(
+      itens.reduce((acc, item) => acc + Number(item.quantidade) * Number(item.preco_unitario), 0),
+    )
   }
 
   const porVenda: VendaRelatorioLinha[] = rows.map((v) => {
@@ -206,16 +244,26 @@ export async function obterRelatorioVendasDetalhado(
       valor: Number(p.valor),
       valor_liquido: p.valor_liquido != null ? Number(p.valor_liquido) : null,
     }))
+    const totalVenda = totalOperacionalVenda(Number(v.total), pags)
+    const itensCat = itensPorVenda.get(v.id) ?? []
+    const total = filtrarPorCategoria ? totalItensVenda(v.id) : totalVenda
+    const desconto = filtrarPorCategoria
+      ? totalVenda > 0
+        ? round2(Number(v.desconto) * (total / totalVenda))
+        : 0
+      : Number(v.desconto)
     return {
       id: v.id,
       numero: v.numero,
       realizadaEm: dataExibicaoVenda(v),
       clienteNome: v.clientes?.nome ?? null,
       origem: v.os_id ? ('oficina' as const) : ('balcao' as const),
-      total: totalOperacionalVenda(Number(v.total), pags),
-      desconto: Number(v.desconto),
+      total,
+      desconto,
       pagamentoResumo: resumoPagamentosVenda(v.forma_pagamento, pags, { modo: 'operacional' }),
-      qtdItens: v.venda_itens?.length ?? itensPorVenda.get(v.id)?.length ?? 0,
+      qtdItens: filtrarPorCategoria
+        ? itensCat.length
+        : (v.venda_itens?.length ?? itensCat.length),
     }
   })
 
@@ -245,13 +293,19 @@ export async function obterRelatorioVendasDetalhado(
       valor: Number(p.valor),
       valor_liquido: p.valor_liquido != null ? Number(p.valor_liquido) : null,
     }))
-    const total = totalOperacionalVenda(Number(v.total), pags)
+    const totalVenda = totalOperacionalVenda(Number(v.total), pags)
+    const total = filtrarPorCategoria ? totalItensVenda(v.id) : totalVenda
+    const fatorPagamento =
+      filtrarPorCategoria && totalVenda > 0 ? Math.min(1, total / totalVenda) : 1
+    const descontoVenda = filtrarPorCategoria
+      ? round2(Number(v.desconto) * fatorPagamento)
+      : Number(v.desconto)
     const quando = dataExibicaoVenda(v)
     const diaKey = dataLocalKey(quando)
     const isOficina = Boolean(v.os_id)
 
     faturamento += total
-    descontos += Number(v.desconto)
+    descontos += descontoVenda
     if (isOficina) {
       faturamentoOficina += total
       quantidadeOficina += 1
@@ -267,7 +321,7 @@ export async function obterRelatorioVendasDetalhado(
           : 'outro') as FormaPagamento
         const agg = porForma.get(formaKey)!
         agg.quantidade += 1
-        agg.total += valorOperacionalPagamento(p)
+        agg.total += valorOperacionalPagamento(p) * fatorPagamento
       }
     } else {
       const formaKey = (FORMAS_PAGAMENTO.includes(v.forma_pagamento as FormaPagamento)
@@ -330,7 +384,7 @@ export async function obterRelatorioVendasDetalhado(
         prev.faturamento += linha
         prev.vendas.add(v.id)
         itemMap.set(descricao, prev)
-      } else {
+      } else if (!filtrarPorCategoria) {
         const prev = servicoMap.get(descricao) ?? {
           quantidade: 0,
           faturamento: 0,

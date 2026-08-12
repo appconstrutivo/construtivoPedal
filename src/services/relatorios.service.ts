@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabaseClient'
 import { obterResumoEstoqueLoja, listarItensEstoque } from './estoque.service'
 import type { FormaPagamento } from './pdv.service'
 import { totalOperacionalVenda, valorOperacionalPagamento } from '../lib/venda-valores'
+import { selectAllPages, selectByIdsInBatches } from '../lib/supabase-batch'
 
 export type PeriodoRelatorio = 'hoje' | '7d' | '30d' | 'mes'
 
@@ -172,18 +173,6 @@ export async function obterRelatorioVendas(
   }
   if (!storeId) return vazio
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: vendas, error } = await (supabase as any)
-    .from('vendas')
-    .select('id, total, desconto, forma_pagamento, os_id')
-    .eq('company_id', companyId)
-    .eq('store_id', storeId)
-    .eq('status', 'finalizada')
-    .gte('realizada_em', intervalo.desde)
-    .lte('realizada_em', intervalo.ate)
-
-  if (error) throw new Error((error as { message?: string }).message ?? 'Erro ao carregar vendas.')
-
   type VendaRaw = {
     id: string
     total: number
@@ -191,7 +180,20 @@ export async function obterRelatorioVendas(
     forma_pagamento: string
     os_id: string | null
   }
-  const rows = (vendas ?? []) as VendaRaw[]
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows = await selectAllPages<VendaRaw>((from, to) =>
+    (supabase as any)
+      .from('vendas')
+      .select('id, total, desconto, forma_pagamento, os_id')
+      .eq('company_id', companyId)
+      .eq('store_id', storeId)
+      .eq('status', 'finalizada')
+      .gte('realizada_em', intervalo.desde)
+      .lte('realizada_em', intervalo.ate)
+      .order('id', { ascending: true })
+      .range(from, to),
+  )
 
   const porForma = new Map<FormaPagamento, { quantidade: number; total: number }>()
   for (const f of FORMAS_PAGAMENTO) porForma.set(f, { quantidade: 0, total: 0 })
@@ -203,23 +205,21 @@ export async function obterRelatorioVendas(
   >()
 
   if (vendaIds.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: pagRows, error: pagErr } = await (supabase as any)
-      .from('venda_pagamentos')
-      .select('venda_id, forma_pagamento, valor, valor_liquido')
-      .eq('company_id', companyId)
-      .in('venda_id', vendaIds)
-
-    if (pagErr) {
-      throw new Error((pagErr as { message?: string }).message ?? 'Erro ao carregar pagamentos.')
-    }
-
-    for (const p of (pagRows ?? []) as Array<{
+    const pagRows = await selectByIdsInBatches<{
       venda_id: string
       forma_pagamento: string
       valor: number
       valor_liquido?: number | null
-    }>) {
+    }>(vendaIds, (chunk) =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any)
+        .from('venda_pagamentos')
+        .select('venda_id, forma_pagamento, valor, valor_liquido')
+        .eq('company_id', companyId)
+        .in('venda_id', chunk),
+    )
+
+    for (const p of pagRows) {
       const list = pagamentosPorVenda.get(p.venda_id) ?? []
       list.push({
         forma_pagamento: p.forma_pagamento,
@@ -273,20 +273,20 @@ export async function obterRelatorioVendas(
   const topMap = new Map<string, { quantidade: number; faturamento: number }>()
 
   if (vendaIds.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: itens, error: itensErr } = await (supabase as any)
-      .from('venda_itens')
-      .select('descricao, quantidade, preco_unitario')
-      .eq('company_id', companyId)
-      .in('venda_id', vendaIds)
-
-    if (itensErr) throw new Error((itensErr as { message?: string }).message ?? 'Erro ao carregar itens.')
-
-    for (const item of (itens ?? []) as Array<{
+    const itens = await selectByIdsInBatches<{
       descricao: string
       quantidade: number
       preco_unitario: number
-    }>) {
+    }>(vendaIds, (chunk) =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any)
+        .from('venda_itens')
+        .select('descricao, quantidade, preco_unitario')
+        .eq('company_id', companyId)
+        .in('venda_id', chunk),
+    )
+
+    for (const item of itens) {
       const key = item.descricao.trim() || 'Item'
       const qtd = Number(item.quantidade)
       const linha = round2(qtd * Number(item.preco_unitario))
@@ -336,15 +336,6 @@ export async function obterRelatorioOficina(
   }
   if (!storeId) return vazio
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: todas, error } = await (supabase as any)
-    .from('ordens_servico')
-    .select('id, status, created_at, closed_at, updated_at')
-    .eq('company_id', companyId)
-    .eq('store_id', storeId)
-
-  if (error) throw new Error((error as { message?: string }).message ?? 'Erro ao carregar oficina.')
-
   type OsRaw = {
     id: string
     status: string
@@ -352,7 +343,17 @@ export async function obterRelatorioOficina(
     closed_at: string | null
     updated_at: string
   }
-  const rows = (todas ?? []) as OsRaw[]
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows = await selectAllPages<OsRaw>((from, to) =>
+    (supabase as any)
+      .from('ordens_servico')
+      .select('id, status, created_at, closed_at, updated_at')
+      .eq('company_id', companyId)
+      .eq('store_id', storeId)
+      .order('id', { ascending: true })
+      .range(from, to),
+  )
   const desde = new Date(intervalo.desde).getTime()
   const ate = new Date(intervalo.ate).getTime()
 
@@ -389,44 +390,46 @@ export async function obterRelatorioOficina(
 
   let faturamentoItensCriadas = 0
   if (osIdsPeriodo.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: itens, error: itErr } = await (supabase as any)
-      .from('os_itens')
-      .select('quantidade, preco_unitario')
-      .eq('company_id', companyId)
-      .in('os_id', osIdsPeriodo)
+    const itens = await selectByIdsInBatches<{ quantidade: number; preco_unitario: number }>(
+      osIdsPeriodo,
+      (chunk) =>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase as any)
+          .from('os_itens')
+          .select('quantidade, preco_unitario')
+          .eq('company_id', companyId)
+          .in('os_id', chunk),
+    )
 
-    if (itErr) throw new Error((itErr as { message?: string }).message ?? 'Erro ao carregar itens da OS.')
-
-    for (const i of (itens ?? []) as Array<{ quantidade: number; preco_unitario: number }>) {
+    for (const i of itens) {
       faturamentoItensCriadas += Number(i.quantidade) * Number(i.preco_unitario)
     }
     faturamentoItensCriadas = round2(faturamentoItensCriadas)
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: vendasOs, error: vendasOsErr } = await (supabase as any)
-    .from('vendas')
-    .select('id, total, venda_pagamentos(valor, valor_liquido)')
-    .eq('company_id', companyId)
-    .eq('store_id', storeId)
-    .eq('status', 'finalizada')
-    .not('os_id', 'is', null)
-    .gte('realizada_em', intervalo.desde)
-    .lte('realizada_em', intervalo.ate)
-
-  if (vendasOsErr) {
-    throw new Error(
-      (vendasOsErr as { message?: string }).message ?? 'Erro ao carregar vendas da oficina.',
-    )
-  }
-
-  let faturamentoRecebido = 0
-  for (const v of (vendasOs ?? []) as Array<{
+  type VendaOsRaw = {
     id: string
     total: number
     venda_pagamentos?: Array<{ valor: number; valor_liquido?: number | null }> | null
-  }>) {
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const vendasOs = await selectAllPages<VendaOsRaw>((from, to) =>
+    (supabase as any)
+      .from('vendas')
+      .select('id, total, venda_pagamentos(valor, valor_liquido)')
+      .eq('company_id', companyId)
+      .eq('store_id', storeId)
+      .eq('status', 'finalizada')
+      .not('os_id', 'is', null)
+      .gte('realizada_em', intervalo.desde)
+      .lte('realizada_em', intervalo.ate)
+      .order('id', { ascending: true })
+      .range(from, to),
+  )
+
+  let faturamentoRecebido = 0
+  for (const v of vendasOs) {
     faturamentoRecebido += totalOperacionalVenda(Number(v.total), v.venda_pagamentos)
   }
   faturamentoRecebido = round2(faturamentoRecebido)
