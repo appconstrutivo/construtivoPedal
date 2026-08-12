@@ -36,6 +36,7 @@ import {
   uploadAnexoOs,
 } from '../services/oficina.service'
 import { listarCatalogoServicos, type CatalogoServicoRow } from '../services/catalogo-servicos.service'
+import { contarSelosAplicadosNaOs } from '../services/manual-proprietario.service'
 import {
   cancelarContaReceber,
   faturarOs,
@@ -120,6 +121,7 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
   const [loadingLista, setLoadingLista] = useState(true)
   const [loadingDetalhe, setLoadingDetalhe] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  const [msgOk, setMsgOk] = useState<string | null>(null)
 
   const [clientes, setClientes] = useState<ClienteComRelacoes[]>([])
   const [itensEstoque, setItensEstoque] = useState<EstoqueItemComLocal[]>([])
@@ -353,6 +355,7 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
     const novoStatus = formDetalhe.status
     setSalvandoCabecalho(true)
     setErro(null)
+    setMsgOk(null)
     try {
       // Reabrir para Aberta com faturamento pendente: cancela a conta para liberar edição.
       if (
@@ -375,6 +378,20 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
       })
       if (formDetalhe.status === 'cancelada' && contaReceberOs?.status === 'pendente') {
         await cancelarContaReceber(contaReceberOs.id)
+      }
+      if (
+        formDetalhe.status === 'entregue' &&
+        detalhe.status !== 'entregue' &&
+        detalhe.bicicleta_id
+      ) {
+        const selos = await contarSelosAplicadosNaOs(osId)
+        if (selos > 0) {
+          setMsgOk(
+            selos === 1
+              ? 'Manual do Proprietário atualizado: 1 revisão carimbada.'
+              : `Manual do Proprietário atualizado: ${selos} revisões carimbadas.`,
+          )
+        }
       }
       await carregarLista({ silencioso: true })
       // Mantém o usuário na mesma OS; se o status saiu da guia atual, troca a guia.
@@ -803,6 +820,11 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
           {erro ? (
             <div className="st-form-error" role="alert" style={{ marginBottom: '0.75rem' }}>
               {erro}
+            </div>
+          ) : null}
+          {msgOk ? (
+            <div className="os-msg-ok" role="status" style={{ marginBottom: '0.75rem' }}>
+              {msgOk}
             </div>
           ) : null}
 

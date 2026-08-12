@@ -27,6 +27,11 @@ import {
 import { buscarEnderecoPorCep } from '../lib/viacep'
 import { listarPosVendaLembretesVencidos } from '../services/pos-venda-lembretes.service'
 import { PosVendaLembretesPage } from './PosVendaLembretesPage'
+import {
+  buscarTokenManualBike,
+  montarTextoWhatsappManual,
+  urlManualProprietario,
+} from '../services/manual-proprietario.service'
 
 type AbaClientes = 'lista' | 'lembretes'
 
@@ -229,6 +234,35 @@ function IconTrash() {
         strokeWidth={1.75}
         strokeLinecap="round"
         strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+function IconLink() {
+  return (
+    <svg aria-hidden width={15} height={15} viewBox="0 0 24 24" fill="none">
+      <path
+        d="M10 13a5 5 0 0 0 7.07 0l1.41-1.41a5 5 0 0 0-7.07-7.07L10 5.93M14 11a5 5 0 0 0-7.07 0L5.52 12.4a5 5 0 0 0 7.07 7.07L14 18.07"
+        stroke="currentColor"
+        strokeWidth={1.75}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+function IconWhatsapp() {
+  return (
+    <svg aria-hidden width={15} height={15} viewBox="0 0 24 24" fill="none">
+      <path
+        d="M12 3.2a8.3 8.3 0 0 0-7.2 12.4L4 21l5.5-.9A8.3 8.3 0 1 0 12 3.2Z"
+        stroke="currentColor"
+        strokeWidth={1.75}
+        strokeLinejoin="round"
+      />
+      <path
+        d="M9.4 9.2c.2-.4.4-.4.6-.4h.5c.2 0 .4 0 .5.3l.7 1.7c.1.2 0 .4-.1.6l-.4.5c-.1.1-.1.3 0 .4.3.5.9 1.1 1.4 1.4.2.1.3.1.4 0l.5-.4c.2-.1.4-.2.6-.1l1.7.7c.3.1.3.3.3.5v.5c0 .2 0 .4-.4.6-.4.2-1 .4-1.6.2-1.5-.4-3.1-1.7-4.2-3.2-1-1.3-1.6-2.7-1.6-3.6 0-.5.2-1 .6-1.3Z"
+        fill="currentColor"
       />
     </svg>
   )
@@ -532,13 +566,21 @@ function ClienteFormModal({ companyId, activeStoreId, cliente, onClose, onSalvo 
 
 type BicicletaFormModalProps = {
   companyId: string
+  companyName?: string
   clienteId: string
   bike?: BicicletaRow
   onClose: () => void
   onSalvo: (b: BicicletaRow) => void
 }
 
-function BicicletaFormModal({ companyId, clienteId, bike, onClose, onSalvo }: BicicletaFormModalProps) {
+function BicicletaFormModal({
+  companyId,
+  companyName,
+  clienteId,
+  bike,
+  onClose,
+  onSalvo,
+}: BicicletaFormModalProps) {
   const editando = Boolean(bike)
   const [marca, setMarca] = useState(bike?.marca ?? '')
   const [modelo, setModelo] = useState(bike?.modelo ?? '')
@@ -548,9 +590,13 @@ function BicicletaFormModal({ companyId, clienteId, bike, onClose, onSalvo }: Bi
   const [quilometragem, setQuilometragem] = useState(
     bike?.quilometragem != null ? String(bike.quilometragem) : '',
   )
+  const [dataCompra, setDataCompra] = useState(bike?.data_compra ?? '')
+  const [compradaNaLoja, setCompradaNaLoja] = useState(bike?.comprada_na_loja ?? true)
   const [observacoes, setObservacoes] = useState(bike?.observacoes ?? '')
   const [saving, setSaving] = useState(false)
   const [erro, setErro] = useState('')
+
+  const nomeEmpresa = companyName?.trim() || 'nossa loja'
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -581,6 +627,8 @@ function BicicletaFormModal({ companyId, clienteId, bike, onClose, onSalvo }: Bi
         cor: cor.trim() || null,
         numero_serie: numeroSerie.trim() || null,
         quilometragem: km,
+        data_compra: dataCompra.trim() || null,
+        comprada_na_loja: compradaNaLoja,
         observacoes: observacoes.trim() || null,
       }
       if (editando && bike) {
@@ -682,6 +730,29 @@ function BicicletaFormModal({ companyId, clienteId, bike, onClose, onSalvo }: Bi
             />
           </div>
           <div className="cl-field">
+            <label htmlFor="nb-compra" className="cl-label">Data da compra</label>
+            <input
+              id="nb-compra"
+              type="date"
+              className="cl-input"
+              value={dataCompra}
+              onChange={(e) => setDataCompra(e.target.value)}
+            />
+          </div>
+          <label className="cl-check">
+            <input
+              type="checkbox"
+              checked={compradaNaLoja}
+              onChange={(e) => setCompradaNaLoja(e.target.checked)}
+            />
+            <span>Comprada na {nomeEmpresa}</span>
+          </label>
+          {!compradaNaLoja && (
+            <p className="cl-field-hint">
+              No Manual do Proprietário constará que a bike não foi adquirida na {nomeEmpresa}.
+            </p>
+          )}
+          <div className="cl-field">
             <label htmlFor="nb-obs" className="cl-label">Observações</label>
             <textarea
               id="nb-obs"
@@ -714,6 +785,7 @@ function BicicletaFormModal({ companyId, clienteId, bike, onClose, onSalvo }: Bi
 function ClienteDetalhe({
   cliente,
   companyId,
+  companyName,
   activeStoreId,
   onClose,
   onClienteAtualizado,
@@ -723,6 +795,7 @@ function ClienteDetalhe({
 }: {
   cliente: ClienteComRelacoes
   companyId: string
+  companyName?: string
   activeStoreId: string
   onClose: () => void
   onClienteAtualizado: (c: ClienteComRelacoes) => void
@@ -735,6 +808,8 @@ function ClienteDetalhe({
   const [bikeModal, setBikeModal] = useState<BicicletaRow | 'nova' | null>(null)
   const [excluindoCliente, setExcluindoCliente] = useState(false)
   const [excluindoBikeId, setExcluindoBikeId] = useState<string | null>(null)
+  const [manualBusyId, setManualBusyId] = useState<string | null>(null)
+  const [msgOk, setMsgOk] = useState<string | null>(null)
   const [erroAcao, setErroAcao] = useState<string | null>(null)
   const [orcamentosCliente, setOrcamentosCliente] = useState<OrcamentoLista[]>([])
 
@@ -743,6 +818,45 @@ function ClienteDetalhe({
       .then(setOrcamentosCliente)
       .catch(() => setOrcamentosCliente([]))
   }, [companyId, cliente.id])
+
+  async function resolverTokenManual(b: BicicletaRow): Promise<string> {
+    if (b.token_manual && b.token_manual.length >= 16) return b.token_manual
+    const token = await buscarTokenManualBike(b.id)
+    if (!token) throw new Error('Não foi possível gerar o link do manual.')
+    onBicicletaSalva({ ...b, token_manual: token })
+    return token
+  }
+
+  async function handleCopiarManual(b: BicicletaRow) {
+    setManualBusyId(b.id)
+    setErroAcao(null)
+    setMsgOk(null)
+    try {
+      const token = await resolverTokenManual(b)
+      await navigator.clipboard.writeText(urlManualProprietario(token))
+      setMsgOk('Link do Manual do Proprietário copiado.')
+    } catch (e: unknown) {
+      setErroAcao(e instanceof Error ? e.message : 'Não foi possível copiar o link.')
+    } finally {
+      setManualBusyId(null)
+    }
+  }
+
+  async function handleWhatsappManual(b: BicicletaRow) {
+    setManualBusyId(b.id)
+    setErroAcao(null)
+    setMsgOk(null)
+    try {
+      const token = await resolverTokenManual(b)
+      const label = `${b.marca} ${b.modelo}`.trim()
+      const texto = montarTextoWhatsappManual(token, label)
+      window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, '_blank', 'noopener')
+    } catch (e: unknown) {
+      setErroAcao(e instanceof Error ? e.message : 'Não foi possível abrir o WhatsApp.')
+    } finally {
+      setManualBusyId(null)
+    }
+  }
 
   async function handleExcluirCliente() {
     const nBikes = cliente.bicicletas.length
@@ -806,6 +920,9 @@ function ClienteDetalhe({
 
       {erroAcao && (
         <p className="cl-form-error cl-detail__erro" role="alert">{erroAcao}</p>
+      )}
+      {msgOk && (
+        <p className="cl-detail__ok" role="status">{msgOk}</p>
       )}
 
       <div className="cl-detail__hero">
@@ -884,6 +1001,26 @@ function ClienteDetalhe({
                   <button
                     type="button"
                     className="cl-icon-btn"
+                    aria-label={`Copiar link do manual de ${b.marca} ${b.modelo}`}
+                    title="Copiar link do Manual"
+                    onClick={() => void handleCopiarManual(b)}
+                    disabled={manualBusyId === b.id}
+                  >
+                    <IconLink />
+                  </button>
+                  <button
+                    type="button"
+                    className="cl-icon-btn"
+                    aria-label={`Enviar manual de ${b.marca} ${b.modelo} no WhatsApp`}
+                    title="Enviar Manual no WhatsApp"
+                    onClick={() => void handleWhatsappManual(b)}
+                    disabled={manualBusyId === b.id}
+                  >
+                    <IconWhatsapp />
+                  </button>
+                  <button
+                    type="button"
+                    className="cl-icon-btn"
                     aria-label={`Editar ${b.marca} ${b.modelo}`}
                     onClick={() => setBikeModal(b)}
                   >
@@ -921,6 +1058,7 @@ function ClienteDetalhe({
       {bikeModal && (
         <BicicletaFormModal
           companyId={companyId}
+          companyName={companyName}
           clienteId={cliente.id}
           bike={bikeModal === 'nova' ? undefined : bikeModal}
           onClose={() => setBikeModal(null)}
@@ -1047,11 +1185,12 @@ function ClienteRow({
 
 type ClientesPageProps = {
   companyId: string
+  companyName?: string
   activeStoreId: string
   onBadgeChange?: () => void
 }
 
-export function ClientesPage({ companyId, activeStoreId, onBadgeChange }: ClientesPageProps) {
+export function ClientesPage({ companyId, companyName, activeStoreId, onBadgeChange }: ClientesPageProps) {
   const [aba, setAba] = useState<AbaClientes>('lista')
   const [clientes, setClientes] = useState<ClienteComRelacoes[]>([])
   const [clientesComLembrete, setClientesComLembrete] = useState<Set<string>>(new Set())
@@ -1328,6 +1467,7 @@ export function ClientesPage({ companyId, activeStoreId, onBadgeChange }: Client
             <ClienteDetalhe
               cliente={selecionado}
               companyId={companyId}
+              companyName={companyName}
               activeStoreId={activeStoreId}
               onClose={() => setSelecionado(null)}
               onClienteAtualizado={handleClienteAtualizado}

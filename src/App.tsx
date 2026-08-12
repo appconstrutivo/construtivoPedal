@@ -15,6 +15,7 @@ import { OrcamentosPage } from './pages/OrcamentosPage'
 import { contarContasPagarVencendoHoje } from './services/financeiro.service'
 import { contarOrcamentosAprovacaoNaoVista } from './services/orcamento.service'
 import { OrcamentoAprovacaoPage } from './pages/OrcamentoAprovacaoPage'
+import { ManualProprietarioPage } from './pages/ManualProprietarioPage'
 import { MaisPage } from './pages/MaisPage'
 import { PedidosPecasPage } from './pages/PedidosPecasPage'
 import { contarPedidosAguardandoAviso } from './services/pedidos-pecas.service'
@@ -40,8 +41,14 @@ function tokenOrcamentoPublico() {
   return new URLSearchParams(window.location.search).get('orcamento')
 }
 
+function tokenManualPublico() {
+  if (typeof window === 'undefined') return null
+  return new URLSearchParams(window.location.search).get('manual')
+}
+
 export default function App() {
   const [publicOrcamentoToken] = useState(() => tokenOrcamentoPublico())
+  const [publicManualToken] = useState(() => tokenManualPublico())
   const [activeNav, setActiveNav] = useState<NavKey>('inicio')
   const [session, setSession] = useState<Session | null>(null)
   const [checkingSession, setCheckingSession] = useState(true)
@@ -324,6 +331,10 @@ export default function App() {
     }
   }, [recarregarAprovacoesPendentes, recarregarContasPagarVencendoHoje, recarregarPedidosAguardandoAviso, recarregarLembretesPosVenda])
 
+  if (publicManualToken) {
+    return <ManualProprietarioPage token={publicManualToken} />
+  }
+
   if (publicOrcamentoToken) {
     return <OrcamentoAprovacaoPage token={publicOrcamentoToken} />
   }
@@ -410,6 +421,7 @@ export default function App() {
       {activeNav === 'clientes' && (
         <ClientesPage
           companyId={tenant.companyId}
+          companyName={tenant.companyName}
           activeStoreId={activeStoreId}
           onBadgeChange={() => void recarregarLembretesPosVenda()}
         />
@@ -423,7 +435,12 @@ export default function App() {
         />
       )}
       {activeNav === 'pdv' && (
-        <PdvPage companyId={tenant.companyId} activeStoreId={activeStoreId} />
+        <PdvPage
+          companyId={tenant.companyId}
+          activeStoreId={activeStoreId}
+          companyName={tenant.companyName}
+          storeName={stores.find((s) => s.id === activeStoreId)?.name}
+        />
       )}
       {activeNav === 'orcamentos' && (
         <OrcamentosPage

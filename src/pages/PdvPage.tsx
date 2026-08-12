@@ -28,10 +28,16 @@ import {
   obterResumoVendasHoje,
   type VendaLista,
 } from '../services/pdv.service'
+import {
+  PdvRegistrarBikeManualModal,
+  type PdvPosVendaBikePayload,
+} from '../components/PdvRegistrarBikeManualModal'
 
 type PdvPageProps = {
   companyId: string
   activeStoreId: string
+  companyName?: string
+  storeName?: string | null
 }
 
 type CarrinhoLinha = {
@@ -47,6 +53,15 @@ type CarrinhoLinha = {
 
 function formatBRL(v: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
+}
+
+function dataHojeBrasilia(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
 }
 
 function formatShortTime(iso: string) {
@@ -72,7 +87,7 @@ function IconHistorico() {
   )
 }
 
-export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
+export function PdvPage({ companyId, activeStoreId, companyName, storeName }: PdvPageProps) {
   const semLoja = !activeStoreId
 
   const [itensEstoque, setItensEstoque] = useState<EstoqueItemComLocal[]>([])
@@ -93,6 +108,7 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
   const [sucesso, setSucesso] = useState<{ numero: number; total: number } | null>(null)
   const [recentesAberto, setRecentesAberto] = useState(false)
   const [checkoutAberto, setCheckoutAberto] = useState(false)
+  const [posVendaBike, setPosVendaBike] = useState<PdvPosVendaBikePayload | null>(null)
 
   const recarregar = useCallback(async () => {
     if (!activeStoreId) {
@@ -163,15 +179,16 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
   }, [loading, itensEstoque])
 
   useEffect(() => {
-    if (!recentesAberto && !checkoutAberto) return
+    if (!recentesAberto && !checkoutAberto && !posVendaBike) return
     function onKey(e: KeyboardEvent) {
       if (e.key !== 'Escape' || finalizando) return
-      if (checkoutAberto) setCheckoutAberto(false)
+      if (posVendaBike) setPosVendaBike(null)
+      else if (checkoutAberto) setCheckoutAberto(false)
       else if (recentesAberto) setRecentesAberto(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [recentesAberto, checkoutAberto, finalizando])
+  }, [recentesAberto, checkoutAberto, posVendaBike, finalizando])
 
   const clienteSel = useMemo(
     () => clientes.find((c) => c.id === clienteId) ?? null,
@@ -179,6 +196,34 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
   )
 
   const bikesCliente = clienteSel?.bicicletas ?? []
+
+  const bikesNoCarrinho = useMemo(() => {
+    const out: Array<{
+      estoqueItemId: string
+      produtoNome: string
+      descricao: string | null
+      imagemUrl: string | null
+      quantidade: number
+    }> = []
+    for (const l of carrinho) {
+      if (!l.estoqueItemId) continue
+      const est = itensEstoque.find((e) => e.id === l.estoqueItemId)
+      if (est?.categoria !== 'bike') continue
+      out.push({
+        estoqueItemId: l.estoqueItemId,
+        produtoNome: est.nome || l.descricao,
+        descricao: est.descricao,
+        imagemUrl: l.imagemUrl ?? est.imagem_url,
+        quantidade: l.quantidade,
+      })
+    }
+    return out
+  }, [carrinho, itensEstoque])
+
+  const qtdBikesCarrinho = useMemo(
+    () => bikesNoCarrinho.reduce((acc, b) => acc + b.quantidade, 0),
+    [bikesNoCarrinho],
+  )
 
   const produtosFiltrados = useMemo(() => {
     const q = busca.trim().toLowerCase()
@@ -354,12 +399,42 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
         numero: resultado.numero,
         total: validacaoPagamento.somaLiquido || resultado.total,
       })
+
+      // Snapshot antes de limpar o carrinho — Manual do Proprietário (dados da unidade ≠ SKU)
+      const clienteSnap = clienteId
+      const bikeExistenteSnap = bicicletaId || null
+      const itensBike: PdvPosVendaBikePayload['itens'] = []
+      for (const b of bikesNoCarrinho) {
+        const qtd = Math.max(1, Math.floor(b.quantidade))
+        for (let i = 0; i < qtd; i += 1) {
+          itensBike.push({
+            key: `${b.estoqueItemId}-${i}`,
+            estoqueItemId: b.estoqueItemId,
+            produtoNome: b.produtoNome,
+            descricao: b.descricao,
+            imagemUrl: b.imagemUrl,
+          })
+        }
+      }
+      const abrirManual = itensBike.length > 0 || Boolean(bikeExistenteSnap)
+
       setCheckoutAberto(false)
       limparCarrinho()
       setClienteId('')
       setBicicletaId('')
       limparPrefillPdv()
       await recarregar()
+
+      if (abrirManual) {
+        setPosVendaBike({
+          vendaId: resultado.vendaId,
+          numero: resultado.numero,
+          clienteId: clienteSnap,
+          dataCompra: dataHojeBrasilia(),
+          bicicletaIdExistente: bikeExistenteSnap,
+          itens: bikeExistenteSnap ? [] : itensBike,
+        })
+      }
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao finalizar venda.')
     } finally {
@@ -617,6 +692,11 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
             <div className="pdv-checkout-modal__body">
               <p className="pdv-checkout-modal__hint">
                 {qtdItensCarrinho} {qtdItensCarrinho === 1 ? 'item' : 'itens'} no carrinho
+                {qtdBikesCarrinho > 0 && !clienteId
+                  ? ' · Selecione o cliente para gerar o Manual do Proprietário da bike'
+                  : qtdBikesCarrinho > 0
+                    ? ' · Após confirmar, você poderá registrar a bike e enviar o Manual'
+                    : ''}
               </p>
 
               <div className="pdv-checkout">
@@ -634,6 +714,12 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
                       setBicicletaId('')
                     }}
                   />
+                  {qtdBikesCarrinho > 0 && (
+                    <p className="pdv-checkout-modal__bike-hint">
+                      Recomendado na venda de bike: o cliente recebe o link do Manual com o quadro
+                      de revisões.
+                    </p>
+                  )}
                 </div>
 
                 {clienteId && bikesCliente.length > 0 && (
@@ -716,6 +802,18 @@ export function PdvPage({ companyId, activeStoreId }: PdvPageProps) {
             </div>
           </div>
         </div>
+      )}
+
+      {posVendaBike && (
+        <PdvRegistrarBikeManualModal
+          companyId={companyId}
+          companyName={companyName}
+          storeName={storeName}
+          clientes={clientes}
+          payload={posVendaBike}
+          onClose={() => setPosVendaBike(null)}
+          onClientesAtualizados={() => void recarregar()}
+        />
       )}
 
       {recentesAberto && (

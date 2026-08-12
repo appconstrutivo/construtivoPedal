@@ -341,6 +341,9 @@ export type Database = {
           numero_serie: string | null
           observacoes: string | null
           quilometragem: number | null
+          token_manual: string | null
+          data_compra: string | null
+          comprada_na_loja: boolean
           updated_at: string
         }
         Insert: {
@@ -356,6 +359,9 @@ export type Database = {
           numero_serie?: string | null
           observacoes?: string | null
           quilometragem?: number | null
+          token_manual?: string | null
+          data_compra?: string | null
+          comprada_na_loja?: boolean
           updated_at?: string
         }
         Update: {
@@ -369,6 +375,52 @@ export type Database = {
           numero_serie?: string | null
           observacoes?: string | null
           quilometragem?: number | null
+          token_manual?: string | null
+          data_compra?: string | null
+          comprada_na_loja?: boolean
+        }
+      }
+      bike_manual_revisoes: {
+        Row: {
+          id: string
+          company_id: string
+          bicicleta_id: string
+          sequencia: number
+          tipo: string
+          titulo: string
+          status: string
+          realizada_em: string | null
+          store_id: string | null
+          loja_nome: string | null
+          os_id: string | null
+          os_numero: number | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          bicicleta_id: string
+          sequencia: number
+          tipo: string
+          titulo: string
+          status?: string
+          realizada_em?: string | null
+          store_id?: string | null
+          loja_nome?: string | null
+          os_id?: string | null
+          os_numero?: number | null
+          created_at?: string
+        }
+        Update: {
+          sequencia?: number
+          tipo?: string
+          titulo?: string
+          status?: string
+          realizada_em?: string | null
+          store_id?: string | null
+          loja_nome?: string | null
+          os_id?: string | null
+          os_numero?: number | null
         }
       }
       catalogo_servicos: {
