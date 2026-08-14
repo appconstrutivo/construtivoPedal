@@ -468,7 +468,12 @@ export default function App() {
         />
       )}
       {activeNav === 'estoque' && (
-        <EstoquePage companyId={tenant.companyId} activeStoreId={activeStoreId} />
+        <EstoquePage
+          companyId={tenant.companyId}
+          companyName={tenant.companyName}
+          activeStoreId={activeStoreId}
+          storeName={stores.find((s) => s.id === activeStoreId)?.name}
+        />
       )}
       {activeNav === 'pedidos' && (
         <PedidosPecasPage

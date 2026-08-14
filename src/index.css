@@ -3363,6 +3363,12 @@ button {
   align-items: flex-start;
 }
 
+.st-sup-item--kit .st-sup-item__actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 76px;
+}
+
 .st-sup-item--kit .st-sup-item__body {
   flex: 1;
   min-width: 0;

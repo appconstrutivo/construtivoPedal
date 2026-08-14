@@ -40,6 +40,7 @@ import {
 } from '../services/estoque.service'
 import { EstoqueImportModal } from '../components/EstoqueImportModal'
 import { EstoqueItemPicker } from '../components/EstoqueItemPicker'
+import { imprimirListaKit } from '../components/KitListaPrint'
 import {
   MSG_QUANTIDADE_INTEIRA,
   filtrarInputQuantidadeInteira,
@@ -204,6 +205,26 @@ function IconCopy() {
   )
 }
 
+function IconPdf() {
+  return (
+    <svg aria-hidden width={14} height={14} viewBox="0 0 24 24" fill="none">
+      <path
+        d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9l-5-6Z"
+        stroke="currentColor"
+        strokeWidth={1.75}
+        strokeLinejoin="round"
+      />
+      <path d="M14 3v6h6" stroke="currentColor" strokeWidth={1.75} strokeLinejoin="round" />
+      <path
+        d="M8 13h8M8 17h5"
+        stroke="currentColor"
+        strokeWidth={1.75}
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
 function emptyFornecedorForm() {
   return {
     nome: '',
@@ -286,11 +307,18 @@ function horaMovimentacao(createdAt: string): string {
 
 type EstoquePageProps = {
   companyId: string
+  companyName?: string
+  storeName?: string | null
   /** Loja ativa (header); string vazia = sem loja. */
   activeStoreId: string
 }
 
-export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
+export function EstoquePage({
+  companyId,
+  companyName = 'Construtivo Pedal',
+  storeName,
+  activeStoreId,
+}: EstoquePageProps) {
   const [busca, setBusca] = useState('')
   const [categoria, setCategoria] = useState<CategoriaEstoque | 'todos'>('todos')
   const [status, setStatus] = useState<StatusEstoque | 'todos'>('todos')
@@ -1057,6 +1085,14 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
     setKitForm(emptyKitForm())
     setModalKitOpen(true)
     void reservarSkuKitParaFormulario()
+  }
+
+  function gerarPdfListaKit(kit: KitComComponentes) {
+    try {
+      imprimirListaKit(kit, itens, companyName, storeName)
+    } catch (err: unknown) {
+      window.alert(err instanceof Error ? err.message : 'Não foi possível gerar o PDF da lista.')
+    }
   }
 
   function abrirDuplicarKit(kit: KitComComponentes) {
@@ -1897,6 +1933,16 @@ export function EstoquePage({ companyId, activeStoreId }: EstoquePageProps) {
                         )}
                       </div>
                       <div className="st-sup-item__actions">
+                        <button
+                          type="button"
+                          className="st-row__action st-row__action--icon"
+                          aria-label={`Gerar PDF da lista do kit ${kit.nome}`}
+                          title="Gerar PDF da lista (descrição, quantidade, valor e fornecedor)"
+                          onClick={() => gerarPdfListaKit(kit)}
+                          disabled={kit.componentes.length === 0}
+                        >
+                          <IconPdf />
+                        </button>
                         <button
                           type="button"
                           className="st-row__action st-row__action--icon"

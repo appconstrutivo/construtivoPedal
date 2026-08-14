@@ -201,7 +201,7 @@ function SlotCard({
           <div className="man-pub__atraso">
             <span className="man-pub__atraso-badge">Prazo vencido</span>
             <p className="man-pub__atraso-msg">
-              A verificação de 30 dias não foi realizada no prazo
+              Esta revisão não foi realizada no prazo
               {prazo ? ` (até ${prazo})` : ''}.
             </p>
           </div>
@@ -446,8 +446,13 @@ function SecaoRevisoes({ dados }: { dados: ManualProprietarioPublico }) {
   const [slotAberto, setSlotAberto] = useState<ManualRevisaoSlot | null>(null)
   const feitas = dados.revisoes.filter((r) => r.status === 'realizada').length
   const proxSeq = dados.proxima?.sequencia ?? null
-  const atrasada30 = Boolean(dados.verificacao_30_atrasada)
-  const prazo30 = formatDate(dados.prazo_verificacao_30 ?? null)
+  const atrasadas = dados.revisoes.filter((r) => r.status !== 'realizada' && r.atrasada)
+  const temAtraso = atrasadas.length > 0
+  const proximaAtrasada = Boolean(
+    dados.proxima && dados.revisoes.some((r) => r.sequencia === dados.proxima?.sequencia && r.atrasada),
+  )
+  const primeiraAtrasada = atrasadas[0]
+  const prazoPrimeira = formatDate(primeiraAtrasada?.prazo_em ?? null)
 
   return (
     <div className="man-pub__sec-body">
@@ -457,25 +462,32 @@ function SecaoRevisoes({ dados }: { dados: ManualProprietarioPublico }) {
         loja.
       </p>
 
-      {atrasada30 && (
+      {temAtraso && primeiraAtrasada && (
         <aside className="man-pub__alerta-atraso" role="alert">
-          <strong>Verificação de 30 dias em atraso</strong>
+          <strong>
+            {atrasadas.length === 1
+              ? `Prazo vencido: ${primeiraAtrasada.titulo}`
+              : `${atrasadas.length} revisões com prazo vencido`}
+          </strong>
           <p>
             Contado a partir da data de compra, o prazo
-            {prazo30 ? ` (até ${prazo30})` : ''} já passou e esta verificação ainda não foi
-            registrada. Agende na oficina o quanto antes.
+            {prazoPrimeira ? ` (até ${prazoPrimeira})` : ''} já passou
+            {atrasadas.length === 1
+              ? ' e esta revisão ainda não foi registrada'
+              : ' e essas revisões ainda não foram registradas'}
+            . Agende na oficina o quanto antes.
           </p>
         </aside>
       )}
 
-      {dados.proxima && !atrasada30 && (
+      {dados.proxima && !proximaAtrasada && (
         <div className="man-pub__next" role="status">
           <span className="man-pub__next-label">Próxima</span>
           <strong>{dados.proxima.titulo}</strong>
         </div>
       )}
 
-      {dados.proxima && atrasada30 && (
+      {dados.proxima && proximaAtrasada && (
         <div className="man-pub__next man-pub__next--atraso" role="status">
           <span className="man-pub__next-label">Em atraso</span>
           <strong>{dados.proxima.titulo}</strong>
