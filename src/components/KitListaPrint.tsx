@@ -3,12 +3,18 @@ import { roundMoney } from '../lib/money'
 import type { EstoqueItemComLocal, KitComComponentes } from '../services/estoque.service'
 
 export type KitListaPrintLinha = {
+  skuFornecedor: string
   descricao: string
   quantidade: number
   valorUnitario: number
   subtotal: number
   fornecedor: string
 }
+
+type ItemListaKit = Pick<
+  EstoqueItemComLocal,
+  'id' | 'custo_medio' | 'fornecedorNome' | 'nome' | 'sku_fornecedor'
+>
 
 type KitListaPrintProps = {
   kit: KitComComponentes
@@ -39,7 +45,7 @@ function escapeHtml(s: string) {
 
 export function montarLinhasListaKit(
   kit: KitComComponentes,
-  itens: Array<Pick<EstoqueItemComLocal, 'id' | 'custo_medio' | 'fornecedorNome' | 'nome'>>,
+  itens: ItemListaKit[],
 ): KitListaPrintLinha[] {
   const porId = new Map(itens.map((i) => [i.id, i]))
 
@@ -48,6 +54,7 @@ export function montarLinhasListaKit(
     const valorUnitario = roundMoney(Number(item?.custo_medio) || 0)
     const quantidade = Number(c.quantidade) || 0
     return {
+      skuFornecedor: item?.sku_fornecedor?.trim() || '—',
       descricao: c.componenteNome || item?.nome || 'Componente',
       quantidade,
       valorUnitario,
@@ -68,6 +75,7 @@ export function KitListaPrintHtml({
     .map(
       (linha) =>
         '<tr>' +
+        `<td class="sku">${escapeHtml(linha.skuFornecedor)}</td>` +
         `<td>${escapeHtml(linha.descricao)}</td>` +
         `<td class="num">${formatQuantidadeInteira(linha.quantidade)}</td>` +
         `<td class="num">${formatBRL(linha.valorUnitario)}</td>` +
@@ -81,20 +89,21 @@ export function KitListaPrintHtml({
   parts.push('<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8" />')
   parts.push(`<title>Lista do kit ${escapeHtml(kit.sku)} — ${escapeHtml(kit.nome)}</title>`)
   parts.push('<style>')
-  parts.push('@page{size:A4 portrait;margin:16mm 16mm}')
-  parts.push('body{font-family:Segoe UI,system-ui,sans-serif;font-size:11pt;color:#111;margin:0}')
-  parts.push('.head{display:flex;justify-content:space-between;gap:16px;border-bottom:2px solid #111;padding-bottom:12px;margin-bottom:16px}')
-  parts.push('.head h1{margin:0;font-size:16pt}')
-  parts.push('.head h2{margin:6px 0 0;font-size:12pt;font-weight:650}')
+  parts.push('@page{size:A4 landscape;margin:12mm 14mm}')
+  parts.push('body{font-family:Segoe UI,system-ui,sans-serif;font-size:10.5pt;color:#111;margin:0}')
+  parts.push('.head{display:flex;justify-content:space-between;gap:16px;border-bottom:2px solid #111;padding-bottom:10px;margin-bottom:12px}')
+  parts.push('.head h1{margin:0;font-size:15pt}')
+  parts.push('.head h2{margin:4px 0 0;font-size:11.5pt;font-weight:650}')
   parts.push('.meta{font-size:10pt;color:#444;line-height:1.45}')
-  parts.push('table{width:100%;border-collapse:collapse;margin:12px 0}')
-  parts.push('th,td{border-bottom:1px solid #ddd;padding:7px 6px;text-align:left;vertical-align:top}')
+  parts.push('table{width:100%;border-collapse:collapse;margin:10px 0}')
+  parts.push('th,td{border-bottom:1px solid #ddd;padding:6px 8px;text-align:left;vertical-align:top}')
   parts.push('th{font-size:8.5pt;text-transform:uppercase;letter-spacing:.03em;color:#666}')
+  parts.push('.sku{white-space:nowrap;font-variant-numeric:tabular-nums;font-weight:650}')
   parts.push('.num{text-align:right;white-space:nowrap}')
   parts.push('.totals{margin-top:8px;max-width:280px;margin-left:auto}')
   parts.push('.totals .row{display:flex;justify-content:space-between;padding:4px 0}')
   parts.push('.totals .total{font-weight:800;font-size:13pt;border-top:2px solid #111;margin-top:6px;padding-top:8px}')
-  parts.push('.foot{margin-top:28px;font-size:9pt;color:#888;text-align:center}')
+  parts.push('.foot{margin-top:22px;font-size:9pt;color:#888;text-align:center}')
   parts.push('</style></head><body>')
 
   parts.push('<div class="head"><div>')
@@ -115,6 +124,7 @@ export function KitListaPrintHtml({
   } else {
     parts.push(
       '<table><thead><tr>' +
+        '<th>SKU fornecedor</th>' +
         '<th>Descrição</th>' +
         '<th class="num">Qtd</th>' +
         '<th class="num">Valor un.</th>' +
@@ -138,14 +148,14 @@ export function KitListaPrintHtml({
 
 export function imprimirListaKit(
   kit: KitComComponentes,
-  itens: Array<Pick<EstoqueItemComLocal, 'id' | 'custo_medio' | 'fornecedorNome' | 'nome'>>,
+  itens: ItemListaKit[],
   companyName: string,
   storeName?: string | null,
 ) {
   const linhas = montarLinhasListaKit(kit, itens)
   const custoTotal = roundMoney(linhas.reduce((acc, l) => acc + l.subtotal, 0))
   const html = KitListaPrintHtml({ kit, linhas, custoTotal, companyName, storeName })
-  const w = window.open('', '_blank', 'width=900,height=1100')
+  const w = window.open('', '_blank', 'width=1200,height=850')
   if (!w) throw new Error('Permita pop-ups para gerar o PDF da lista do kit.')
   w.document.open()
   w.document.write(html)
