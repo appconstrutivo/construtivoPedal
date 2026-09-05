@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PagamentoMistoFields, validarPagamentoMisto } from '../PagamentoMistoFields'
 import { novaLinhaPagamento, type PagamentoLinha } from '../../lib/pagamento-misto'
 import {
   cancelarContaReceber,
+  FINANCEIRO_LISTA_PAGE_SIZE,
   garantirContaCaixa,
   isVencida,
   labelFormaRecebimento,
@@ -52,6 +53,7 @@ export function FinContasReceberTab({ companyId, storeId }: FinContasReceberTabP
   const [contaReceberId, setContaReceberId] = useState('')
   const [pagamentos, setPagamentos] = useState<PagamentoLinha[]>(() => [novaLinhaPagamento('pix')])
   const [dataRecebimento, setDataRecebimento] = useState(() => new Date().toISOString().slice(0, 10))
+  const [pagina, setPagina] = useState(1)
 
   const recarregar = useCallback(async () => {
     setLoading(true)
@@ -78,6 +80,29 @@ export function FinContasReceberTab({ companyId, storeId }: FinContasReceberTabP
   useEffect(() => {
     void recarregar()
   }, [recarregar])
+
+  useEffect(() => {
+    setPagina(1)
+  }, [filtro, storeId])
+
+  const totalItens = lista.length
+  const totalPaginas = Math.max(1, Math.ceil(totalItens / FINANCEIRO_LISTA_PAGE_SIZE))
+
+  useEffect(() => {
+    if (pagina > totalPaginas) setPagina(totalPaginas)
+  }, [pagina, totalPaginas])
+
+  const listaPaginada = useMemo(() => {
+    const inicio = (pagina - 1) * FINANCEIRO_LISTA_PAGE_SIZE
+    return lista.slice(inicio, inicio + FINANCEIRO_LISTA_PAGE_SIZE)
+  }, [lista, pagina])
+
+  const intervaloLista = useMemo(() => {
+    if (totalItens === 0) return null
+    const inicio = (pagina - 1) * FINANCEIRO_LISTA_PAGE_SIZE + 1
+    const fim = Math.min(pagina * FINANCEIRO_LISTA_PAGE_SIZE, totalItens)
+    return { inicio, fim }
+  }, [pagina, totalItens])
 
   function abrirReceber(cr: ContaReceber) {
     setModalReceber(cr)
@@ -134,46 +159,33 @@ export function FinContasReceberTab({ companyId, storeId }: FinContasReceberTabP
   }
 
   return (
-    <div className="fin-pagar">
+    <div className="fin-tab">
       {resumo ? (
-        <div className="fin-pagar__kpis">
-          <article className="fin-pagar-kpi">
-            <span className="fin-pagar-kpi__label">A receber</span>
-            <strong>{formatBRL(resumo.totalPendente)}</strong>
-            <span className="fin-pagar-kpi__hint">{resumo.pendentes} título(s)</span>
+        <div className="rl-kpi-grid rl-kpi-grid--4 fin-kpi-row">
+          <article className="rl-kpi rl-kpi--amber">
+            <span className="rl-kpi__label">A receber</span>
+            <span className="rl-kpi__value">{formatBRL(resumo.totalPendente)}</span>
+            <span className="rl-kpi__hint">{resumo.pendentes} título(s)</span>
           </article>
-          <article className="fin-pagar-kpi fin-pagar-kpi--warn">
-            <span className="fin-pagar-kpi__label">Vencidas</span>
-            <strong>{resumo.vencidas}</strong>
+          <article className="rl-kpi rl-kpi--rose">
+            <span className="rl-kpi__label">Vencidas</span>
+            <span className="rl-kpi__value">{resumo.vencidas}</span>
           </article>
-          <article className="fin-pagar-kpi fin-pagar-kpi--ok">
-            <span className="fin-pagar-kpi__label">Recebido no mês (OS)</span>
-            <strong>{formatBRL(resumo.recebidoMesOs)}</strong>
-            <span className="fin-pagar-kpi__hint">{resumo.recebidasMes} recebimento(s)</span>
+          <article className="rl-kpi rl-kpi--teal">
+            <span className="rl-kpi__label">Recebido no mês (OS)</span>
+            <span className="rl-kpi__value">{formatBRL(resumo.recebidoMesOs)}</span>
+            <span className="rl-kpi__hint">{resumo.recebidasMes} recebimento(s)</span>
           </article>
         </div>
       ) : null}
 
-      {sucesso ? (
-        <p className="fin-alert fin-alert--ok" role="status">
-          {sucesso}
-        </p>
-      ) : null}
-      {erro ? (
-        <p className="fin-alert fin-alert--err" role="alert">
-          {erro}
-        </p>
-      ) : null}
-
-      <div className="fin-pagar__toolbar">
-        <div className="fin-filtros" role="tablist" aria-label="Filtro">
+      <div className="fin-toolbar">
+        <div className="lc-filters" role="tablist" aria-label="Filtrar contas a receber">
           {FILTROS.map((f) => (
             <button
               key={f.key}
               type="button"
-              role="tab"
-              aria-selected={filtro === f.key}
-              className={filtro === f.key ? 'fin-filtro fin-filtro--on' : 'fin-filtro'}
+              className={`lc-filter${filtro === f.key ? ' lc-filter--on' : ''}`}
               onClick={() => setFiltro(f.key)}
             >
               {f.label}
@@ -182,73 +194,131 @@ export function FinContasReceberTab({ companyId, storeId }: FinContasReceberTabP
         </div>
       </div>
 
-      {loading ? (
-        <p className="fin-muted">Carregando…</p>
-      ) : lista.length === 0 ? (
-        <p className="fin-muted">
-          {filtro === 'pendentes'
-            ? 'Nenhuma conta a receber. Fature uma OS em Pronta ou Entregue na oficina.'
-            : 'Nenhum registro neste filtro.'}
-        </p>
-      ) : (
-        <ul className="fin-pagar-list">
-          {lista.map((cr) => {
-            const vencida = cr.status === 'pendente' && isVencida(cr.vencimento, 'pendente')
-            return (
-              <li key={cr.id} className="fin-pagar-row">
-                <div className="fin-pagar-row__main">
-                  <div className="fin-pagar-row__top">
-                    <strong>{cr.descricao}</strong>
-                    <span
-                      className={
-                        cr.status === 'recebido'
-                          ? 'fin-badge fin-badge--ok'
-                          : vencida
-                            ? 'fin-badge fin-badge--warn'
-                            : 'fin-badge'
-                      }
-                    >
-                      {labelStatusContaReceber(cr.status)}
-                    </span>
-                  </div>
-                  <p className="fin-pagar-row__meta">
-                    Venc. {formatDate(cr.vencimento)}
-                    {cr.osNumero ? ` · OS #${cr.osNumero}` : ''}
-                    {cr.clienteNome ? ` · ${cr.clienteNome}` : ''}
-                    {cr.status === 'recebido' && cr.forma_pagamento
-                      ? ` · ${labelFormaRecebimento(cr.forma_pagamento)}`
-                      : ''}
-                    {cr.vendaNumero ? ` · Venda #${cr.vendaNumero}` : ''}
-                  </p>
+      {erro ? (
+        <div className="lc-alert lc-alert--error" role="alert">
+          {erro}
+        </div>
+      ) : null}
+      {sucesso ? (
+        <div className="lc-alert lc-alert--ok" role="status">
+          {sucesso}
+        </div>
+      ) : null}
+
+      <section className="lc-panel" aria-label="Lista de contas a receber">
+        {loading ? (
+          <p className="lc-empty">Carregando…</p>
+        ) : totalItens === 0 ? (
+          <p className="lc-empty">
+            {filtro === 'pendentes'
+              ? 'Nenhuma conta a receber. Fature uma OS em Pronta ou Entregue na oficina.'
+              : 'Nenhum registro neste filtro.'}
+          </p>
+        ) : (
+          <>
+            <ul className="lc-list">
+              {listaPaginada.map((cr) => {
+                const busy = processandoId === cr.id
+                const vencida = cr.status === 'pendente' && isVencida(cr.vencimento, 'pendente')
+                const statusClass =
+                  cr.status === 'recebido'
+                    ? 'lc-row__status--ok'
+                    : cr.status === 'cancelado'
+                      ? 'lc-row__status--cancel'
+                      : vencida
+                        ? 'fin-cp-status--vencida'
+                        : ''
+                return (
+                  <li
+                    key={cr.id}
+                    className={`lc-row fin-cp-row${cr.status === 'cancelado' ? ' lc-row--cancel' : ''}${vencida ? ' fin-cp-row--vencida' : ''}`}
+                  >
+                    <div className="lc-row__main fin-cp-row__main">
+                      <span className="lc-row__num fin-cp-row__desc">{cr.descricao}</span>
+                      <span className="lc-row__meta">
+                        Vence {formatDate(cr.vencimento)}
+                        {cr.osNumero ? ` · OS #${cr.osNumero}` : ''}
+                        {cr.clienteNome ? ` · ${cr.clienteNome}` : ''}
+                        {' · '}
+                        {cr.status === 'recebido' && cr.forma_pagamento
+                          ? labelFormaRecebimento(cr.forma_pagamento)
+                          : '—'}
+                        {cr.vendaNumero ? ` · Venda #${cr.vendaNumero}` : ''}
+                      </span>
+                      <span className={`lc-row__status fin-cp-status ${statusClass}`}>
+                        {vencida && cr.status === 'pendente'
+                          ? 'Vencida'
+                          : labelStatusContaReceber(cr.status)}
+                      </span>
+                      <span className="lc-row__total">{formatBRL(cr.valor)}</span>
+                    </div>
+                    <div className="lc-row__actions">
+                      {cr.status === 'pendente' ? (
+                        <>
+                          <button
+                            type="button"
+                            className="lc-btn lc-btn--primary"
+                            disabled={busy}
+                            onClick={() => abrirReceber(cr)}
+                          >
+                            Receber
+                          </button>
+                          <button
+                            type="button"
+                            className="lc-btn lc-btn--ghost"
+                            disabled={busy}
+                            onClick={() => void handleCancelar(cr)}
+                          >
+                            Cancelar
+                          </button>
+                        </>
+                      ) : cr.status === 'recebido' && cr.data_recebimento ? (
+                        <span className="fin-cp-pago-em">
+                          Recebido em {formatDate(cr.data_recebimento)}
+                        </span>
+                      ) : null}
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+
+            {totalPaginas > 1 && intervaloLista ? (
+              <footer className="lc-pager" aria-label="Paginação de contas a receber">
+                <p className="lc-pager__info">
+                  Exibindo {intervaloLista.inicio}–{intervaloLista.fim} de {totalItens} título(s)
+                </p>
+                <div className="lc-pager__nav">
+                  <button
+                    type="button"
+                    className="lc-btn lc-btn--ghost"
+                    disabled={loading || pagina <= 1}
+                    onClick={() => setPagina((p) => Math.max(1, p - 1))}
+                  >
+                    Anterior
+                  </button>
+                  <span className="lc-pager__page" aria-live="polite">
+                    Página {pagina} de {totalPaginas}
+                  </span>
+                  <button
+                    type="button"
+                    className="lc-btn lc-btn--ghost"
+                    disabled={loading || pagina >= totalPaginas}
+                    onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
+                  >
+                    Próxima
+                  </button>
                 </div>
-                <div className="fin-pagar-row__valor">{formatBRL(cr.valor)}</div>
-                <div className="fin-pagar-row__actions">
-                  {cr.status === 'pendente' ? (
-                    <>
-                      <button
-                        type="button"
-                        className="st-primary-btn st-primary-btn--sm"
-                        disabled={processandoId === cr.id}
-                        onClick={() => abrirReceber(cr)}
-                      >
-                        Receber
-                      </button>
-                      <button
-                        type="button"
-                        className="st-ghost-btn st-ghost-btn--sm"
-                        disabled={processandoId === cr.id}
-                        onClick={() => void handleCancelar(cr)}
-                      >
-                        Cancelar
-                      </button>
-                    </>
-                  ) : null}
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-      )}
+              </footer>
+            ) : null}
+            {totalItens > 0 && totalItens <= FINANCEIRO_LISTA_PAGE_SIZE ? (
+              <p className="lc-pager__info lc-pager__info--solo">
+                {totalItens === 1 ? '1 título' : `${totalItens} títulos`}
+              </p>
+            ) : null}
+          </>
+        )}
+      </section>
 
       {modalReceber ? (
         <div className="fin-modal-backdrop" role="presentation" onClick={() => setModalReceber(null)}>
@@ -297,12 +367,12 @@ export function FinContasReceberTab({ companyId, storeId }: FinContasReceberTabP
               />
             </label>
             <div className="fin-modal__actions">
-              <button type="button" className="st-ghost-btn" onClick={() => setModalReceber(null)}>
+              <button type="button" className="cp-btn cp-btn--ghost" onClick={() => setModalReceber(null)}>
                 Voltar
               </button>
               <button
                 type="submit"
-                className="st-primary-btn"
+                className="cp-btn cp-btn--primary"
                 disabled={
                   processandoId === modalReceber.id ||
                   !validarPagamentoMisto(modalReceber.valor, pagamentos).ok

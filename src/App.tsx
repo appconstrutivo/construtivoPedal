@@ -17,6 +17,7 @@ import { contarOrcamentosAprovacaoNaoVista } from './services/orcamento.service'
 import { OrcamentoAprovacaoPage } from './pages/OrcamentoAprovacaoPage'
 import { ManualProprietarioPage } from './pages/ManualProprietarioPage'
 import { MaisPage } from './pages/MaisPage'
+import { FornecedoresPage } from './pages/FornecedoresPage'
 import { PedidosPecasPage } from './pages/PedidosPecasPage'
 import { contarPedidosAguardandoAviso } from './services/pedidos-pecas.service'
 import { contarPosVendaLembretesPendentes } from './services/pos-venda-lembretes.service'
@@ -426,6 +427,13 @@ export default function App() {
           onBadgeChange={() => void recarregarLembretesPosVenda()}
         />
       )}
+      {activeNav === 'fornecedores' && (
+        <FornecedoresPage
+          companyId={tenant.companyId}
+          activeStoreId={activeStoreId}
+          storeName={stores.find((s) => s.id === activeStoreId)?.name}
+        />
+      )}
       {activeNav === 'oficina' && (
         <OficinaPage
           companyId={tenant.companyId}
@@ -458,6 +466,7 @@ export default function App() {
           activeStoreId={activeStoreId}
           storeName={stores.find((s) => s.id === activeStoreId)?.name}
           onContasPagarChange={() => void recarregarContasPagarVencendoHoje()}
+          onNavigateFornecedores={() => setActiveNav('fornecedores')}
         />
       )}
       {activeNav === 'lancamentos' && (
@@ -495,6 +504,7 @@ export default function App() {
           companyName={tenant.companyName}
           plan={tenant.companyPlan}
           role={tenant.role}
+          onNavigateFornecedores={() => setActiveNav('fornecedores')}
           onCompanyUpdated={(name) =>
             setTenant((prev) => (prev ? { ...prev, companyName: name } : prev))
           }

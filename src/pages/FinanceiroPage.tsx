@@ -25,6 +25,7 @@ type FinanceiroPageProps = {
   storeName?: string
   /** Atualiza badge do menu quando contas a pagar mudam (pagar, criar, cancelar). */
   onContasPagarChange?: () => void
+  onNavigateFornecedores?: () => void
 }
 
 type AbaFinanceiro = 'visao' | 'fluxo' | 'receber' | 'pagar' | 'contas'
@@ -353,6 +354,7 @@ export function FinanceiroPage({
   activeStoreId,
   storeName,
   onContasPagarChange,
+  onNavigateFornecedores,
 }: FinanceiroPageProps) {
   const [aba, setAba] = useState<AbaFinanceiro>('visao')
   const [periodo, setPeriodo] = useState<PeriodoRelatorio | 'custom'>('mes')
@@ -549,6 +551,7 @@ export function FinanceiroPage({
           companyId={companyId}
           storeId={activeStoreId}
           onListaChange={onContasPagarChange}
+          onNavigateFornecedores={onNavigateFornecedores}
         />
       ) : aba === 'receber' ? (
         <FinContasReceberTab companyId={companyId} storeId={activeStoreId} />

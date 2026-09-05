@@ -9,13 +9,10 @@ import {
   validarCamposLocalEstoque,
 } from '../lib/estoque-local'
 import {
-  atualizarFornecedor,
   atualizarItemEstoque,
   atualizarLocalEstoque,
-  criarFornecedor,
   criarItemEstoque,
   criarLocalEstoque,
-  excluirFornecedor,
   excluirLocalEstoque,
   atualizarKitComComponentes,
   criarKitComComponentes,
@@ -225,16 +222,6 @@ function IconPdf() {
   )
 }
 
-function emptyFornecedorForm() {
-  return {
-    nome: '',
-    contato: '',
-    telefone: '',
-    email: '',
-    prazoMedioDias: '0',
-  }
-}
-
 function emptyLocalForm() {
   return {
     estante: '',
@@ -329,9 +316,6 @@ export function EstoquePage({
   const [fornecedores, setFornecedores] = useState<FornecedorRow[]>([])
   const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
-  const [modalFornecedorOpen, setModalFornecedorOpen] = useState(false)
-  const [fornecedorEditandoId, setFornecedorEditandoId] = useState<string | null>(null)
-  const [excluindoFornecedorId, setExcluindoFornecedorId] = useState<string | null>(null)
   const [modalLocalOpen, setModalLocalOpen] = useState(false)
   const [localEditandoId, setLocalEditandoId] = useState<string | null>(null)
   const [excluindoLocalId, setExcluindoLocalId] = useState<string | null>(null)
@@ -348,14 +332,12 @@ export function EstoquePage({
   const [modalMontagemOpen, setModalMontagemOpen] = useState(false)
   const [modalDesmontagemOpen, setModalDesmontagemOpen] = useState(false)
   const [modalImportOpen, setModalImportOpen] = useState(false)
-  const [salvandoFornecedor, setSalvandoFornecedor] = useState(false)
   const [salvandoItem, setSalvandoItem] = useState(false)
   const [salvandoMov, setSalvandoMov] = useState(false)
   const [salvandoKit, setSalvandoKit] = useState(false)
   const [salvandoMontagem, setSalvandoMontagem] = useState(false)
   const [salvandoDesmontagem, setSalvandoDesmontagem] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
-  const [fornecedorForm, setFornecedorForm] = useState(emptyFornecedorForm)
   const [itemEditandoId, setItemEditandoId] = useState<string | null>(null)
   /** Preserva store_id original ao editar (não vem mais do modal). */
   const [itemEditandoStoreId, setItemEditandoStoreId] = useState<string | null>(null)
@@ -466,101 +448,6 @@ export function EstoquePage({
       observacao: '',
     })
     setModalMovOpen(true)
-  }
-
-  function abrirNovoFornecedor() {
-    setFormError(null)
-    setFornecedorEditandoId(null)
-    setFornecedorForm(emptyFornecedorForm())
-    setModalFornecedorOpen(true)
-  }
-
-  function abrirEditarFornecedor(fornecedor: FornecedorRow) {
-    setFormError(null)
-    setFornecedorEditandoId(fornecedor.id)
-    setFornecedorForm({
-      nome: fornecedor.nome,
-      contato: fornecedor.contato ?? '',
-      telefone: fornecedor.telefone ?? '',
-      email: fornecedor.email ?? '',
-      prazoMedioDias: String(fornecedor.prazo_medio_dias),
-    })
-    setModalFornecedorOpen(true)
-  }
-
-  function fecharModalFornecedor() {
-    if (salvandoFornecedor) return
-    setModalFornecedorOpen(false)
-    setFornecedorEditandoId(null)
-    setFornecedorForm(emptyFornecedorForm())
-    setFormError(null)
-  }
-
-  async function handleExcluirFornecedor(fornecedor: FornecedorRow) {
-    if (
-      !window.confirm(
-        `Excluir o fornecedor "${fornecedor.nome}"?\n\nItens vinculados ficarão sem fornecedor.`,
-      )
-    ) {
-      return
-    }
-    setExcluindoFornecedorId(fornecedor.id)
-    setFormError(null)
-    try {
-      await excluirFornecedor(fornecedor.id)
-      await carregarDados()
-    } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : 'Erro ao excluir fornecedor.')
-    } finally {
-      setExcluindoFornecedorId(null)
-    }
-  }
-
-  async function handleSalvarFornecedor(e: React.FormEvent) {
-    e.preventDefault()
-    setFormError(null)
-    if (!activeStoreId) {
-      setFormError('Selecione uma loja no topo da tela.')
-      return
-    }
-    const nome = fornecedorForm.nome.trim()
-    if (!nome) {
-      setFormError('Nome do fornecedor é obrigatório.')
-      return
-    }
-
-    const prazo = Number(fornecedorForm.prazoMedioDias)
-    if (!Number.isFinite(prazo) || prazo < 0) {
-      setFormError('Prazo médio inválido.')
-      return
-    }
-
-    const payload = {
-      nome,
-      contato: fornecedorForm.contato.trim() || null,
-      telefone: fornecedorForm.telefone.trim() || null,
-      email: fornecedorForm.email.trim() || null,
-      prazo_medio_dias: Math.round(prazo),
-    }
-
-    setSalvandoFornecedor(true)
-    try {
-      if (fornecedorEditandoId) {
-        await atualizarFornecedor(fornecedorEditandoId, payload)
-      } else {
-        await criarFornecedor({
-          company_id: companyId,
-          store_id: activeStoreId,
-          ...payload,
-        })
-      }
-      await carregarDados()
-      fecharModalFornecedor()
-    } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : 'Erro ao salvar fornecedor.')
-    } finally {
-      setSalvandoFornecedor(false)
-    }
   }
 
   function abrirNovoLocal() {
@@ -1434,13 +1321,6 @@ export function EstoquePage({
               <button
                 type="button"
                 className="st-primary-btn st-primary-btn--soft"
-                onClick={() => { setFormError(null); setModalFornecedorOpen(true) }}
-              >
-                Fornecedor
-              </button>
-              <button
-                type="button"
-                className="st-primary-btn st-primary-btn--soft"
                 onClick={abrirNovoLocal}
                 disabled={!activeStoreId}
                 title={!activeStoreId ? 'Selecione uma loja no topo' : undefined}
@@ -1811,59 +1691,6 @@ export function EstoquePage({
             )}
           </section>
 
-          <section className="st-panel">
-            <div className="st-panel__head">
-              <h2 className="st-panel__title">Fornecedores</h2>
-              <button
-                type="button"
-                className="st-link-btn"
-                onClick={abrirNovoFornecedor}
-                disabled={!activeStoreId}
-                title={!activeStoreId ? 'Selecione uma loja no topo' : undefined}
-              >
-                Novo
-              </button>
-            </div>
-            {!activeStoreId ? (
-              <p className="st-panel__hint">Selecione uma loja no topo da tela.</p>
-            ) : fornecedores.length === 0 ? (
-              <p className="st-panel__hint">Nenhum fornecedor cadastrado.</p>
-            ) : (
-              <ul className="st-sup-list st-sup-list--scroll">
-                {fornecedores.map((fornecedor) => (
-                  <li key={fornecedor.id} className="st-sup-item">
-                    <div className="st-sup-item__body">
-                      <strong>{fornecedor.nome}</strong>
-                      <span>
-                        {fornecedor.contato ?? 'Sem contato'} · prazo {fornecedor.prazo_medio_dias}d
-                      </span>
-                    </div>
-                    <div className="st-sup-item__actions">
-                      <button
-                        type="button"
-                        className="st-row__action st-row__action--icon"
-                        aria-label={`Editar ${fornecedor.nome}`}
-                        onClick={() => abrirEditarFornecedor(fornecedor)}
-                        disabled={excluindoFornecedorId === fornecedor.id}
-                      >
-                        <IconPencil />
-                      </button>
-                      <button
-                        type="button"
-                        className="st-row__action st-row__action--icon st-row__action--danger"
-                        aria-label={`Excluir ${fornecedor.nome}`}
-                        onClick={() => void handleExcluirFornecedor(fornecedor)}
-                        disabled={excluindoFornecedorId === fornecedor.id}
-                      >
-                        <IconX />
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
           <section className="st-panel st-panel--kits">
             <div className="st-panel__head">
               <h2 className="st-panel__title">Kits montáveis</h2>
@@ -2048,82 +1875,6 @@ export function EstoquePage({
                     : localEditandoId
                       ? 'Salvar alterações'
                       : 'Salvar local'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {modalFornecedorOpen && (
-        <div className="st-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="st-fornecedor-title">
-          <div className="st-modal">
-            <div className="st-modal__head">
-              <h2 id="st-fornecedor-title" className="st-modal__title">
-                {fornecedorEditandoId ? 'Editar fornecedor' : 'Novo fornecedor'}
-              </h2>
-              <button type="button" className="st-modal__close" onClick={fecharModalFornecedor} aria-label="Fechar">
-                ×
-              </button>
-            </div>
-            <form className="st-form" onSubmit={handleSalvarFornecedor}>
-              <label className="st-field">
-                <span>Nome *</span>
-                <input
-                  className="st-input"
-                  value={fornecedorForm.nome}
-                  onChange={(e) => setFornecedorForm((prev) => ({ ...prev, nome: e.target.value }))}
-                  required
-                />
-              </label>
-              <label className="st-field">
-                <span>Contato</span>
-                <input
-                  className="st-input"
-                  value={fornecedorForm.contato}
-                  onChange={(e) => setFornecedorForm((prev) => ({ ...prev, contato: e.target.value }))}
-                />
-              </label>
-              <div className="st-form-grid">
-                <label className="st-field">
-                  <span>Telefone</span>
-                  <input
-                    className="st-input"
-                    value={fornecedorForm.telefone}
-                    onChange={(e) => setFornecedorForm((prev) => ({ ...prev, telefone: e.target.value }))}
-                  />
-                </label>
-                <label className="st-field">
-                  <span>Prazo (dias)</span>
-                  <input
-                    className="st-input"
-                    type="number"
-                    min={0}
-                    value={fornecedorForm.prazoMedioDias}
-                    onChange={(e) => setFornecedorForm((prev) => ({ ...prev, prazoMedioDias: e.target.value }))}
-                  />
-                </label>
-              </div>
-              <label className="st-field">
-                <span>E-mail</span>
-                <input
-                  className="st-input"
-                  type="email"
-                  value={fornecedorForm.email}
-                  onChange={(e) => setFornecedorForm((prev) => ({ ...prev, email: e.target.value }))}
-                />
-              </label>
-              {formError && <p className="st-form-error">{formError}</p>}
-              <div className="st-form-actions">
-                <button type="button" className="st-ghost-btn" onClick={fecharModalFornecedor}>
-                  Cancelar
-                </button>
-                <button type="submit" className="st-primary-btn" disabled={salvandoFornecedor}>
-                  {salvandoFornecedor
-                    ? 'Salvando...'
-                    : fornecedorEditandoId
-                      ? 'Salvar alterações'
-                      : 'Salvar fornecedor'}
                 </button>
               </div>
             </form>

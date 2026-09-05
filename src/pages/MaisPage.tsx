@@ -12,6 +12,7 @@ type MaisPageProps = {
   plan: string
   role: string
   onCompanyUpdated?: (name: string) => void
+  onNavigateFornecedores?: () => void
 }
 
 function labelPlano(plan: string) {
@@ -34,7 +35,14 @@ function labelPapel(role: string) {
   return map[role] ?? role
 }
 
-export function MaisPage({ companyId, companyName, plan, role, onCompanyUpdated }: MaisPageProps) {
+export function MaisPage({
+  companyId,
+  companyName,
+  plan,
+  role,
+  onCompanyUpdated,
+  onNavigateFornecedores,
+}: MaisPageProps) {
   const [empresa, setEmpresa] = useState<EmpresaRow | null>(null)
   const [loading, setLoading] = useState(true)
   const [salvando, setSalvando] = useState(false)
@@ -237,6 +245,20 @@ export function MaisPage({ companyId, companyName, plan, role, onCompanyUpdated 
                 <dd>{labelPapel(role)}</dd>
               </div>
             </dl>
+          </section>
+
+          <section className="cp-panel cp-panel--muted mais-panel" aria-labelledby="mais-cadastros-title">
+            <h2 id="mais-cadastros-title" className="mais-panel__title">
+              Cadastros
+            </h2>
+            <p className="cp-panel__hint">
+              Fornecedores e credores usados em contas a pagar, estoque e compras.
+            </p>
+            {onNavigateFornecedores ? (
+              <button type="button" className="cp-btn cp-btn--ghost mais-cadastro-btn" onClick={onNavigateFornecedores}>
+                Gerenciar fornecedores
+              </button>
+            ) : null}
           </section>
 
           <section className="cp-panel cp-panel--muted mais-panel" aria-labelledby="mais-breve-title">

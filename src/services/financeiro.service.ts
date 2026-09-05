@@ -418,8 +418,17 @@ export async function listarContasPagar(
     .select('*, fornecedores(nome)')
     .eq('company_id', companyId)
     .eq('store_id', storeId)
-    .order('vencimento', { ascending: true })
-    .order('created_at', { ascending: false })
+
+  if (filtro === 'pagas') {
+    q = q
+      .order('data_pagamento', { ascending: false, nullsFirst: false })
+      .order('vencimento', { ascending: false })
+      .order('created_at', { ascending: false })
+  } else if (filtro === 'canceladas' || filtro === 'todas') {
+    q = q.order('created_at', { ascending: false }).order('vencimento', { ascending: false })
+  } else {
+    q = q.order('vencimento', { ascending: true }).order('created_at', { ascending: false })
+  }
 
   if (filtro === 'pendentes') q = q.eq('status', 'pendente')
   if (filtro === 'pagas') q = q.eq('status', 'pago')
@@ -475,8 +484,7 @@ export type CriarContaPagarInput = {
   categoria: CategoriaContaPagar
   valor: number
   vencimento: string
-  credorNome?: string | null
-  fornecedorId?: string | null
+  fornecedorId: string
   observacao?: string
   recorrencia?: {
     frequencia: FrequenciaRecorrencia
@@ -532,7 +540,6 @@ function montarLinhaContaPagar(
   vencimento: string,
   opts?: { grupoId: string; parcela: number; parcelasTotal: number },
 ) {
-  const usaFornecedorEstoque = params.categoria === 'fornecedor'
   const total = opts?.parcelasTotal ?? 1
   const num = opts?.parcela ?? 1
   const descBase = params.descricao.trim()
@@ -545,8 +552,8 @@ function montarLinhaContaPagar(
     categoria: params.categoria,
     valor: params.valor,
     vencimento,
-    credor_nome: usaFornecedorEstoque ? null : params.credorNome?.trim() || null,
-    fornecedor_id: usaFornecedorEstoque ? params.fornecedorId || null : null,
+    credor_nome: null,
+    fornecedor_id: params.fornecedorId,
     observacao: params.observacao?.trim() || null,
     status: 'pendente' as const,
     grupo_recorrencia_id: opts?.grupoId ?? null,
@@ -684,6 +691,41 @@ export async function cancelarContaPagar(
   if (error) throw new Error(error.message ?? 'Erro ao cancelar conta.')
 }
 
+export type AtualizarContaPagarInput = {
+  companyId: string
+  storeId: string
+  contaPagarId: string
+  descricao: string
+  categoria: CategoriaContaPagar
+  fornecedorId: string
+  vencimento: string
+  observacao?: string | null
+  /** Só altera valor em contas pendentes. */
+  valor?: number
+}
+
+export async function atualizarContaPagar(params: AtualizarContaPagarInput): Promise<void> {
+  const payload: Record<string, unknown> = {
+    descricao: params.descricao.trim(),
+    categoria: params.categoria,
+    fornecedor_id: params.fornecedorId,
+    credor_nome: null,
+    vencimento: params.vencimento,
+    observacao: params.observacao?.trim() || null,
+  }
+  if (params.valor != null) payload.valor = params.valor
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from('financeiro_contas_pagar')
+    .update(payload)
+    .eq('id', params.contaPagarId)
+    .eq('company_id', params.companyId)
+    .eq('store_id', params.storeId)
+
+  if (error) throw new Error(error.message ?? 'Erro ao atualizar conta a pagar.')
+}
+
 export async function obterContaReceberPorOs(
   companyId: string,
   osId: string,
@@ -718,6 +760,8 @@ export async function obterContaReceberPorOs(
   }
 }
 
+export const FINANCEIRO_LISTA_PAGE_SIZE = 20
+
 export async function listarContasReceber(
   companyId: string,
   storeId: string,
@@ -731,8 +775,17 @@ export async function listarContasReceber(
     .select('*, clientes(nome), ordens_servico(numero), vendas(numero)')
     .eq('company_id', companyId)
     .eq('store_id', storeId)
-    .order('vencimento', { ascending: true })
-    .order('created_at', { ascending: false })
+
+  if (filtro === 'recebidas') {
+    q = q
+      .order('data_recebimento', { ascending: false, nullsFirst: false })
+      .order('vencimento', { ascending: false })
+      .order('created_at', { ascending: false })
+  } else if (filtro === 'canceladas' || filtro === 'todas') {
+    q = q.order('created_at', { ascending: false }).order('vencimento', { ascending: false })
+  } else {
+    q = q.order('vencimento', { ascending: true }).order('created_at', { ascending: false })
+  }
 
   if (filtro === 'pendentes') q = q.eq('status', 'pendente')
   if (filtro === 'recebidas') q = q.eq('status', 'recebido')

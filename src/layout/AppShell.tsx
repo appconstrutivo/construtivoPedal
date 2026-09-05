@@ -10,6 +10,7 @@ export type NavKey =
   | 'estoque'
   | 'pedidos'
   | 'clientes'
+  | 'fornecedores'
   | 'relatorios'
   | 'mais'
 
@@ -98,6 +99,20 @@ function IconUsers() {
         strokeLinecap="round"
       />
       <circle cx={17} cy={7} r={2.25} stroke="currentColor" strokeWidth={1.75} />
+    </svg>
+  )
+}
+
+function IconTruck() {
+  return (
+    <svg aria-hidden width={22} height={22} viewBox="0 0 24 24" fill="none">
+      <path
+        d="M3 7h11v8H3V7Zm11 2h3l2 3v3h-5V9ZM7 18a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Zm10 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"
+        stroke="currentColor"
+        strokeWidth={1.75}
+        strokeLinejoin="round"
+      />
+      <path d="M14 9V5H3" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" />
     </svg>
   )
 }
@@ -204,6 +219,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'estoque', label: 'Estoque', icon: <IconPackage /> },
   { key: 'pedidos', label: 'Pedidos', icon: <IconClipboardList /> },
   { key: 'clientes', label: 'Clientes', icon: <IconUsers /> },
+  { key: 'fornecedores', label: 'Fornecedores', icon: <IconTruck /> },
   { key: 'relatorios', label: 'Relatórios', icon: <IconChart /> },
   { key: 'mais', label: 'Mais', icon: <IconGrid /> },
 ]
