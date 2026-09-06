@@ -186,6 +186,38 @@ export async function contarContasPagarVencendoHoje(
   return count ?? 0
 }
 
+/** Contas a pagar pendentes com vencimento no intervalo — exibição no calendário da agenda. */
+export async function listarContasPagarPendentesPeriodo(
+  companyId: string,
+  storeId: string,
+  inicio: string,
+  fim: string,
+): Promise<ContaPagar[]> {
+  if (!storeId) return []
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('financeiro_contas_pagar')
+    .select('*, fornecedores(nome)')
+    .eq('company_id', companyId)
+    .eq('store_id', storeId)
+    .eq('status', 'pendente')
+    .gte('vencimento', inicio)
+    .lte('vencimento', fim)
+    .order('vencimento', { ascending: true })
+    .order('created_at', { ascending: false })
+
+  if (error) throw new Error(error.message ?? 'Erro ao carregar contas a pagar.')
+
+  type Raw = ContaPagar & { fornecedores?: { nome?: string | null } | null }
+
+  return ((data ?? []) as Raw[]).map((row) => ({
+    ...row,
+    valor: Number(row.valor),
+    fornecedorNome: row.fornecedores?.nome ?? null,
+  }))
+}
+
 export async function garantirContaCaixa(companyId: string, storeId: string): Promise<string> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any).rpc('financeiro_garantir_conta_caixa', {

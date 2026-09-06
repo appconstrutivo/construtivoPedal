@@ -243,6 +243,7 @@ type AppShellProps = {
   onActiveStoreChange?: (storeId: string) => void
   storesLoading?: boolean
   onNovaLojaClick?: () => void
+  onNotificacoesClick?: () => void
 }
 
 export function AppShell({
@@ -259,6 +260,7 @@ export function AppShell({
   onActiveStoreChange,
   storesLoading = false,
   onNovaLojaClick,
+  onNotificacoesClick,
 }: AppShellProps) {
   const [activeNavInternal, setActiveNavInternal] = useState<NavKey>('inicio')
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
@@ -400,13 +402,13 @@ export function AppShell({
             className="cp-btn cp-btn--ghost cp-header__notify"
             aria-label={
               notificacoesCount > 0
-                ? `${notificacoesCount} lembrete(s) pós-venda pendente(s)`
+                ? `${notificacoesCount} notificação(ões) do dia`
                 : 'Notificações'
             }
-            onClick={() => onNavigate?.('clientes')}
+            onClick={() => (onNotificacoesClick ?? (() => onNavigate?.('clientes')))()}
             title={
               notificacoesCount > 0
-                ? 'Ver lembretes pós-venda em Clientes'
+                ? 'Pendências de hoje (agenda e pós-venda)'
                 : 'Notificações'
             }
           >

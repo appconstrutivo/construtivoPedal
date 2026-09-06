@@ -29,7 +29,9 @@ import {
   marcarAprovacaoOrcamentoVista,
   marcarOrcamentoAprovado,
   marcarOrcamentoRecusado,
+  itemOrcamentoSemSaldo,
   montarTextoWhatsappOrcamento,
+  OBS_ITEM_ORCAMENTO_SEM_SALDO,
   orcamentoAprovacaoNaoVista,
   ORCAMENTO_CLIENTE_BALCAO,
   urlAprovacaoOrcamento,
@@ -245,8 +247,14 @@ export function OrcamentosPage({
     : false
   const subtotal = detalhe ? calcularSubtotalOrcamento(detalhe.itens) : 0
   const total = detalhe ? calcularTotalOrcamento(detalhe.itens, Number(form.desconto) || 0) : 0
-  const temPeca = detalhe?.itens.some((i) => i.tipo === 'peca') ?? false
+  const temPecaComSaldo = detalhe?.itens.some((i) => i.tipo === 'peca' && !itemOrcamentoSemSaldo(i)) ?? false
+  const temPecaSemSaldo = detalhe?.itens.some(itemOrcamentoSemSaldo) ?? false
   const temServico = detalhe?.itens.some((i) => i.tipo === 'servico') ?? false
+  const valorPecasSemSaldo = detalhe
+    ? detalhe.itens
+        .filter(itemOrcamentoSemSaldo)
+        .reduce((acc, i) => acc + Number(i.quantidade) * Number(i.preco_unitario), 0)
+    : 0
   const podeConverter = detalhe && (detalhe.status === 'enviado' || detalhe.status === 'aprovado')
 
   const cabecalhoMudou = useMemo(() => {
@@ -417,9 +425,14 @@ export function OrcamentosPage({
 
   function renderItemRow(item: OrcamentoItemRow) {
     const sub = Number(item.quantidade) * Number(item.preco_unitario)
+    const semSaldo = itemOrcamentoSemSaldo(item)
     return (
-      <tr key={item.id}>
-        <td>{item.descricao}<span className="orc-table__tipo">{item.tipo === 'servico' ? 'Serviço' : 'Peça'}</span></td>
+      <tr key={item.id} className={semSaldo ? 'orc-table__row--sem-saldo' : undefined}>
+        <td>
+          {item.descricao}
+          <span className="orc-table__tipo">{item.tipo === 'servico' ? 'Serviço' : 'Peça'}</span>
+          {semSaldo && <span className="orc-table__obs">{OBS_ITEM_ORCAMENTO_SEM_SALDO}</span>}
+        </td>
         <td className="orc-table__num">
           {editavel ? (
             <input className="orc-input orc-input--cell" defaultValue={item.quantidade} disabled={busy === item.id}
@@ -630,6 +643,11 @@ export function OrcamentosPage({
                       </div>
                     </div>
                   )}
+                  {temPecaSemSaldo && (
+                    <p className="orc-items__hint">
+                      Peças sem saldo podem permanecer no orçamento. Na conversão para OS elas não entram na ordem nem no valor.
+                    </p>
+                  )}
                   {!detalhe.itens.length ? <p className="orc-muted">Nenhum item.</p> : (
                     <div className="orc-table-wrap">
                       <table className="orc-table">
@@ -665,8 +683,13 @@ export function OrcamentosPage({
                   )}
                   {podeConverter && (
                     <div className="orc-actions__convert">
-                      {temPeca && !temServico && <button type="button" className="st-primary-btn" disabled={!!busy} onClick={() => void converterOrcamentoEmPdvPrefill(companyId, detalhe.id).then(onNavigatePdv).catch((e) => setErro(e instanceof Error ? e.message : 'Erro PDV.'))}>Converter em venda (PDV)</button>}
-                      {temServico && !temPeca && activeStoreId && (
+                      {temPecaSemSaldo && (
+                        <p className="orc-items__hint">
+                          Peças sem saldo ({formatBRL(valorPecasSemSaldo)}) não entram na OS nem no PDV.
+                        </p>
+                      )}
+                      {temPecaComSaldo && !temServico && <button type="button" className="st-primary-btn" disabled={!!busy} onClick={() => void converterOrcamentoEmPdvPrefill(companyId, detalhe.id).then(onNavigatePdv).catch((e) => setErro(e instanceof Error ? e.message : 'Erro PDV.'))}>Converter em venda (PDV)</button>}
+                      {temServico && !temPecaComSaldo && activeStoreId && (
                         <button
                           type="button"
                           className="st-primary-btn"
@@ -684,7 +707,7 @@ export function OrcamentosPage({
                           Converter em OS
                         </button>
                       )}
-                      {temPeca && temServico && (
+                      {temPecaComSaldo && temServico && (
                         <>
                           <button type="button" className="st-ghost-btn" disabled={!!busy} onClick={() => void converterOrcamentoEmPdvPrefill(companyId, detalhe.id).then(onNavigatePdv)}>Converter em venda (PDV)</button>
                           {activeStoreId && (
@@ -698,6 +721,7 @@ export function OrcamentosPage({
                                   storeId: activeStoreId,
                                   orcamentoId: detalhe.id,
                                 }).then(({ osId }) => onNavigateOficina(osId))
+                                  .catch((e) => setErro(e instanceof Error ? e.message : 'Erro OS.'))
                               }
                             >
                               Converter em OS

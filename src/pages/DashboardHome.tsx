@@ -1,5 +1,6 @@
 import { useEffect, useState, useId } from 'react'
 import type { NavKey } from '../layout/AppShell'
+import { AgendaPanel } from '../components/AgendaPanel'
 import { listarOrdensServico, contarOsAbertas } from '../services/oficina.service'
 import { obterResumoEstoqueLoja } from '../services/estoque.service'
 import { listarVendasRecentes, obterResumoVendasHoje } from '../services/pdv.service'
@@ -10,6 +11,7 @@ type DashboardHomeProps = {
   activeStoreId: string
   onNavigate: (nav: NavKey) => void
   lembretesPosVendaPendentes?: number
+  onAgendaBadgeChange?: () => void
 }
 
 function IconWorkshop({ className }: { className?: string }) {
@@ -101,33 +103,6 @@ function IconStock({ className }: { className?: string }) {
   )
 }
 
-function IconBolt({ className }: { className?: string }) {
-  return (
-    <svg className={className} aria-hidden width={18} height={18} viewBox="0 0 24 24" fill="none">
-      <path
-        d="M13 2 3 14h8l-1 8 10-12h-8l1-8Z"
-        stroke="currentColor"
-        strokeWidth={1.75}
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-function IconStores({ className }: { className?: string }) {
-  return (
-    <svg className={className} aria-hidden width={18} height={18} viewBox="0 0 24 24" fill="none">
-      <path
-        d="M4 10V20h16V10M4 10 2 6h20l-2 4M9 14h6"
-        stroke="currentColor"
-        strokeWidth={1.75}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
 function formatBRL(v: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
 }
@@ -150,6 +125,7 @@ export function DashboardHome({
   activeStoreId,
   onNavigate,
   lembretesPosVendaPendentes = 0,
+  onAgendaBadgeChange,
 }: DashboardHomeProps) {
   const [osAbertasCount, setOsAbertasCount] = useState<number | null>(null)
   const [ultimasOs, setUltimasOs] = useState<Array<{ id: string; numero: number; clienteNome: string }>>([])
@@ -274,7 +250,14 @@ export function DashboardHome({
           Hoje
         </div>
         <ul className="cp-kpi-grid">
-          <li className="cp-kpi cp-kpi--workshop" title="Ordens aguardando ou em execução">
+          <li
+            className="cp-kpi cp-kpi--workshop cp-kpi--clickable"
+            title="Ordens aguardando ou em execução"
+            onClick={() => onNavigate('oficina')}
+            onKeyDown={(e) => e.key === 'Enter' && onNavigate('oficina')}
+            role="button"
+            tabIndex={0}
+          >
             <span className="cp-kpi__icon" aria-hidden>
               <IconClipboard />
             </span>
@@ -328,55 +311,46 @@ export function DashboardHome({
         </ul>
       </section>
 
-      <div className="cp-dash-split">
-        <section className="cp-dash-block" aria-labelledby="lbl-live">
-          <div id="lbl-live" className="cp-dash-label cp-dash-label--blue">
-            <span className="cp-dash-label__dot" aria-hidden />
-            Ao vivo
-          </div>
-          <ul className="cp-live">
-            <li className="cp-live__row cp-live__row--workshop">
-              <span className="cp-live__mark" aria-hidden />
-              <span className="cp-live__text">
-                {semLoja
-                  ? 'Selecione uma loja no topo'
-                  : ultimasOs.length === 0
-                    ? 'Sem OS recentes nesta loja'
-                    : ultimasOs.map((o) => `OS #${o.numero} — ${o.clienteNome}`).join(' · ')}
-              </span>
-            </li>
-            <li className="cp-live__row cp-live__row--sale">
-              <span className="cp-live__mark" aria-hidden />
-              <span className="cp-live__text">
-                {semLoja
-                  ? 'Selecione uma loja no topo'
-                  : ultimaVendaTexto ?? 'PDV sem vendas hoje'}
-              </span>
-            </li>
-          </ul>
-        </section>
+      <section className="cp-dash-block cp-dash-block--live" aria-labelledby="lbl-live">
+        <div id="lbl-live" className="cp-dash-label cp-dash-label--blue">
+          <span className="cp-dash-label__dot" aria-hidden />
+          Ao vivo
+        </div>
+        <ul className="cp-live cp-live--compact">
+          <li className="cp-live__row cp-live__row--workshop">
+            <span className="cp-live__mark" aria-hidden />
+            <span className="cp-live__text">
+              {semLoja
+                ? 'Selecione uma loja no topo'
+                : ultimasOs.length === 0
+                  ? 'Sem OS recentes nesta loja'
+                  : ultimasOs.map((o) => `OS #${o.numero} — ${o.clienteNome}`).join(' · ')}
+            </span>
+          </li>
+          <li className="cp-live__row cp-live__row--sale">
+            <span className="cp-live__mark" aria-hidden />
+            <span className="cp-live__text">
+              {semLoja
+                ? 'Selecione uma loja no topo'
+                : ultimaVendaTexto ?? 'PDV sem vendas hoje'}
+            </span>
+          </li>
+        </ul>
+      </section>
 
-        <aside className="cp-dash-block" aria-label="Resumo">
-          <div className="cp-dash-label cp-dash-label--violet">
-            <span className="cp-dash-label__dot" aria-hidden />
-            Visão
-          </div>
-          <div className="cp-glance-stack">
-            <div className="cp-glance cp-glance--pulse">
-              <span className="cp-glance__glyph cp-glance__glyph--amber" aria-hidden>
-                <IconBolt />
-              </span>
-              <span className="cp-glance__line">Automações quando houver dados</span>
-            </div>
-            <div className="cp-glance cp-glance--stores">
-              <span className="cp-glance__glyph cp-glance__glyph--violet" aria-hidden>
-                <IconStores />
-              </span>
-              <span className="cp-glance__line">Multi-loja por empresa</span>
-            </div>
-          </div>
-        </aside>
-      </div>
+      <section className="cp-dash-block" aria-labelledby="lbl-agenda">
+        <div id="lbl-agenda" className="cp-dash-label cp-dash-label--amber">
+          <span className="cp-dash-label__dot" aria-hidden />
+          Agenda
+        </div>
+        <AgendaPanel
+          companyId={companyId}
+          activeStoreId={activeStoreId}
+          active={activeNav === 'inicio'}
+          onBadgeChange={onAgendaBadgeChange}
+          onNavigateFinanceiro={() => onNavigate('financeiro')}
+        />
+      </section>
     </div>
   )
 }

@@ -1,5 +1,10 @@
 import type { OrcamentoDetalhe } from '../services/orcamento.service'
-import { calcularSubtotalOrcamento, calcularTotalOrcamento } from '../services/orcamento.service'
+import {
+  calcularSubtotalOrcamento,
+  calcularTotalOrcamento,
+  itemOrcamentoSemSaldo,
+  OBS_ITEM_ORCAMENTO_SEM_SALDO,
+} from '../services/orcamento.service'
 
 type OrcamentoPrintProps = {
   det: OrcamentoDetalhe
@@ -23,13 +28,17 @@ function escapeHtml(s: string) {
 export function OrcamentoPrintHtml({ det, companyName }: OrcamentoPrintProps) {
   const subtotal = calcularSubtotalOrcamento(det.itens)
   const total = calcularTotalOrcamento(det.itens, det.desconto)
+  const temSemSaldo = det.itens.some(itemOrcamentoSemSaldo)
   const linhas = det.itens
     .map((item) => {
       const sub = item.quantidade * item.preco_unitario
       const tipo = item.tipo === 'servico' ? 'Serviço' : 'Peça'
+      const obs = itemOrcamentoSemSaldo(item)
+        ? `<br /><small class="obs">${escapeHtml(OBS_ITEM_ORCAMENTO_SEM_SALDO)}</small>`
+        : ''
       return (
         '<tr>' +
-        `<td>${escapeHtml(item.descricao)}<br /><small>${tipo}</small></td>` +
+        `<td>${escapeHtml(item.descricao)}<br /><small>${tipo}</small>${obs}</td>` +
         `<td class="num">${item.quantidade}</td>` +
         `<td class="num">${formatBRL(item.preco_unitario)}</td>` +
         `<td class="num">${formatBRL(sub)}</td>` +
@@ -54,6 +63,7 @@ export function OrcamentoPrintHtml({ det, companyName }: OrcamentoPrintProps) {
   parts.push('.totals{margin-top:12px;max-width:280px;margin-left:auto}')
   parts.push('.totals .row{display:flex;justify-content:space-between;padding:4px 0}')
   parts.push('.totals .total{font-weight:800;font-size:13pt;border-top:2px solid #111;margin-top:6px;padding-top:8px}')
+  parts.push('.obs{color:#b45309;font-weight:600}')
   parts.push('.foot{margin-top:32px;font-size:9pt;color:#888;text-align:center}')
   parts.push('</style></head><body>')
 
@@ -79,6 +89,11 @@ export function OrcamentoPrintHtml({ det, companyName }: OrcamentoPrintProps) {
   parts.push('</div>')
   if (det.observacoes) {
     parts.push(`<p><strong>Observações:</strong> ${escapeHtml(det.observacoes)}</p>`)
+  }
+  if (temSemSaldo) {
+    parts.push(
+      `<p class="meta">${escapeHtml(OBS_ITEM_ORCAMENTO_SEM_SALDO)}: item permanece no orçamento e não entra na ordem de serviço.</p>`,
+    )
   }
   parts.push('<p class="foot">Documento comercial — sem valor fiscal · Construtivo Pedal</p>')
   parts.push('</body></html>')

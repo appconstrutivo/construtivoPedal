@@ -47,6 +47,21 @@ export type ResumoEstoqueLoja = {
   valorEstoque: number
 }
 
+export type FiltroAtivoEstoque = 'ativos' | 'inativos' | 'todos'
+
+export type ItemEstoqueDuplicado = {
+  id: string
+  sku: string
+  nome: string
+  ativo: boolean
+  sku_fornecedor: string | null
+}
+
+/** Chave normalizada para comparação de nomes (deduplicação). */
+export function chaveNomeEstoque(nome: string): string {
+  return normalizarNomeEstoque(nome).toUpperCase()
+}
+
 function statusSaldoItem(saldo: number, minimo: number): 'critico' | 'reposicao' | 'saudavel' {
   if (saldo <= minimo * 0.5) return 'critico'
   if (saldo <= minimo) return 'reposicao'
@@ -78,17 +93,23 @@ export async function obterResumoEstoqueLoja(
 export async function listarItensEstoque(
   companyId: string,
   storeId: string,
+  opts?: { filtroAtivo?: FiltroAtivoEstoque },
 ): Promise<EstoqueItemComLocal[]> {
   if (!storeId) return []
 
+  const filtroAtivo = opts?.filtroAtivo ?? 'ativos'
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
+  let query = (supabase as any)
     .from('estoque_itens')
     .select('*, stores(name), fornecedores(nome), estoque_locais(codigo, nome)')
     .eq('company_id', companyId)
     .eq('store_id', storeId)
-    .eq('ativo', true)
-    .order('nome', { ascending: true })
+
+  if (filtroAtivo === 'ativos') query = query.eq('ativo', true)
+  else if (filtroAtivo === 'inativos') query = query.eq('ativo', false)
+
+  const { data, error } = await query.order('nome', { ascending: true })
 
   if (error) throw new Error((error as { message?: string }).message ?? 'Erro ao carregar itens de estoque.')
 
@@ -266,11 +287,86 @@ export async function criarItemEstoque(
   return data as EstoqueItemRow
 }
 
-/** Desativa o item (soft delete); some da listagem ativa. */
+/** Ativa ou desativa item de estoque (oculta das operações sem remover o cadastro). */
+export async function alterarStatusItemEstoque(itemId: string, ativo: boolean): Promise<void> {
+  await atualizarItemEstoque(itemId, { ativo })
+}
+
+/** Remove o item permanentemente do sistema. Vendas/OS mantêm a linha, mas sem vínculo ao estoque. */
 export async function excluirItemEstoque(itemId: string): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any).from('estoque_itens').update({ ativo: false }).eq('id', itemId)
-  if (error) throw new Error((error as { message?: string }).message ?? 'Erro ao excluir item.')
+  const { data: emKit, error: kitErr } = await (supabase as any)
+    .from('estoque_kit_componentes')
+    .select('kit_id, estoque_kits(nome)')
+    .eq('componente_item_id', itemId)
+    .limit(1)
+
+  if (kitErr) {
+    throw new Error(
+      (kitErr as { message?: string }).message ?? 'Erro ao verificar uso do item em kits.',
+    )
+  }
+
+  type KitRef = { kit_id: string; estoque_kits?: { nome?: string | null } | null }
+  const kitRow = ((emKit ?? []) as KitRef[])[0]
+  if (kitRow) {
+    const nomeKit = kitRow.estoque_kits?.nome?.trim() || 'sem nome'
+    throw new Error(`Este item compõe o kit "${nomeKit}". Remova-o do kit antes de excluir.`)
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).from('estoque_itens').delete().eq('id', itemId)
+  if (error) {
+    const msg = (error as { message?: string }).message ?? 'Erro ao excluir item.'
+    if (/foreign key|violates|restrict/i.test(msg)) {
+      throw new Error('Não foi possível excluir: o item ainda está vinculado a outros registros do sistema.')
+    }
+    throw new Error(msg)
+  }
+}
+
+/** Busca item existente (ativo ou inativo) por SKU fornecedor ou nome — evita duplicidade no cadastro. */
+export async function buscarItemEstoqueDuplicado(params: {
+  companyId: string
+  storeId: string
+  nome: string
+  skuFornecedor?: string | null
+  excluirItemId?: string
+}): Promise<ItemEstoqueDuplicado | null> {
+  const { companyId, storeId, nome, skuFornecedor, excluirItemId } = params
+  if (!storeId) return null
+
+  const skuF = String(skuFornecedor ?? '').trim()
+  const nomeKey = chaveNomeEstoque(nome)
+  if (!skuF && !nomeKey) return null
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('estoque_itens')
+    .select('id, sku, nome, ativo, sku_fornecedor')
+    .eq('company_id', companyId)
+    .eq('store_id', storeId)
+
+  if (error) {
+    throw new Error(
+      (error as { message?: string }).message ?? 'Erro ao verificar duplicidade de item.',
+    )
+  }
+
+  type Row = ItemEstoqueDuplicado
+  const rows = ((data ?? []) as Row[]).filter((r) => r.id !== excluirItemId)
+
+  if (skuF) {
+    const porSku = rows.find((r) => String(r.sku_fornecedor ?? '').trim() === skuF)
+    if (porSku) return porSku
+  }
+
+  if (nomeKey) {
+    const porNome = rows.find((r) => chaveNomeEstoque(r.nome) === nomeKey)
+    if (porNome) return porNome
+  }
+
+  return null
 }
 
 export async function obterUrlImagemItem(imagemRef: string): Promise<string | null> {
@@ -328,6 +424,7 @@ export async function atualizarItemEstoque(
 export type ResultadoImportacaoPlanilha = {
   criados: number
   atualizados: number
+  reativados: number
   erros: string[]
 }
 
@@ -352,16 +449,16 @@ export async function importarItensPlanilhaEstoque(params: {
   const erros: string[] = []
   let criados = 0
   let atualizados = 0
+  let reativados = 0
 
   // Planilha não é enviada ao Supabase Storage. `sku` = código interno; `sku_fornecedor` = coluna SKU da planilha.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: existentesRaw, error: listErr } = await (supabase as any)
     .from('estoque_itens')
-    .select('id, nome, sku_fornecedor, saldo_atual, custo_medio')
+    .select('id, nome, sku_fornecedor, saldo_atual, custo_medio, ativo')
     .eq('company_id', companyId)
     .eq('store_id', storeId)
     .eq('fornecedor_id', fornecedorId)
-    .eq('ativo', true)
 
   if (listErr) {
     throw new Error(
@@ -373,6 +470,7 @@ export async function importarItensPlanilhaEstoque(params: {
     id: string
     saldo_atual: number
     custo_medio: number
+    ativo: boolean
   }
 
   const porSkuFornecedor = new Map<string, RefItemImportacao>()
@@ -383,15 +481,17 @@ export async function importarItensPlanilhaEstoque(params: {
     sku_fornecedor: string | null
     saldo_atual: number
     custo_medio: number | null
+    ativo: boolean
   }>) {
     const ref: RefItemImportacao = {
       id: row.id,
       saldo_atual: Number(row.saldo_atual),
       custo_medio: Number(row.custo_medio ?? 0),
+      ativo: Boolean(row.ativo),
     }
     const skuF = String(row.sku_fornecedor ?? '').trim()
     if (skuF) porSkuFornecedor.set(skuF, ref)
-    const nomeKey = row.nome.trim().toUpperCase()
+    const nomeKey = chaveNomeEstoque(row.nome)
     if (nomeKey) porNome.set(nomeKey, ref)
   }
 
@@ -400,12 +500,13 @@ export async function importarItensPlanilhaEstoque(params: {
     const linha = linhas[i]
     const existente =
       porSkuFornecedor.get(linha.skuFornecedor) ??
-      porNome.get(linha.nome.trim().toUpperCase())
+      porNome.get(chaveNomeEstoque(linha.nome))
 
     try {
       const custoPlanilha = calcularCustoComAdicional(linha.custo, custoAdicionalPct)
 
       if (existente) {
+        const eraInativo = !existente.ativo
         const novoSaldo = existente.saldo_atual + linha.quantidade
         // Coluna "Preço de Venda" da planilha = custo_medio (Custo R$) no cadastro.
         const custoMedio = Math.max(custoPlanilha, existente.custo_medio)
@@ -416,12 +517,15 @@ export async function importarItensPlanilhaEstoque(params: {
           custo_medio: custoMedio,
           saldo_atual: novoSaldo,
           fornecedor_id: fornecedorId,
+          ativo: true,
         })
         existente.saldo_atual = novoSaldo
         existente.custo_medio = custoMedio
+        existente.ativo = true
         porSkuFornecedor.set(linha.skuFornecedor, existente)
-        porNome.set(linha.nome.trim().toUpperCase(), existente)
-        atualizados += 1
+        porNome.set(chaveNomeEstoque(linha.nome), existente)
+        if (eraInativo) reativados += 1
+        else atualizados += 1
       } else {
         const precoVenda = calcularPrecoComMarkup(custoPlanilha, markupPct)
         const sku = await reservarProximoSkuEstoque(companyId, storeId)
@@ -444,9 +548,10 @@ export async function importarItensPlanilhaEstoque(params: {
           id: criado.id,
           saldo_atual: linha.quantidade,
           custo_medio: custoPlanilha,
+          ativo: true,
         }
         porSkuFornecedor.set(linha.skuFornecedor, ref)
-        porNome.set(linha.nome.trim().toUpperCase(), ref)
+        porNome.set(chaveNomeEstoque(linha.nome), ref)
         criados += 1
       }
     } catch (err: unknown) {
@@ -459,7 +564,7 @@ export async function importarItensPlanilhaEstoque(params: {
     onProgress?.(i + 1, total)
   }
 
-  return { criados, atualizados, erros }
+  return { criados, atualizados, reativados, erros }
 }
 
 export async function reservarProximoSkuEstoque(

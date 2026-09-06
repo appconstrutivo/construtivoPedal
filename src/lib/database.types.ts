@@ -532,6 +532,7 @@ export type Database = {
           descricao: string
           quantidade: number
           preco_unitario: number
+          sem_saldo: boolean
           created_at: string
         }
         Insert: {
@@ -544,6 +545,7 @@ export type Database = {
           descricao: string
           quantidade?: number
           preco_unitario?: number
+          sem_saldo?: boolean
           created_at?: string
         }
         Update: {
@@ -555,6 +557,7 @@ export type Database = {
           descricao?: string
           quantidade?: number
           preco_unitario?: number
+          sem_saldo?: boolean
           created_at?: string
         }
       }
@@ -876,6 +879,79 @@ export type Database = {
           active?: boolean
           address?: string | null
           name?: string
+        }
+      }
+      calendario_tipos_evento: {
+        Row: {
+          id: string
+          company_id: string
+          store_id: string
+          nome: string
+          cor: string
+          ativo: boolean
+          ordem: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          store_id: string
+          nome: string
+          cor?: string
+          ativo?: boolean
+          ordem?: number
+          created_at?: string
+        }
+        Update: {
+          nome?: string
+          cor?: string
+          ativo?: boolean
+          ordem?: number
+        }
+      }
+      calendario_eventos: {
+        Row: {
+          id: string
+          company_id: string
+          store_id: string
+          titulo: string
+          observacoes: string | null
+          tipo: string
+          data_inicio: string
+          data_fim: string
+          hora_inicio: string | null
+          cliente_id: string | null
+          status: string
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          store_id: string
+          titulo: string
+          observacoes?: string | null
+          tipo?: string
+          data_inicio: string
+          data_fim: string
+          hora_inicio?: string | null
+          cliente_id?: string | null
+          status?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          titulo?: string
+          observacoes?: string | null
+          tipo?: string
+          data_inicio?: string
+          data_fim?: string
+          hora_inicio?: string | null
+          cliente_id?: string | null
+          status?: string
+          updated_at?: string
         }
       }
       user_profiles: {

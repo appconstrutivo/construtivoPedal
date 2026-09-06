@@ -11,6 +11,7 @@ import {
 import {
   atualizarItemEstoque,
   atualizarLocalEstoque,
+  buscarItemEstoqueDuplicado,
   criarItemEstoque,
   criarLocalEstoque,
   excluirLocalEstoque,
@@ -47,6 +48,7 @@ import {
 
 type CategoriaEstoque = 'peca' | 'bike' | 'acessorio'
 type StatusEstoque = 'critico' | 'reposicao' | 'saudavel'
+type FiltroAtivoItem = 'ativos' | 'inativos' | 'todos'
 type TipoMovimentacao = 'entrada' | 'saida' | 'ajuste'
 
 type KitComponenteLinha = {
@@ -102,6 +104,12 @@ const STATUS_FILTERS: { key: StatusEstoque | 'todos'; label: string }[] = [
   { key: 'critico', label: 'Crítico' },
   { key: 'reposicao', label: 'Reposição' },
   { key: 'saudavel', label: 'Saudável' },
+]
+
+const ATIVO_FILTERS: { key: FiltroAtivoItem; label: string }[] = [
+  { key: 'ativos', label: 'Ativos' },
+  { key: 'inativos', label: 'Inativos' },
+  { key: 'todos', label: 'Todos' },
 ]
 
 function formatBRL(v: number) {
@@ -250,6 +258,7 @@ function emptyItemForm() {
     precoAtacado: '0',
     markupVarejo: '',
     markupAtacado: '',
+    ativo: true,
   }
 }
 
@@ -309,6 +318,7 @@ export function EstoquePage({
   const [busca, setBusca] = useState('')
   const [categoria, setCategoria] = useState<CategoriaEstoque | 'todos'>('todos')
   const [status, setStatus] = useState<StatusEstoque | 'todos'>('todos')
+  const [filtroAtivo, setFiltroAtivo] = useState<FiltroAtivoItem>('ativos')
   const [filtroLocalId, setFiltroLocalId] = useState<string>('todos')
   const [itens, setItens] = useState<EstoqueItemComLocal[]>([])
   const [movimentacoes, setMovimentacoes] = useState<EstoqueMovimentacaoComItem[]>([])
@@ -345,7 +355,7 @@ export function EstoquePage({
   const [itemSelecionadoId, setItemSelecionadoId] = useState<string | null>(null)
   const [itemPreviewUrl, setItemPreviewUrl] = useState<string | null>(null)
   const [itemPreviewLoading, setItemPreviewLoading] = useState(false)
-  const [excluindoItem, setExcluindoItem] = useState(false)
+  const [excluindoItemId, setExcluindoItemId] = useState<string | null>(null)
   const [itemForm, setItemForm] = useState(() => emptyItemForm())
   const [itemSkuLoading, setItemSkuLoading] = useState(false)
   const [kitSkuLoading, setKitSkuLoading] = useState(false)
@@ -373,7 +383,7 @@ export function EstoquePage({
     setErro(null)
     try {
       const [itensData, movimentacoesData, fornecedoresData, locaisData, kitsData] = await Promise.all([
-        listarItensEstoque(companyId, activeStoreId),
+        listarItensEstoque(companyId, activeStoreId, { filtroAtivo: 'todos' }),
         listarMovimentacoesHoje(companyId, activeStoreId),
         listarFornecedores(companyId, activeStoreId),
         listarLocaisEstoque(companyId, activeStoreId),
@@ -403,12 +413,19 @@ export function EstoquePage({
   useEffect(() => {
     setItemSelecionadoId(null)
     setFiltroLocalId('todos')
+    setFiltroAtivo('ativos')
   }, [activeStoreId])
+
+  const itensAtivos = useMemo(() => itens.filter((item) => item.ativo), [itens])
 
   const itensFiltrados = useMemo(() => {
     const termo = busca.trim().toLowerCase()
+    const comBusca = termo.length > 0
 
-    return itens.filter((item) => {
+    const filtrados = itens.filter((item) => {
+      if (filtroAtivo === 'inativos' && item.ativo) return false
+      if (filtroAtivo === 'ativos' && !item.ativo && !comBusca) return false
+
       const categoriaItem = toCategoriaEstoque(item.categoria)
       if (categoria !== 'todos' && categoriaItem !== categoria) return false
 
@@ -421,12 +438,18 @@ export function EstoquePage({
       return (
         item.nome.toLowerCase().includes(termo) ||
         item.sku.toLowerCase().includes(termo) ||
+        (item.sku_fornecedor?.toLowerCase().includes(termo) ?? false) ||
         item.storeName.toLowerCase().includes(termo) ||
         (item.localCodigo?.toLowerCase().includes(termo) ?? false) ||
         (item.localNome?.toLowerCase().includes(termo) ?? false)
       )
     })
-  }, [busca, categoria, status, filtroLocalId, itens])
+
+    return [...filtrados].sort((a, b) => {
+      if (a.ativo !== b.ativo) return a.ativo ? -1 : 1
+      return a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' })
+    })
+  }, [busca, categoria, status, filtroAtivo, filtroLocalId, itens])
 
   const localFormPreview = useMemo(() => {
     const validado = validarCamposLocalEstoque(
@@ -441,7 +464,7 @@ export function EstoquePage({
   function abrirMovimentacao(tipo: TipoMovimentacao, itemId?: string) {
     setFormError(null)
     setMovForm({
-      itemId: itemId ?? itens[0]?.id ?? '',
+      itemId: itemId ?? itensAtivos[0]?.id ?? '',
       tipo,
       quantidade: '1',
       origem: '',
@@ -576,8 +599,8 @@ export function EstoquePage({
   )
 
   const itensParaComponenteKit = useMemo(
-    () => itens.filter((i) => i.id !== kitForm.itemResultanteId),
-    [itens, kitForm.itemResultanteId],
+    () => itensAtivos.filter((i) => i.id !== kitForm.itemResultanteId),
+    [itensAtivos, kitForm.itemResultanteId],
   )
 
   const kitMontagemSelecionado = useMemo(
@@ -677,10 +700,11 @@ export function EstoquePage({
   )
 
   const resumo = useMemo(() => {
-    const totalSkus = itens.length
-    const criticos = itens.filter((item) => statusItem(item) === 'critico').length
-    const reposicao = itens.filter((item) => statusItem(item) === 'reposicao').length
-    const valorEstoque = itens.reduce((acc, item) => {
+    const ativos = itens.filter((item) => item.ativo)
+    const totalSkus = ativos.length
+    const criticos = ativos.filter((item) => statusItem(item) === 'critico').length
+    const reposicao = ativos.filter((item) => statusItem(item) === 'reposicao').length
+    const valorEstoque = ativos.reduce((acc, item) => {
       const custo = custoPorItemResultanteId.get(item.id) ?? Number(item.custo_medio) ?? 0
       return acc + custo * Number(item.saldo_atual)
     }, 0)
@@ -778,6 +802,7 @@ export function EstoquePage({
       precoAtacado: String(item.preco_atacado ?? 0),
       markupVarejo: markupPctFromCostAndPrice(custo, pv),
       markupAtacado: markupPctFromCostAndPrice(custo, pa),
+      ativo: item.ativo,
     })
     setModalItemOpen(true)
   }
@@ -797,19 +822,21 @@ export function EstoquePage({
 
   async function handleExcluirItem(item: EstoqueItemComLocal) {
     const ok = window.confirm(
-      `Excluir "${item.nome}" do estoque?\n\nO item será desativado e não aparecerá mais nas listagens.`,
+      `Excluir permanentemente "${item.nome}" (SKU ${item.sku})?\n\nEsta ação não pode ser desfeita. O cadastro e o histórico de movimentações serão removidos. Vendas e OS antigas podem manter a descrição, mas sem vínculo com este item.`,
     )
     if (!ok) return
-    setExcluindoItem(true)
+
+    setExcluindoItemId(item.id)
     setErro(null)
     try {
       await excluirItemEstoque(item.id)
       if (itemSelecionadoId === item.id) setItemSelecionadoId(null)
+      if (itemEditandoId === item.id) fecharModalItem()
       await carregarDados()
     } catch (err: unknown) {
       setErro(err instanceof Error ? err.message : 'Erro ao excluir item.')
     } finally {
-      setExcluindoItem(false)
+      setExcluindoItemId(null)
     }
   }
 
@@ -877,6 +904,20 @@ export function EstoquePage({
     setSalvandoItem(true)
     try {
       if (itemEditandoId) {
+        const duplicado = await buscarItemEstoqueDuplicado({
+          companyId,
+          storeId: activeStoreId,
+          nome,
+          skuFornecedor,
+          excluirItemId: itemEditandoId,
+        })
+        if (duplicado?.ativo) {
+          setFormError(
+            `Já existe um item ativo com o mesmo ${skuFornecedor ? 'SKU do fornecedor' : 'nome'} (SKU interno ${duplicado.sku}).`,
+          )
+          return
+        }
+
         await atualizarItemEstoque(itemEditandoId, {
           nome,
           categoria: itemForm.categoria,
@@ -891,29 +932,72 @@ export function EstoquePage({
           preco_atacado: precoAtacado,
           imagem_url: imagemUrl,
           descricao: descricao || null,
+          ativo: itemForm.ativo,
         })
       } else {
-        await criarItemEstoque({
-          company_id: companyId,
-          sku,
-          sku_fornecedor: skuFornecedor,
+        const duplicado = await buscarItemEstoqueDuplicado({
+          companyId,
+          storeId: activeStoreId,
           nome,
-          categoria: itemForm.categoria,
-          unidade: itemForm.unidade.trim() || 'un',
-          store_id: activeStoreId,
-          fornecedor_id: itemForm.fornecedorId || null,
-          local_id: itemForm.localId || null,
-          saldo_atual: quantidadeInicial,
-          estoque_minimo: estoqueMinimo,
-          custo_medio: custoMedio,
-          preco_varejo: precoVarejo,
-          preco_atacado: precoAtacado,
-          imagem_url: imagemUrl,
-          descricao: descricao || null,
+          skuFornecedor,
         })
+
+        if (duplicado?.ativo) {
+          setFormError(
+            `Já existe um item ativo com o mesmo ${skuFornecedor ? 'SKU do fornecedor' : 'nome'} (SKU interno ${duplicado.sku}). Edite o item existente.`,
+          )
+          return
+        }
+
+        if (duplicado && !duplicado.ativo) {
+          const reativar = window.confirm(
+            `Já existe um item inativo com o mesmo ${skuFornecedor ? 'SKU do fornecedor' : 'nome'} (SKU interno ${duplicado.sku}).\n\nDeseja reativar e atualizar esse registro em vez de criar um novo?`,
+          )
+          if (!reativar) return
+
+          await atualizarItemEstoque(duplicado.id, {
+            nome,
+            categoria: itemForm.categoria,
+            unidade: itemForm.unidade.trim() || 'un',
+            store_id: activeStoreId,
+            fornecedor_id: itemForm.fornecedorId || null,
+            local_id: itemForm.localId || null,
+            sku_fornecedor: skuFornecedor,
+            saldo_atual: quantidadeInicial,
+            estoque_minimo: estoqueMinimo,
+            custo_medio: custoMedio,
+            preco_varejo: precoVarejo,
+            preco_atacado: precoAtacado,
+            imagem_url: imagemUrl,
+            descricao: descricao || null,
+            ativo: true,
+          })
+        } else {
+          await criarItemEstoque({
+            company_id: companyId,
+            sku,
+            sku_fornecedor: skuFornecedor,
+            nome,
+            categoria: itemForm.categoria,
+            unidade: itemForm.unidade.trim() || 'un',
+            store_id: activeStoreId,
+            fornecedor_id: itemForm.fornecedorId || null,
+            local_id: itemForm.localId || null,
+            saldo_atual: quantidadeInicial,
+            estoque_minimo: estoqueMinimo,
+            custo_medio: custoMedio,
+            preco_varejo: precoVarejo,
+            preco_atacado: precoAtacado,
+            imagem_url: imagemUrl,
+            descricao: descricao || null,
+          })
+        }
       }
 
       await carregarDados()
+      if (itemEditandoId && !itemForm.ativo && itemSelecionadoId === itemEditandoId) {
+        setItemSelecionadoId(null)
+      }
       fecharModalItem()
       setItemForm(emptyItemForm())
     } catch (err: unknown) {
@@ -1314,7 +1398,7 @@ export function EstoquePage({
                 type="button"
                 className="st-primary-btn st-primary-btn--soft"
                 onClick={() => abrirMovimentacao('saida')}
-                disabled={itens.length === 0}
+                disabled={itensAtivos.length === 0}
               >
                 Movimentar
               </button>
@@ -1331,8 +1415,8 @@ export function EstoquePage({
                 type="button"
                 className="st-primary-btn st-primary-btn--soft"
                 onClick={abrirCadastroKit}
-                disabled={itens.length < 2}
-                title={itens.length < 2 ? 'Cadastre ao menos dois itens no estoque' : undefined}
+                disabled={itensAtivos.length < 2}
+                title={itensAtivos.length < 2 ? 'Cadastre ao menos dois itens ativos no estoque' : undefined}
               >
                 Novo kit
               </button>
@@ -1366,6 +1450,20 @@ export function EstoquePage({
                 autoComplete="off"
               />
             </label>
+
+            <div className="st-chips" role="group" aria-label="Filtrar por situação">
+              {ATIVO_FILTERS.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  className={filtroAtivo === item.key ? 'st-chip st-chip--on' : 'st-chip'}
+                  onClick={() => setFiltroAtivo(item.key)}
+                  aria-pressed={filtroAtivo === item.key}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
 
             <div className="st-chips" role="group" aria-label="Filtrar por categoria">
               {CATEGORIAS.map((item) => (
@@ -1438,12 +1536,17 @@ export function EstoquePage({
               <ul className="st-list">
                 {itensFiltrados.map((item) => {
                   const st = statusItem(item)
+                  const rowClass = [
+                    'st-row',
+                    itemSelecionadoId === item.id ? 'st-row--selected' : '',
+                    !item.ativo ? 'st-row--inativo' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')
                   return (
                     <li
                       key={item.id}
-                      className={
-                        itemSelecionadoId === item.id ? 'st-row st-row--selected' : 'st-row'
-                      }
+                      className={rowClass}
                       onClick={() => selecionarItem(item)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
@@ -1461,6 +1564,11 @@ export function EstoquePage({
                           <span className="st-row__sku">{item.sku}</span>
                         </div>
                         <div className="st-row__meta">
+                          <span
+                            className={item.ativo ? 'st-badge st-badge--ativo' : 'st-badge st-badge--inativo'}
+                          >
+                            {item.ativo ? 'Ativo' : 'Inativo'}
+                          </span>
                           {item.localCodigo && (
                             <span className="st-badge st-badge--local" title={item.localNome ?? undefined}>
                               {item.localCodigo}
@@ -1503,7 +1611,7 @@ export function EstoquePage({
                           className="st-row__action st-row__action--icon st-row__action--danger"
                           aria-label={`Excluir ${item.nome}`}
                           onClick={() => void handleExcluirItem(item)}
-                          disabled={excluindoItem}
+                          disabled={excluindoItemId === item.id}
                         >
                           <IconX />
                         </button>
@@ -1546,7 +1654,18 @@ export function EstoquePage({
                 </div>
                 <div className="st-item-detail__body">
                   <h3 className="st-item-detail__name">{itemSelecionado.nome}</h3>
-                  <p className="st-item-detail__sku">{itemSelecionado.sku}</p>
+                  <p className="st-item-detail__sku">
+                    {itemSelecionado.sku}
+                    <span
+                      className={
+                        itemSelecionado.ativo
+                          ? 'st-badge st-badge--ativo st-item-detail__status'
+                          : 'st-badge st-badge--inativo st-item-detail__status'
+                      }
+                    >
+                      {itemSelecionado.ativo ? 'Ativo' : 'Inativo'}
+                    </span>
+                  </p>
                   {itemSelecionado.descricao?.trim() && (
                     <p className="st-item-detail__desc">{itemSelecionado.descricao.trim()}</p>
                   )}
@@ -1590,7 +1709,7 @@ export function EstoquePage({
                       className="st-row__action st-row__action--icon st-row__action--danger"
                       aria-label={`Excluir ${itemSelecionado.nome}`}
                       onClick={() => void handleExcluirItem(itemSelecionado)}
-                      disabled={excluindoItem}
+                      disabled={excluindoItemId === itemSelecionado.id}
                     >
                       <IconX />
                     </button>
@@ -1698,7 +1817,7 @@ export function EstoquePage({
                 type="button"
                 className="st-link-btn"
                 onClick={abrirCadastroKit}
-                disabled={itens.length < 2}
+                disabled={itensAtivos.length < 2}
               >
                 Novo
               </button>
@@ -1894,9 +2013,34 @@ export function EstoquePage({
               <h2 id="st-item-title" className="st-modal__title">
                 {itemEditandoId ? 'Editar item de estoque' : 'Novo item de estoque'}
               </h2>
-              <button type="button" className="st-modal__close" onClick={fecharModalItem} aria-label="Fechar">
-                ×
-              </button>
+              <div className="st-modal__head-actions">
+                {itemEditandoId && (
+                  <label
+                    className="st-switch"
+                    title={
+                      itemForm.ativo
+                        ? 'Item ativo — aparece no PDV e oficina'
+                        : 'Item inativo — oculto nas operações'
+                    }
+                  >
+                    <input
+                      type="checkbox"
+                      checked={itemForm.ativo}
+                      onChange={(e) =>
+                        setItemForm((prev) => ({ ...prev, ativo: e.target.checked }))
+                      }
+                      aria-label={itemForm.ativo ? 'Item ativo' : 'Item inativo'}
+                    />
+                    <span className="st-switch__track" aria-hidden="true">
+                      <span className="st-switch__thumb" />
+                    </span>
+                    <span className="st-switch__label">{itemForm.ativo ? 'Ativo' : 'Inativo'}</span>
+                  </label>
+                )}
+                <button type="button" className="st-modal__close" onClick={fecharModalItem} aria-label="Fechar">
+                  ×
+                </button>
+              </div>
             </div>
             <form className="st-form st-form--modal-scroll" onSubmit={handleSalvarItem}>
               <div className="st-modal-tabs" role="tablist" aria-label="Seções do cadastro">
@@ -2319,7 +2463,7 @@ export function EstoquePage({
                 <label className="st-field">
                   <span>Item *</span>
                   <EstoqueItemPicker
-                    itens={itens}
+                    itens={itensAtivos}
                     value={movForm.itemId}
                     onChange={(itemId) => setMovForm((prev) => ({ ...prev, itemId }))}
                     placeholder="Buscar por nome ou SKU…"
@@ -2445,7 +2589,7 @@ export function EstoquePage({
                 <label className="st-field">
                   <span>Item resultante (entrada) *</span>
                   <EstoqueItemPicker
-                    itens={itens}
+                    itens={itensAtivos}
                     value={kitForm.itemResultanteId}
                     onChange={definirItemResultanteKit}
                     placeholder="Buscar produto montado (nome ou SKU)…"

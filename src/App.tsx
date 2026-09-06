@@ -12,6 +12,7 @@ import { LancamentosPage } from './pages/LancamentosPage'
 import { FinanceiroPage } from './pages/FinanceiroPage'
 import { RelatoriosPage } from './pages/RelatoriosPage'
 import { OrcamentosPage } from './pages/OrcamentosPage'
+import { contarCalendarioEventosHoje } from './services/calendario.service'
 import { contarContasPagarVencendoHoje } from './services/financeiro.service'
 import { contarOrcamentosAprovacaoNaoVista } from './services/orcamento.service'
 import { OrcamentoAprovacaoPage } from './pages/OrcamentoAprovacaoPage'
@@ -69,6 +70,7 @@ export default function App() {
   const [contasPagarVencemHoje, setContasPagarVencemHoje] = useState(0)
   const [pedidosAguardandoAviso, setPedidosAguardandoAviso] = useState(0)
   const [lembretesPosVendaPendentes, setLembretesPosVendaPendentes] = useState(0)
+  const [eventosAgendaHoje, setEventosAgendaHoje] = useState(0)
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -310,12 +312,26 @@ export default function App() {
     }
   }, [tenant?.companyId, activeStoreId])
 
+  const recarregarAgendaHoje = useCallback(async () => {
+    if (!tenant?.companyId || !activeStoreId) {
+      setEventosAgendaHoje(0)
+      return
+    }
+    try {
+      const total = await contarCalendarioEventosHoje(tenant.companyId, activeStoreId)
+      setEventosAgendaHoje(total)
+    } catch {
+      /* mantém último valor */
+    }
+  }, [tenant?.companyId, activeStoreId])
+
   useEffect(() => {
     void recarregarAprovacoesPendentes()
     void recarregarContasPagarVencendoHoje()
     void recarregarPedidosAguardandoAviso()
     void recarregarLembretesPosVenda()
-  }, [recarregarAprovacoesPendentes, recarregarContasPagarVencendoHoje, recarregarPedidosAguardandoAviso, recarregarLembretesPosVenda])
+    void recarregarAgendaHoje()
+  }, [recarregarAprovacoesPendentes, recarregarContasPagarVencendoHoje, recarregarPedidosAguardandoAviso, recarregarLembretesPosVenda, recarregarAgendaHoje])
 
   useEffect(() => {
     const atualizar = () => {
@@ -323,6 +339,7 @@ export default function App() {
       void recarregarContasPagarVencendoHoje()
       void recarregarPedidosAguardandoAviso()
       void recarregarLembretesPosVenda()
+      void recarregarAgendaHoje()
     }
     const intervalo = window.setInterval(atualizar, 45_000)
     window.addEventListener('focus', atualizar)
@@ -330,7 +347,7 @@ export default function App() {
       window.clearInterval(intervalo)
       window.removeEventListener('focus', atualizar)
     }
-  }, [recarregarAprovacoesPendentes, recarregarContasPagarVencendoHoje, recarregarPedidosAguardandoAviso, recarregarLembretesPosVenda])
+  }, [recarregarAprovacoesPendentes, recarregarContasPagarVencendoHoje, recarregarPedidosAguardandoAviso, recarregarLembretesPosVenda, recarregarAgendaHoje])
 
   if (publicManualToken) {
     return <ManualProprietarioPage token={publicManualToken} />
@@ -394,8 +411,9 @@ export default function App() {
         ...(contasPagarVencemHoje > 0 ? { financeiro: contasPagarVencemHoje } : {}),
         ...(pedidosAguardandoAviso > 0 ? { pedidos: pedidosAguardandoAviso } : {}),
         ...(lembretesPosVendaPendentes > 0 ? { clientes: lembretesPosVendaPendentes } : {}),
+        ...(eventosAgendaHoje > 0 ? { inicio: eventosAgendaHoje } : {}),
       }}
-      notificacoesCount={lembretesPosVendaPendentes}
+      notificacoesCount={lembretesPosVendaPendentes + eventosAgendaHoje}
       companyName={tenant.companyName}
       userEmail={session.user.email}
       onSignOut={handleSignOut}
@@ -404,6 +422,7 @@ export default function App() {
       onActiveStoreChange={handleActiveStoreChange}
       storesLoading={storesLoading}
       onNovaLojaClick={() => setModalNovaLojaOpen(true)}
+      onNotificacoesClick={() => setActiveNav('inicio')}
     >
       <NovaLojaModal
         open={modalNovaLojaOpen}
@@ -417,6 +436,7 @@ export default function App() {
           activeStoreId={activeStoreId}
           onNavigate={setActiveNav}
           lembretesPosVendaPendentes={lembretesPosVendaPendentes}
+          onAgendaBadgeChange={() => void recarregarAgendaHoje()}
         />
       )}
       {activeNav === 'clientes' && (

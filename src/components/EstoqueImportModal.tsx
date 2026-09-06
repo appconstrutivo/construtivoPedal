@@ -289,8 +289,14 @@ export function EstoqueImportModal({
           {resultado && (
             <div className="st-import-resultado" role="status">
               <p>
-                <strong>{resultado.criados}</strong> criado(s),                 <strong>{resultado.atualizados}</strong>{' '}
-                atualizado(s) (mesmo SKU do fornecedor ou nome, na loja e fornecedor selecionados).
+                <strong>{resultado.criados}</strong> criado(s), <strong>{resultado.atualizados}</strong>{' '}
+                atualizado(s)
+                {resultado.reativados > 0 ? (
+                  <>
+                    , <strong>{resultado.reativados}</strong> reativado(s)
+                  </>
+                ) : null}{' '}
+                (mesmo SKU do fornecedor ou nome, na loja e fornecedor selecionados).
               </p>
               {resultado.erros.length > 0 && (
                 <ul>

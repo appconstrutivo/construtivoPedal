@@ -58,7 +58,19 @@ export type OrcamentoItemRow = {
   descricao: string
   quantidade: number
   preco_unitario: number
+  sem_saldo?: boolean
   created_at: string
+}
+
+export const OBS_ITEM_ORCAMENTO_SEM_SALDO = 'Sem saldo no estoque'
+
+export function itemOrcamentoSemSaldo(item: { tipo?: string; sem_saldo?: boolean }): boolean {
+  return item.tipo === 'peca' && Boolean(item.sem_saldo)
+}
+
+/** Itens que entram na OS: serviços e peças com saldo. */
+export function itensOrcamentoParaOs(itens: OrcamentoItemRow[]): OrcamentoItemRow[] {
+  return itens.filter((i) => !itemOrcamentoSemSaldo(i))
 }
 
 export type OrcamentoLista = OrcamentoRow & {
@@ -390,10 +402,24 @@ export async function converterOrcamentoEmOs(params: {
   if (det.status === 'convertido') throw new Error('Orçamento já foi convertido.')
   if (det.itens.length === 0) throw new Error('Adicione itens ao orçamento.')
 
-  const temServico = det.itens.some((i) => i.tipo === 'servico')
-  if (!temServico && det.itens.every((i) => i.tipo === 'peca')) {
+  const itensOs = itensOrcamentoParaOs(det.itens)
+  const pecasOmitidas = det.itens.filter(itemOrcamentoSemSaldo)
+  if (itensOs.length === 0) {
+    throw new Error(
+      'Não há itens com saldo para incluir na OS. Peças sem estoque permanecem só no orçamento.',
+    )
+  }
+  if (!itensOs.some((i) => i.tipo === 'servico')) {
     throw new Error('Orçamento só com peças: use "Converter em venda (PDV)".')
   }
+
+  const notaOmitidos =
+    pecasOmitidas.length > 0
+      ? `Itens sem saldo (não incluídos na OS nem no valor): ${pecasOmitidas
+          .map((i) => i.descricao)
+          .join(', ')}.`
+      : ''
+  const diagnostico = [det.observacoes?.trim(), notaOmitidos].filter(Boolean).join('\n\n') || null
 
   const os = await criarOrdemServico({
     company_id: params.companyId,
@@ -402,11 +428,11 @@ export async function converterOrcamentoEmOs(params: {
     bicicleta_id: det.cliente_id ? det.bicicleta_id ?? null : null,
     status: 'aberta',
     problema_relatado: det.resumo || 'Serviço conforme orçamento',
-    diagnostico: det.observacoes,
+    diagnostico,
     opened_by: params.openedBy ?? null,
   })
 
-  for (const item of det.itens) {
+  for (const item of itensOs) {
     await adicionarOsItem({
       company_id: params.companyId,
       os_id: os.id,
@@ -433,7 +459,7 @@ export async function converterOrcamentoEmOs(params: {
 export function montarPrefillPdvDoOrcamento(
   det: OrcamentoDetalhe,
 ): { clienteId: string; bicicletaId: string; itens: PdvPrefillItem[]; desconto: number } | null {
-  const pecas = det.itens.filter((i) => i.tipo === 'peca' && i.estoque_item_id)
+  const pecas = det.itens.filter((i) => i.tipo === 'peca' && i.estoque_item_id && !itemOrcamentoSemSaldo(i))
   if (pecas.length === 0) return null
 
   return {
@@ -489,7 +515,13 @@ export async function converterOrcamentoEmPdvPrefill(
   if (det.status === 'convertido') throw new Error('Orçamento já foi convertido.')
 
   const prefill = montarPrefillPdvDoOrcamento(det)
-  if (!prefill) throw new Error('Não há peças de estoque neste orçamento.')
+  if (!prefill) {
+    throw new Error(
+      det.itens.some((i) => i.tipo === 'peca')
+        ? 'Não há peças com saldo neste orçamento para enviar ao PDV.'
+        : 'Não há peças de estoque neste orçamento.',
+    )
+  }
 
   salvarPrefillPdv({ ...prefill, orcamentoId })
 
@@ -524,6 +556,7 @@ export type OrcamentoPublico = {
     quantidade: number
     preco_unitario: number
     tipo: string
+    sem_saldo?: boolean
   }>
   erro?: string
 }
@@ -555,10 +588,10 @@ export async function responderOrcamentoPublico(
 
 export function montarTextoWhatsappOrcamento(det: OrcamentoDetalhe, companyName: string): string {
   const total = calcularTotalOrcamento(det.itens, det.desconto)
-  const linhas = det.itens.map(
-    (i) =>
-      `• ${i.descricao} — ${Number(i.quantidade)} x ${Number(i.preco_unitario).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`,
-  )
+  const linhas = det.itens.map((i) => {
+    const linha = `• ${i.descricao} — ${Number(i.quantidade)} x ${Number(i.preco_unitario).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
+    return itemOrcamentoSemSaldo(i) ? `${linha} _(sem saldo no estoque)_` : linha
+  })
   const validade =
     det.valido_ate &&
     new Intl.DateTimeFormat('pt-BR').format(new Date(`${det.valido_ate}T12:00:00`))

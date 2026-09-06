@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   calcularTotalOrcamento,
   carregarOrcamentoPublico,
+  itemOrcamentoSemSaldo,
   labelStatusOrcamento,
+  OBS_ITEM_ORCAMENTO_SEM_SALDO,
   responderOrcamentoPublico,
   type OrcamentoPublico,
   type StatusOrcamento,
@@ -115,6 +117,9 @@ export function OrcamentoAprovacaoPage({ token }: OrcamentoAprovacaoPageProps) {
                     <td>
                       {item.descricao}
                       <small>{item.tipo === 'servico' ? 'Serviço' : 'Peça'}</small>
+                      {itemOrcamentoSemSaldo(item) && (
+                        <small className="orc-pub__obs">{OBS_ITEM_ORCAMENTO_SEM_SALDO}</small>
+                      )}
                     </td>
                     <td>{item.quantidade}</td>
                     <td>{formatBRL(Number(item.quantidade) * Number(item.preco_unitario))}</td>
