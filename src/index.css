@@ -875,6 +875,15 @@ button {
   color: var(--cp-tone-rose);
 }
 
+.cp-kpi--finance {
+  border-left-color: var(--cp-tone-amber);
+}
+
+.cp-kpi--finance .cp-kpi__icon {
+  background: var(--cp-tone-amber-soft);
+  color: var(--cp-tone-amber);
+}
+
 .cp-live {
   list-style: none;
   margin: 0;
@@ -6332,7 +6341,8 @@ button {
 }
 
 .rl-kpi-grid--3,
-.rl-kpi-grid--4 {
+.rl-kpi-grid--4,
+.rl-kpi-grid--5 {
   grid-template-columns: 1fr;
 }
 
@@ -6592,6 +6602,10 @@ button {
 @media (min-width: 900px) {
   .rl-kpi-grid--4 {
     grid-template-columns: repeat(4, 1fr);
+  }
+
+  .rl-kpi-grid--5 {
+    grid-template-columns: repeat(5, 1fr);
   }
 
   .rl-kpi-grid--2 {
@@ -7079,6 +7093,47 @@ button {
 
 .fin-link-fluxo {
   margin-top: 12px;
+}
+
+.fin-caixa-actions {
+  margin-top: 12px;
+}
+
+.fin-tab-intro {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border-radius: var(--cp-radius-md);
+  border: 1px solid var(--cp-border);
+  background: color-mix(in srgb, var(--cp-surface) 88%, var(--cp-bg));
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--cp-text-soft);
+}
+
+.rl-cross-link {
+  margin: 16px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--cp-border);
+}
+
+.rl-cross-link__btn {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--cp-accent);
+  cursor: pointer;
+  text-align: left;
+}
+
+.rl-cross-link__btn:hover {
+  text-decoration: underline;
+}
+
+.rl-period--disabled {
+  opacity: 0.45;
 }
 
 .fin-fluxo-head {

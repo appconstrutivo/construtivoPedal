@@ -4,6 +4,7 @@ import { AgendaPanel } from '../components/AgendaPanel'
 import { listarOrdensServico, contarOsAbertas } from '../services/oficina.service'
 import { obterResumoEstoqueLoja } from '../services/estoque.service'
 import { listarVendasRecentes, obterResumoVendasHoje } from '../services/pdv.service'
+import { obterResumoContasPagar } from '../services/financeiro.service'
 
 type DashboardHomeProps = {
   activeNav: NavKey
@@ -103,6 +104,20 @@ function IconStock({ className }: { className?: string }) {
   )
 }
 
+function IconWallet({ className }: { className?: string }) {
+  return (
+    <svg className={className} aria-hidden width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <path
+        d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"
+        stroke="currentColor"
+        strokeWidth={1.75}
+        strokeLinejoin="round"
+      />
+      <path d="M17 12h4" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" />
+    </svg>
+  )
+}
+
 function formatBRL(v: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
 }
@@ -131,6 +146,11 @@ export function DashboardHome({
   const [ultimasOs, setUltimasOs] = useState<Array<{ id: string; numero: number; clienteNome: string }>>([])
   const [estoqueCritico, setEstoqueCritico] = useState<number | null>(null)
   const [vendasHoje, setVendasHoje] = useState<{ quantidade: number; total: number } | null>(null)
+  const [resumoPagar, setResumoPagar] = useState<{
+    pendentes: number
+    vencidas: number
+    totalPendente: number
+  } | null>(null)
   const [ultimaVendaTexto, setUltimaVendaTexto] = useState<string | null>(null)
   const [semLoja, setSemLoja] = useState(false)
 
@@ -142,6 +162,7 @@ export function DashboardHome({
       setUltimasOs([])
       setEstoqueCritico(0)
       setVendasHoje({ quantidade: 0, total: 0 })
+      setResumoPagar({ pendentes: 0, vencidas: 0, totalPendente: 0 })
       setUltimaVendaTexto(null)
       return
     }
@@ -149,17 +170,19 @@ export function DashboardHome({
     let cancel = false
     void (async () => {
       try {
-        const [n, lista, resumo, vendasResumo, vendasRecentes] = await Promise.all([
+        const [n, lista, resumo, vendasResumo, vendasRecentes, pagar] = await Promise.all([
           contarOsAbertas(companyId, activeStoreId),
           listarOrdensServico(companyId, activeStoreId),
           obterResumoEstoqueLoja(companyId, activeStoreId),
           obterResumoVendasHoje(companyId, activeStoreId),
           listarVendasRecentes(companyId, activeStoreId, 1),
+          obterResumoContasPagar(companyId, activeStoreId),
         ])
         if (cancel) return
         setOsAbertasCount(n)
         setEstoqueCritico(resumo.criticos)
         setVendasHoje(vendasResumo)
+        setResumoPagar(pagar)
         setUltimasOs(
           lista.slice(0, 3).map((r) => ({ id: r.id, numero: r.numero, clienteNome: r.clienteNome })),
         )
@@ -175,6 +198,7 @@ export function DashboardHome({
           setUltimasOs([])
           setEstoqueCritico(null)
           setVendasHoje(null)
+          setResumoPagar(null)
           setUltimaVendaTexto(null)
         }
       }
@@ -188,13 +212,13 @@ export function DashboardHome({
       oficina: { title: 'Oficina', hint: 'OS, fotos e baixa de peças — em breve.' },
       pdv: { title: 'PDV', hint: 'Balcão rápido com vínculo à bike.' },
       orcamentos: { title: 'Orçamentos', hint: 'Propostas comerciais para peças e serviços.' },
-      financeiro: { title: 'Financeiro', hint: 'Fluxo de caixa, contas e gestão da empresa.' },
+      financeiro: { title: 'Financeiro', hint: 'Caixa, pagar e receber.' },
       lancamentos: { title: 'Lançamentos', hint: '2ª via, ajuste de data e cancelamento de vendas.' },
       estoque: { title: 'Estoque', hint: 'Peças, bikes e movimentações por loja.' },
       pedidos: { title: 'Pedidos de peças', hint: 'Lista de encomendas e pedidos de clientes no balcão.' },
       clientes: { title: 'Clientes', hint: 'CRM, bikes e revisões num só lugar.' },
       fornecedores: { title: 'Fornecedores', hint: 'Cadastro único para compras, estoque e contas a pagar.' },
-      relatorios: { title: 'Relatórios', hint: 'Vendas, oficina, estoque e clientes por loja.' },
+      relatorios: { title: 'Relatórios', hint: 'Vendas, oficina, estoque e performance por loja.' },
       mais: { title: 'Mais', hint: 'Equipe, plano e preferências da empresa.' },
     }
     const cfg = titles[activeNav]
@@ -286,18 +310,36 @@ export function DashboardHome({
               </span>
             </div>
           </li>
-          <li className="cp-kpi cp-kpi--sale" title="Total registrado no PDV">
+          <li
+            className="cp-kpi cp-kpi--sale cp-kpi--clickable"
+            title="Faturamento registrado no PDV hoje"
+            onClick={() => onNavigate('relatorios')}
+            onKeyDown={(e) => e.key === 'Enter' && onNavigate('relatorios')}
+            role="button"
+            tabIndex={0}
+          >
             <span className="cp-kpi__icon" aria-hidden>
               <IconTrend />
             </span>
             <div className="cp-kpi__body">
-              <span className="cp-kpi__label">Vendas</span>
+              <span className="cp-kpi__label">Vendas hoje</span>
               <span className="cp-kpi__value">
-                {semLoja ? '—' : vendasHoje === null ? '—' : String(vendasHoje.quantidade)}
+                {semLoja
+                  ? '—'
+                  : vendasHoje === null
+                    ? '—'
+                    : formatBRL(vendasHoje.total)}
               </span>
             </div>
           </li>
-          <li className="cp-kpi cp-kpi--stock" title="Itens abaixo do estoque mínimo">
+          <li
+            className="cp-kpi cp-kpi--stock cp-kpi--clickable"
+            title="Itens abaixo do estoque mínimo"
+            onClick={() => onNavigate('estoque')}
+            onKeyDown={(e) => e.key === 'Enter' && onNavigate('estoque')}
+            role="button"
+            tabIndex={0}
+          >
             <span className="cp-kpi__icon" aria-hidden>
               <IconStock />
             </span>
@@ -305,6 +347,30 @@ export function DashboardHome({
               <span className="cp-kpi__label">Crítico</span>
               <span className="cp-kpi__value">
                 {semLoja ? '—' : estoqueCritico === null ? '—' : String(estoqueCritico)}
+              </span>
+            </div>
+          </li>
+          <li
+            className="cp-kpi cp-kpi--finance cp-kpi--clickable"
+            title="Contas a pagar pendentes ou vencidas"
+            onClick={() => onNavigate('financeiro')}
+            onKeyDown={(e) => e.key === 'Enter' && onNavigate('financeiro')}
+            role="button"
+            tabIndex={0}
+          >
+            <span className="cp-kpi__icon" aria-hidden>
+              <IconWallet />
+            </span>
+            <div className="cp-kpi__body">
+              <span className="cp-kpi__label">A pagar</span>
+              <span className="cp-kpi__value">
+                {semLoja
+                  ? '—'
+                  : resumoPagar === null
+                    ? '—'
+                    : resumoPagar.vencidas > 0
+                      ? `${resumoPagar.vencidas} venc.`
+                      : String(resumoPagar.pendentes)}
               </span>
             </div>
           </li>

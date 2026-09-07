@@ -84,6 +84,7 @@ export type ResumoContasReceber = {
   pendentes: number
   vencidas: number
   recebidasMes: number
+  recebidasMesOs: number
   totalPendente: number
   recebidoMesOs: number
 }
@@ -864,14 +865,15 @@ export async function obterResumoContasReceber(
     return new Date(`${c.data_recebimento}T12:00:00`) >= inicioMes
   })
 
-  const recebidoMesOs = recebidasMes
-    .filter((c) => c.os_id)
-    .reduce((acc, c) => acc + c.valor, 0)
+  const recebidasMesOs = recebidasMes.filter((c) => c.os_id)
+
+  const recebidoMesOs = recebidasMesOs.reduce((acc, c) => acc + c.valor, 0)
 
   return {
     pendentes: pendentes.length,
     vencidas: vencidas.length,
     recebidasMes: recebidasMes.length,
+    recebidasMesOs: recebidasMesOs.length,
     totalPendente: pendentes.reduce((acc, c) => acc + c.valor, 0),
     recebidoMesOs,
   }

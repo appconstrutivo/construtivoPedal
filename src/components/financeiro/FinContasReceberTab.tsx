@@ -23,7 +23,7 @@ type FinContasReceberTabProps = {
 }
 
 const FILTROS: { key: FiltroContaReceber; label: string }[] = [
-  { key: 'pendentes', label: 'A receber' },
+  { key: 'pendentes', label: 'Pendentes' },
   { key: 'vencidas', label: 'Vencidas' },
   { key: 'recebidas', label: 'Recebidas' },
   { key: 'canceladas', label: 'Canceladas' },
@@ -160,21 +160,28 @@ export function FinContasReceberTab({ companyId, storeId }: FinContasReceberTabP
 
   return (
     <div className="fin-tab">
+      <p className="fin-tab-intro">
+        <strong>Pendentes</strong> são cobranças em aberto. <strong>Recebidas</strong> é o histórico de
+        pagamentos já quitados — não entram no saldo pendente.
+      </p>
       {resumo ? (
         <div className="rl-kpi-grid rl-kpi-grid--4 fin-kpi-row">
           <article className="rl-kpi rl-kpi--amber">
-            <span className="rl-kpi__label">A receber</span>
+            <span className="rl-kpi__label">Pendente</span>
             <span className="rl-kpi__value">{formatBRL(resumo.totalPendente)}</span>
-            <span className="rl-kpi__hint">{resumo.pendentes} título(s)</span>
+            <span className="rl-kpi__hint">{resumo.pendentes} cobrança(s) em aberto</span>
           </article>
           <article className="rl-kpi rl-kpi--rose">
             <span className="rl-kpi__label">Vencidas</span>
             <span className="rl-kpi__value">{resumo.vencidas}</span>
+            <span className="rl-kpi__hint">Pendentes com vencimento ultrapassado</span>
           </article>
           <article className="rl-kpi rl-kpi--teal">
             <span className="rl-kpi__label">Recebido no mês (OS)</span>
             <span className="rl-kpi__value">{formatBRL(resumo.recebidoMesOs)}</span>
-            <span className="rl-kpi__hint">{resumo.recebidasMes} recebimento(s)</span>
+            <span className="rl-kpi__hint">
+              {resumo.recebidasMesOs} OS recebida(s) no mês · histórico
+            </span>
           </article>
         </div>
       ) : null}

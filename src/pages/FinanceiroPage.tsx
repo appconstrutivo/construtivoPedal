@@ -5,6 +5,7 @@ import { FinContasReceberTab } from '../components/financeiro/FinContasReceberTa
 import { obterResumoVendasHoje } from '../services/pdv.service'
 import {
   labelOrigemMovimentacao,
+  listarContasFinanceiras,
   obterResumoContasPagar,
   obterResumoContasReceber,
   obterResumoFluxoCaixa,
@@ -26,9 +27,10 @@ type FinanceiroPageProps = {
   /** Atualiza badge do menu quando contas a pagar mudam (pagar, criar, cancelar). */
   onContasPagarChange?: () => void
   onNavigateFornecedores?: () => void
+  onNavigateRelatorios?: () => void
 }
 
-type AbaFinanceiro = 'visao' | 'fluxo' | 'receber' | 'pagar' | 'contas'
+type AbaFinanceiro = 'caixa' | 'receber' | 'pagar' | 'contas' | 'extrato'
 
 const PERIODOS: { key: PeriodoRelatorio | 'custom'; label: string }[] = [
   { key: 'hoje', label: 'Hoje' },
@@ -45,11 +47,11 @@ function hojeIsoLocal(): string {
 }
 
 const ABAS: { key: AbaFinanceiro; label: string }[] = [
-  { key: 'visao', label: 'Visão geral' },
-  { key: 'fluxo', label: 'Fluxo de caixa' },
+  { key: 'caixa', label: 'Caixa' },
   { key: 'receber', label: 'A receber' },
   { key: 'pagar', label: 'A pagar' },
-  { key: 'contas', label: 'Caixas e contas' },
+  { key: 'contas', label: 'Contas' },
+  { key: 'extrato', label: 'Extrato' },
 ]
 
 function formatBRL(v: number) {
@@ -76,23 +78,6 @@ function KpiCard({
   )
 }
 
-function BarraProporcional({
-  valor,
-  max,
-  tom,
-}: {
-  valor: number
-  max: number
-  tom: 'teal' | 'blue' | 'violet' | 'amber'
-}) {
-  const pct = max > 0 ? Math.min(100, Math.round((valor / max) * 100)) : 0
-  return (
-    <div className="rl-bar" aria-hidden>
-      <div className={`rl-bar__fill rl-bar__fill--${tom}`} style={{ width: `${pct}%` }} />
-    </div>
-  )
-}
-
 function formatShortDateTime(iso: string) {
   return new Intl.DateTimeFormat('pt-BR', {
     day: '2-digit',
@@ -102,57 +87,75 @@ function formatShortDateTime(iso: string) {
   }).format(new Date(iso))
 }
 
-function AbaVisaoGeral({
+function LinkModulo({
+  texto,
+  onClick,
+}: {
+  texto: string
+  onClick?: () => void
+}) {
+  if (!onClick) return null
+  return (
+    <p className="rl-cross-link">
+      <button type="button" className="rl-cross-link__btn" onClick={onClick}>
+        {texto}
+      </button>
+    </p>
+  )
+}
+
+function AbaCaixa({
   vendasHoje,
-  dados,
+  saldoContas,
+  fluxoHoje,
   resumoPagar,
   resumoReceber,
-  fluxo,
-  onIrFluxo,
+  onIrReceber,
+  onIrPagar,
+  onIrContas,
+  onIrExtrato,
+  onNavigateRelatorios,
 }: {
   vendasHoje: { quantidade: number; total: number } | null
-  dados: RelatorioConsolidado & { intervalo: { label: string } }
+  saldoContas: number | null
+  fluxoHoje: ResumoFluxoCaixa | null
   resumoPagar: { pendentes: number; vencidas: number; totalPendente: number } | null
   resumoReceber: { pendentes: number; totalPendente: number; recebidoMesOs: number } | null
-  fluxo: ResumoFluxoCaixa | null
-  onIrFluxo: () => void
+  onIrReceber: () => void
+  onIrPagar: () => void
+  onIrContas: () => void
+  onIrExtrato: () => void
+  onNavigateRelatorios?: () => void
 }) {
-  const { vendas } = dados
-  const saldo =
-    fluxo != null ? vendas.faturamento - fluxo.totalSaidas : null
+  const entradasHoje = vendasHoje?.total ?? 0
+  const saidasHoje = fluxoHoje?.totalSaidas ?? 0
 
   return (
     <>
       <div className="rl-kpi-grid">
         <KpiCard
-          tom="teal"
-          label="Entradas hoje (PDV)"
-          value={vendasHoje ? formatBRL(vendasHoje.total) : '—'}
-          hint={vendasHoje ? `${vendasHoje.quantidade} vendas finalizadas` : undefined}
+          tom="slate"
+          label="Saldo atual"
+          value={saldoContas != null ? formatBRL(saldoContas) : '—'}
+          hint="Soma das contas ativas da loja"
         />
         <KpiCard
-          tom="blue"
-          label={`Faturamento · ${dados.intervalo.label}`}
-          value={formatBRL(vendas.faturamento)}
-          hint={`${vendas.quantidade} vendas no período`}
+          tom="teal"
+          label="Vendas hoje (PDV)"
+          value={vendasHoje ? formatBRL(entradasHoje) : '—'}
+          hint={vendasHoje ? `${vendasHoje.quantidade} venda(s) finalizadas` : undefined}
         />
         <KpiCard
           tom="rose"
-          label={`Saídas · ${dados.intervalo.label}`}
-          value={fluxo ? formatBRL(fluxo.totalSaidas) : '—'}
+          label="Saídas hoje"
+          value={fluxoHoje ? formatBRL(saidasHoje) : '—'}
           hint={
-            fluxo
-              ? fluxo.quantidadeSaidas > 0
-                ? `${fluxo.quantidadeSaidas} lançamento(s)`
-                : 'Nenhuma saída no período'
+            fluxoHoje
+              ? fluxoHoje.quantidadeSaidas > 0
+                ? `${fluxoHoje.quantidadeSaidas} lançamento(s)`
+                : 'Nenhuma saída hoje'
               : undefined
           }
-        />
-        <KpiCard
-          tom="slate"
-          label="Saldo do período"
-          value={saldo != null ? formatBRL(saldo) : '—'}
-          hint="Faturamento PDV − saídas do caixa"
         />
         <KpiCard
           tom="amber"
@@ -165,12 +168,12 @@ function AbaVisaoGeral({
           }
         />
         <KpiCard
-          tom="teal"
+          tom="blue"
           label="A receber (pendente)"
           value={resumoReceber ? formatBRL(resumoReceber.totalPendente) : '—'}
           hint={
             resumoReceber
-              ? `${resumoReceber.pendentes} título(s) · ${formatBRL(resumoReceber.recebidoMesOs)} OS no mês`
+              ? `${resumoReceber.pendentes} título(s) em aberto`
               : undefined
           }
         />
@@ -178,65 +181,74 @@ function AbaVisaoGeral({
 
       <div className="rl-split">
         <section className="rl-card">
-          <h2 className="rl-sec__title">Entradas por forma de pagamento</h2>
-          {vendas.quantidade === 0 ? (
-            <p className="rl-empty">Nenhuma venda no período selecionado.</p>
-          ) : (
-            <ul className="rl-ranked">
-              {vendas.porFormaPagamento
-                .filter((f) => f.total > 0)
-                .map((f) => (
-                  <li key={f.forma} className="rl-ranked__row">
-                    <div className="rl-ranked__head">
-                      <span>{f.label}</span>
-                      <span>{formatBRL(f.total)}</span>
-                    </div>
-                    <BarraProporcional valor={f.total} max={vendas.faturamento} tom="teal" />
-                  </li>
-                ))}
-            </ul>
-          )}
+          <h2 className="rl-sec__title">Pendências</h2>
+          <ul className="rl-metrics">
+            <li>
+              <span>Contas a pagar</span>
+              <strong>
+                {resumoPagar
+                  ? `${resumoPagar.pendentes}${resumoPagar.vencidas > 0 ? ` (${resumoPagar.vencidas} vencida(s))` : ''}`
+                  : '—'}
+              </strong>
+            </li>
+            <li>
+              <span>Títulos a receber</span>
+              <strong>{resumoReceber ? resumoReceber.pendentes : '—'}</strong>
+            </li>
+            <li>
+              <span>Saldo do dia</span>
+              <strong>{formatBRL(entradasHoje - saidasHoje)}</strong>
+            </li>
+          </ul>
+          <div className="fin-fluxo-actions fin-caixa-actions">
+            <button type="button" className="cp-btn cp-btn--ghost" onClick={onIrPagar}>
+              Ir para A pagar
+            </button>
+            <button type="button" className="cp-btn cp-btn--ghost" onClick={onIrReceber}>
+              Ir para A receber
+            </button>
+          </div>
         </section>
 
         <section className="rl-card">
-          <h2 className="rl-sec__title">Controle do caixa</h2>
-          <ul className="fin-roadmap">
-            <li>
-              <strong>Fluxo de caixa</strong>
-              <span>Compare entradas do PDV com saídas lançadas no período.</span>
-            </li>
-            <li>
-              <strong>A pagar</strong>
-              <span>Despesas de fornecedores, fixas e impostos — pagamentos geram saída.</span>
-            </li>
-            <li>
-              <strong>Caixas e contas</strong>
-              <span>Saídas avulsas e saldo por conta (caixa, banco, PIX).</span>
-            </li>
-          </ul>
+          <h2 className="rl-sec__title">Ações rápidas</h2>
           <p className="rl-card__hint">
-            Vendas do PDV entram no caixa automaticamente. Lance despesas em A pagar ou saídas
-            avulsas em Caixas.
+            Vendas do PDV entram no caixa automaticamente. Lance despesas em A pagar ou saídas avulsas
+            em Contas.
           </p>
-          <button type="button" className="cp-btn cp-btn--ghost fin-link-fluxo" onClick={onIrFluxo}>
-            Ver fluxo de caixa
-          </button>
+          <div className="fin-fluxo-actions fin-caixa-actions">
+            <button type="button" className="cp-btn cp-btn--primary" onClick={onIrContas}>
+              Lançar saída
+            </button>
+            <button type="button" className="cp-btn cp-btn--ghost" onClick={onIrExtrato}>
+              Ver extrato
+            </button>
+          </div>
         </section>
       </div>
+
+      <LinkModulo
+        texto="Faturamento do período e análise de vendas → Ver em Relatórios"
+        onClick={onNavigateRelatorios}
+      />
     </>
   )
 }
 
-function AbaFluxo({
+function AbaExtrato({
   dados,
   fluxo,
+  intervaloLabel,
   onIrCaixas,
   onIrPagar,
+  onNavigateRelatorios,
 }: {
   dados: RelatorioConsolidado
   fluxo: ResumoFluxoCaixa | null
+  intervaloLabel: string
   onIrCaixas: () => void
   onIrPagar: () => void
+  onNavigateRelatorios?: () => void
 }) {
   const { vendas } = dados
   const totalSaidas = fluxo?.totalSaidas ?? 0
@@ -247,13 +259,13 @@ function AbaFluxo({
       <div className="rl-kpi-grid rl-kpi-grid--3">
         <KpiCard
           tom="teal"
-          label="Entradas (PDV)"
+          label={`Vendas no período (PDV) · ${intervaloLabel}`}
           value={formatBRL(vendas.faturamento)}
-          hint={`${vendas.quantidade} venda(s) no período`}
+          hint={`${vendas.quantidade} venda(s) · balcão + oficina`}
         />
         <KpiCard
           tom="rose"
-          label="Saídas"
+          label={`Saídas · ${intervaloLabel}`}
           value={fluxo ? formatBRL(totalSaidas) : '—'}
           hint={
             fluxo
@@ -267,34 +279,16 @@ function AbaFluxo({
           tom="slate"
           label="Saldo do período"
           value={fluxo ? formatBRL(saldo) : '—'}
-          hint="Entradas PDV − saídas do caixa"
+          hint="Vendas PDV − saídas do caixa"
         />
       </div>
 
       <section className="rl-card">
-        <h2 className="rl-sec__title">Movimentações automáticas · PDV</h2>
-        {vendas.quantidade === 0 ? (
-          <p className="rl-empty">Sem vendas no período.</p>
-        ) : (
-          <ul className="rl-metrics">
-            {vendas.porFormaPagamento
-              .filter((f) => f.total > 0)
-              .map((f) => (
-                <li key={f.forma}>
-                  <span>{f.label}</span>
-                  <strong className="fin-valor--entrada">+ {formatBRL(f.total)}</strong>
-                </li>
-              ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="rl-card">
         <div className="fin-fluxo-head">
           <div>
-            <h2 className="rl-sec__title">Despesas e saídas</h2>
+            <h2 className="rl-sec__title">Movimentações de saída</h2>
             <p className="rl-card__hint fin-fluxo-head__hint">
-              Pagamentos de contas e lançamentos manuais no caixa da loja.
+              Pagamentos de contas e lançamentos manuais no período selecionado.
             </p>
           </div>
           <div className="fin-fluxo-actions">
@@ -324,7 +318,7 @@ function AbaFluxo({
         {!fluxo || fluxo.saidas.length === 0 ? (
           <p className="rl-empty">
             Nenhuma saída no período. Use <strong>A pagar</strong> para despesas ou{' '}
-            <strong>Caixas e contas</strong> para saídas avulsas.
+            <strong>Contas</strong> para saídas avulsas.
           </p>
         ) : (
           <ul className="fin-fluxo-saidas">
@@ -345,6 +339,11 @@ function AbaFluxo({
           </ul>
         )}
       </section>
+
+      <LinkModulo
+        texto="Faturamento detalhado, ticket médio e mix de pagamento → Ver em Relatórios"
+        onClick={onNavigateRelatorios}
+      />
     </>
   )
 }
@@ -355,15 +354,17 @@ export function FinanceiroPage({
   storeName,
   onContasPagarChange,
   onNavigateFornecedores,
+  onNavigateRelatorios,
 }: FinanceiroPageProps) {
-  const [aba, setAba] = useState<AbaFinanceiro>('visao')
+  const [aba, setAba] = useState<AbaFinanceiro>('caixa')
   const [periodo, setPeriodo] = useState<PeriodoRelatorio | 'custom'>('mes')
   const [dataInicio, setDataInicio] = useState(hojeIsoLocal)
   const [dataFim, setDataFim] = useState(hojeIsoLocal)
-  const [dados, setDados] = useState<(RelatorioConsolidado & { intervalo: { label: string } }) | null>(
-    null,
-  )
+  const [dadosExtrato, setDadosExtrato] = useState<
+    (RelatorioConsolidado & { intervalo: { label: string } }) | null
+  >(null)
   const [vendasHoje, setVendasHoje] = useState<{ quantidade: number; total: number } | null>(null)
+  const [saldoContas, setSaldoContas] = useState<number | null>(null)
   const [resumoPagar, setResumoPagar] = useState<{
     pendentes: number
     vencidas: number
@@ -374,74 +375,105 @@ export function FinanceiroPage({
     totalPendente: number
     recebidoMesOs: number
   } | null>(null)
-  const [fluxo, setFluxo] = useState<ResumoFluxoCaixa | null>(null)
+  const [fluxoHoje, setFluxoHoje] = useState<ResumoFluxoCaixa | null>(null)
+  const [fluxoExtrato, setFluxoExtrato] = useState<ResumoFluxoCaixa | null>(null)
   const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
 
   const semLoja = !activeStoreId
-  const periodoDesabilitado = aba === 'receber' || aba === 'pagar' || aba === 'contas'
+  const periodoDesabilitado = aba !== 'extrato'
+  const precisaDadosDashboard = aba === 'caixa' || aba === 'extrato'
 
   const intervalo = useMemo((): IntervaloRelatorio | null => {
     if (periodo === 'custom') return tentarIntervaloPersonalizado(dataInicio, dataFim)
     return intervaloPeriodo(periodo)
   }, [periodo, dataInicio, dataFim])
 
+  const carregarCaixa = useCallback(async () => {
+    const hojeInterval = intervaloPeriodo('hoje')
+    const [hoje, resumo, resumoRec, fluxo, contas] = await Promise.all([
+      obterResumoVendasHoje(companyId, activeStoreId),
+      obterResumoContasPagar(companyId, activeStoreId),
+      obterResumoContasReceber(companyId, activeStoreId),
+      obterResumoFluxoCaixa(companyId, activeStoreId, hojeInterval.desde, hojeInterval.ate),
+      listarContasFinanceiras(companyId, activeStoreId),
+    ])
+    setVendasHoje(hoje)
+    setResumoPagar(resumo)
+    setResumoReceber(resumoRec)
+    setFluxoHoje(fluxo)
+    setSaldoContas(contas.reduce((acc, c) => acc + c.saldo_atual, 0))
+  }, [companyId, activeStoreId])
+
+  const carregarExtrato = useCallback(async () => {
+    if (!intervalo) return
+    const [relatorio, resumoFluxo] = await Promise.all([
+      obterRelatorioConsolidado(companyId, activeStoreId, intervalo),
+      obterResumoFluxoCaixa(companyId, activeStoreId, intervalo.desde, intervalo.ate),
+    ])
+    setDadosExtrato(relatorio)
+    setFluxoExtrato(resumoFluxo)
+  }, [companyId, activeStoreId, intervalo])
+
   const carregar = useCallback(async () => {
     if (!activeStoreId) {
-      setDados(null)
+      setDadosExtrato(null)
       setVendasHoje(null)
+      setSaldoContas(null)
       setResumoPagar(null)
       setResumoReceber(null)
-      setFluxo(null)
+      setFluxoHoje(null)
+      setFluxoExtrato(null)
       setLoading(false)
       return
     }
-    if (periodo === 'custom' && !intervalo) {
-      setErro(null)
-      setDados(null)
-      setFluxo(null)
-      setLoading(false)
-      return
+    if (aba === 'extrato') {
+      if (periodo === 'custom' && !intervalo) {
+        setErro(null)
+        setDadosExtrato(null)
+        setFluxoExtrato(null)
+        setLoading(false)
+        return
+      }
+      if (periodo === 'custom' && dataInicio > dataFim) {
+        setErro('A data inicial não pode ser posterior à data final.')
+        setDadosExtrato(null)
+        setFluxoExtrato(null)
+        setLoading(false)
+        return
+      }
+      if (!intervalo) return
     }
-    if (periodo === 'custom' && dataInicio > dataFim) {
-      setErro('A data inicial não pode ser posterior à data final.')
-      setDados(null)
-      setFluxo(null)
-      setLoading(false)
-      return
-    }
-    if (!intervalo) return
 
     setLoading(true)
     setErro(null)
     try {
-      const [relatorio, hoje, resumo, resumoRec, resumoFluxo] = await Promise.all([
-        obterRelatorioConsolidado(companyId, activeStoreId, intervalo),
-        obterResumoVendasHoje(companyId, activeStoreId),
-        obterResumoContasPagar(companyId, activeStoreId),
-        obterResumoContasReceber(companyId, activeStoreId),
-        obterResumoFluxoCaixa(companyId, activeStoreId, intervalo.desde, intervalo.ate),
-      ])
-      setDados(relatorio)
-      setVendasHoje(hoje)
-      setResumoPagar(resumo)
-      setResumoReceber(resumoRec)
-      setFluxo(resumoFluxo)
+      if (aba === 'caixa') {
+        await carregarCaixa()
+      } else if (aba === 'extrato') {
+        await carregarExtrato()
+      }
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao carregar dados financeiros.')
-      setDados(null)
-      setVendasHoje(null)
-      setResumoPagar(null)
-      setResumoReceber(null)
-      setFluxo(null)
+      if (aba === 'caixa') {
+        setVendasHoje(null)
+        setSaldoContas(null)
+        setResumoPagar(null)
+        setResumoReceber(null)
+        setFluxoHoje(null)
+      } else if (aba === 'extrato') {
+        setDadosExtrato(null)
+        setFluxoExtrato(null)
+      }
     } finally {
       setLoading(false)
     }
-  }, [companyId, activeStoreId, intervalo, periodo, dataInicio, dataFim])
+  }, [activeStoreId, aba, periodo, dataInicio, dataFim, intervalo, carregarCaixa, carregarExtrato])
 
   useEffect(() => {
+    if (!precisaDadosDashboard) return
     void carregar()
-  }, [carregar])
+  }, [carregar, precisaDadosDashboard])
 
   const abaAnteriorRef = useRef(aba)
   useEffect(() => {
@@ -449,34 +481,44 @@ export function FinanceiroPage({
     abaAnteriorRef.current = aba
     const veioDeOperacional =
       anterior === 'receber' || anterior === 'pagar' || anterior === 'contas'
-    if (veioDeOperacional && (aba === 'visao' || aba === 'fluxo')) {
-      void carregar()
+    if (veioDeOperacional && aba === 'caixa') {
+      void carregarCaixa()
     }
-  }, [aba, carregar])
+  }, [aba, carregarCaixa])
+
+  const subtitulo = semLoja
+    ? 'Selecione uma loja no topo da tela.'
+    : aba === 'caixa'
+      ? `${storeName ?? 'Loja ativa'} · Caixa e pendências do dia`
+      : aba === 'extrato'
+        ? `${storeName ?? 'Loja ativa'} · ${intervalo?.label ?? 'período personalizado'}`
+        : `${storeName ?? 'Loja ativa'} · Operação financeira`
 
   return (
     <div className="cp-page fin-page">
       <header className="rl-head">
         <div>
           <h1 className="rl-head__title">Financeiro</h1>
-          <p className="rl-head__sub">
-            {semLoja
-              ? 'Selecione uma loja no topo da tela.'
-              : `${storeName ?? 'Loja ativa'} · ${intervalo?.label ?? 'período personalizado'}`}
-          </p>
+          <p className="rl-head__sub">{subtitulo}</p>
         </div>
-        <button
-          type="button"
-          className="cp-btn cp-btn--ghost"
-          onClick={() => void carregar()}
-          disabled={loading || semLoja}
-        >
-          {loading ? 'Atualizando…' : 'Atualizar'}
-        </button>
+        {precisaDadosDashboard ? (
+          <button
+            type="button"
+            className="cp-btn cp-btn--ghost"
+            onClick={() => void carregar()}
+            disabled={loading || semLoja}
+          >
+            {loading ? 'Atualizando…' : 'Atualizar'}
+          </button>
+        ) : null}
       </header>
 
       <div className="rl-toolbar">
-        <div className="rl-period" role="tablist" aria-label="Período">
+        <div
+          className={periodoDesabilitado ? 'rl-period rl-period--disabled' : 'rl-period'}
+          role="tablist"
+          aria-label="Período"
+        >
           {PERIODOS.map((p) => (
             <button
               key={p.key}
@@ -486,11 +528,7 @@ export function FinanceiroPage({
               className={periodo === p.key ? 'rl-period__btn rl-period__btn--active' : 'rl-period__btn'}
               onClick={() => setPeriodo(p.key)}
               disabled={semLoja || periodoDesabilitado}
-              title={
-                periodoDesabilitado
-                  ? 'Período disponível nas abas Visão geral e Fluxo de caixa'
-                  : undefined
-              }
+              title={periodoDesabilitado ? 'Período disponível na aba Extrato' : undefined}
             >
               {p.label}
             </button>
@@ -557,35 +595,40 @@ export function FinanceiroPage({
         <FinContasReceberTab companyId={companyId} storeId={activeStoreId} />
       ) : aba === 'contas' ? (
         <FinCaixasTab companyId={companyId} storeId={activeStoreId} />
-      ) : periodo === 'custom' && !intervalo ? (
+      ) : aba === 'extrato' && periodo === 'custom' && !intervalo ? (
         <section className="cp-panel cp-panel--muted">
-          <p className="cp-panel__hint">Informe a data inicial e a data final para analisar o período.</p>
+          <p className="cp-panel__hint">Informe a data inicial e a data final para ver o extrato.</p>
         </section>
-      ) : loading && !dados ? (
+      ) : loading && (aba === 'caixa' ? !vendasHoje && saldoContas === null : !dadosExtrato) ? (
         <div className="rl-loading" role="status">
           <span className="cp-auth-loading__spinner" aria-hidden />
           Carregando indicadores…
         </div>
-      ) : dados ? (
+      ) : aba === 'caixa' ? (
         <div className={loading ? 'rl-content rl-content--loading' : 'rl-content'}>
-          {aba === 'visao' && (
-            <AbaVisaoGeral
-              vendasHoje={vendasHoje}
-              dados={dados}
-              resumoPagar={resumoPagar}
-              resumoReceber={resumoReceber}
-              fluxo={fluxo}
-              onIrFluxo={() => setAba('fluxo')}
-            />
-          )}
-          {aba === 'fluxo' && (
-            <AbaFluxo
-              dados={dados}
-              fluxo={fluxo}
-              onIrCaixas={() => setAba('contas')}
-              onIrPagar={() => setAba('pagar')}
-            />
-          )}
+          <AbaCaixa
+            vendasHoje={vendasHoje}
+            saldoContas={saldoContas}
+            fluxoHoje={fluxoHoje}
+            resumoPagar={resumoPagar}
+            resumoReceber={resumoReceber}
+            onIrReceber={() => setAba('receber')}
+            onIrPagar={() => setAba('pagar')}
+            onIrContas={() => setAba('contas')}
+            onIrExtrato={() => setAba('extrato')}
+            onNavigateRelatorios={onNavigateRelatorios}
+          />
+        </div>
+      ) : aba === 'extrato' && dadosExtrato ? (
+        <div className={loading ? 'rl-content rl-content--loading' : 'rl-content'}>
+          <AbaExtrato
+            dados={dadosExtrato}
+            fluxo={fluxoExtrato}
+            intervaloLabel={dadosExtrato.intervalo.label}
+            onIrCaixas={() => setAba('contas')}
+            onIrPagar={() => setAba('pagar')}
+            onNavigateRelatorios={onNavigateRelatorios}
+          />
         </div>
       ) : null}
     </div>

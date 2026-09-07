@@ -13,9 +13,10 @@ type RelatoriosPageProps = {
   companyId: string
   activeStoreId: string
   storeName?: string
+  onNavigateFinanceiro?: () => void
 }
 
-type AbaRelatorio = 'geral' | 'vendas' | 'oficina' | 'estoque' | 'clientes'
+type AbaRelatorio = 'visao' | 'vendas' | 'oficina' | 'estoque' | 'clientes'
 
 const PERIODOS: { key: PeriodoRelatorio | 'custom'; label: string }[] = [
   { key: 'hoje', label: 'Hoje' },
@@ -32,7 +33,7 @@ function hojeIsoLocal(): string {
 }
 
 const ABAS: { key: AbaRelatorio; label: string }[] = [
-  { key: 'geral', label: 'Geral' },
+  { key: 'visao', label: 'Visão geral' },
   { key: 'vendas', label: 'Vendas' },
   { key: 'oficina', label: 'Oficina' },
   { key: 'estoque', label: 'Estoque' },
@@ -95,14 +96,37 @@ function ListaVazia({ texto }: { texto: string }) {
   return <p className="rl-empty">{texto}</p>
 }
 
-function AbaGeral({ dados }: { dados: RelatorioConsolidado }) {
+function LinkModulo({
+  texto,
+  onClick,
+}: {
+  texto: string
+  onClick?: () => void
+}) {
+  if (!onClick) return null
+  return (
+    <p className="rl-cross-link">
+      <button type="button" className="rl-cross-link__btn" onClick={onClick}>
+        {texto}
+      </button>
+    </p>
+  )
+}
+
+function AbaVisaoGeral({
+  dados,
+  onNavigateFinanceiro,
+}: {
+  dados: RelatorioConsolidado
+  onNavigateFinanceiro?: () => void
+}) {
   const { vendas, oficina, estoque, clientes } = dados
   return (
     <>
-      <div className="rl-kpi-grid">
+      <div className="rl-kpi-grid rl-kpi-grid--5">
         <KpiCard
           tom="teal"
-          label="Faturamento PDV"
+          label="Faturamento"
           value={formatBRL(vendas.faturamento)}
           hint={
             vendas.quantidade > 0
@@ -111,8 +135,24 @@ function AbaGeral({ dados }: { dados: RelatorioConsolidado }) {
           }
         />
         <KpiCard tom="blue" label="Ticket médio" value={formatBRL(vendas.ticketMedio)} />
-        <KpiCard tom="violet" label="OS abertas" value={String(oficina.abertasAgora)} hint={`${oficina.entreguesNoPeriodo} entregues no período`} />
-        <KpiCard tom="amber" label="Estoque crítico" value={String(estoque.criticos)} hint={`${estoque.reposicao} em reposição`} />
+        <KpiCard
+          tom="violet"
+          label="OS abertas"
+          value={String(oficina.abertasAgora)}
+          hint={`${oficina.entreguesNoPeriodo} entregues no período`}
+        />
+        <KpiCard
+          tom="amber"
+          label="Estoque crítico"
+          value={String(estoque.criticos)}
+          hint={`${estoque.reposicao} em reposição`}
+        />
+        <KpiCard
+          tom="slate"
+          label="Novos clientes"
+          value={String(clientes.novosNoPeriodo)}
+          hint={`${clientes.inativos90d} inativos há 90 dias`}
+        />
       </div>
       <div className="rl-split">
         <section className="rl-card">
@@ -165,6 +205,11 @@ function AbaGeral({ dados }: { dados: RelatorioConsolidado }) {
           )}
         </section>
       </div>
+
+      <LinkModulo
+        texto="Caixa, contas a pagar e receber → Ver em Financeiro"
+        onClick={onNavigateFinanceiro}
+      />
     </>
   )
 }
@@ -306,11 +351,16 @@ function AbaClientes({ dados }: { dados: RelatorioConsolidado }) {
   )
 }
 
-export function RelatoriosPage({ companyId, activeStoreId, storeName }: RelatoriosPageProps) {
+export function RelatoriosPage({
+  companyId,
+  activeStoreId,
+  storeName,
+  onNavigateFinanceiro,
+}: RelatoriosPageProps) {
   const [periodo, setPeriodo] = useState<PeriodoRelatorio | 'custom'>('30d')
   const [dataInicio, setDataInicio] = useState(hojeIsoLocal)
   const [dataFim, setDataFim] = useState(hojeIsoLocal)
-  const [aba, setAba] = useState<AbaRelatorio>('geral')
+  const [aba, setAba] = useState<AbaRelatorio>('visao')
   const [dados, setDados] = useState<(RelatorioConsolidado & { intervalo: IntervaloRelatorio }) | null>(
     null,
   )
@@ -368,7 +418,7 @@ export function RelatoriosPage({ companyId, activeStoreId, storeName }: Relatori
           <p className="rl-head__sub">
             {semLoja
               ? 'Selecione uma loja no topo da tela.'
-              : `${storeName ?? 'Loja ativa'} · ${intervalo?.label ?? 'período personalizado'}`}
+              : `${storeName ?? 'Loja ativa'} · Análise e performance · ${intervalo?.label ?? 'período personalizado'}`}
           </p>
         </div>
         <button
@@ -461,7 +511,9 @@ export function RelatoriosPage({ companyId, activeStoreId, storeName }: Relatori
         </div>
       ) : dados ? (
         <div className={loading ? 'rl-content rl-content--loading' : 'rl-content'}>
-          {aba === 'geral' && <AbaGeral dados={dados} />}
+          {aba === 'visao' && (
+            <AbaVisaoGeral dados={dados} onNavigateFinanceiro={onNavigateFinanceiro} />
+          )}
           {aba === 'oficina' && <AbaOficina dados={dados} />}
           {aba === 'estoque' && <AbaEstoque dados={dados} />}
           {aba === 'clientes' && <AbaClientes dados={dados} />}

@@ -487,6 +487,7 @@ export default function App() {
           storeName={stores.find((s) => s.id === activeStoreId)?.name}
           onContasPagarChange={() => void recarregarContasPagarVencendoHoje()}
           onNavigateFornecedores={() => setActiveNav('fornecedores')}
+          onNavigateRelatorios={() => setActiveNav('relatorios')}
         />
       )}
       {activeNav === 'lancamentos' && (
@@ -516,6 +517,7 @@ export default function App() {
           companyId={tenant.companyId}
           activeStoreId={activeStoreId}
           storeName={stores.find((s) => s.id === activeStoreId)?.name}
+          onNavigateFinanceiro={() => setActiveNav('financeiro')}
         />
       )}
       {activeNav === 'mais' && (
