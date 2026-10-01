@@ -3,6 +3,7 @@ import {
   calcularPrecoComMarkup,
   type LinhaPlanilhaEstoque,
 } from '../lib/estoque-import-planilha'
+import { calcularCustoMedioPonderado } from '../lib/custo-medio'
 import { calcularCustoComposicaoKit, type LinhaCustoKit } from '../lib/kit-custo'
 import { MSG_QUANTIDADE_INTEIRA, ehQuantidadeInteiraPositiva } from '../lib/quantidade'
 import { supabase } from '../lib/supabaseClient'
@@ -508,8 +509,13 @@ export async function importarItensPlanilhaEstoque(params: {
       if (existente) {
         const eraInativo = !existente.ativo
         const novoSaldo = existente.saldo_atual + linha.quantidade
-        // Coluna "Preço de Venda" da planilha = custo_medio (Custo R$) no cadastro.
-        const custoMedio = Math.max(custoPlanilha, existente.custo_medio)
+        // Coluna "Preço de Venda" da planilha = custo da compra; custo_medio = média ponderada com o saldo atual.
+        const custoMedio = calcularCustoMedioPonderado(
+          existente.saldo_atual,
+          existente.custo_medio,
+          linha.quantidade,
+          custoPlanilha,
+        )
         // Itens já cadastrados: atualiza custo/saldo, mas mantém preços de venda validados na loja.
         await atualizarItemEstoque(existente.id, {
           nome: linha.nome,

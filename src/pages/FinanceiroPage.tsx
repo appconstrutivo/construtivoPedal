@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FinCaixasTab } from '../components/financeiro/FinCaixasTab'
 import { FinContasPagarTab } from '../components/financeiro/FinContasPagarTab'
 import { FinContasReceberTab } from '../components/financeiro/FinContasReceberTab'
+import { labelCategoriaSaida } from '../lib/financeiro-categorias'
 import { obterResumoVendasHoje } from '../services/pdv.service'
 import {
   labelOrigemMovimentacao,
@@ -277,9 +278,9 @@ function AbaExtrato({
         />
         <KpiCard
           tom="slate"
-          label="Saldo do período"
+          label="Resultado de caixa"
           value={fluxo ? formatBRL(saldo) : '—'}
-          hint="Vendas PDV − saídas do caixa"
+          hint="Vendas PDV − saídas do caixa (não é o lucro)"
         />
       </div>
 
@@ -330,6 +331,7 @@ function AbaExtrato({
                     {formatShortDateTime(s.realizada_em)}
                     {' · '}
                     {labelOrigemMovimentacao(s.origem)}
+                    {s.categoria ? ` · ${labelCategoriaSaida(s.categoria)}` : ''}
                     {s.contaNome ? ` · ${s.contaNome}` : ''}
                   </span>
                 </div>

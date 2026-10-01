@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { calcularCustoComposicaoKit, calcularCustoLinhasKitForm } from '../lib/kit-custo'
+import { calcularCustoMedioPonderado } from '../lib/custo-medio'
+import {
+  MOTIVOS_POR_TIPO,
+  TIPOS_MOVIMENTACAO,
+  labelMotivoMovimentacao,
+  motivoPadraoMovimentacao,
+  type MotivoMovimentacaoEstoque,
+} from '../lib/estoque-motivos'
 import {
   mensagemFaltaEstoqueMontagemKit,
   verificarEstoqueMontagemKit,
@@ -362,7 +370,9 @@ export function EstoquePage({
   const [movForm, setMovForm] = useState({
     itemId: '',
     tipo: 'saida' as TipoMovimentacao,
+    motivo: '' as MotivoMovimentacaoEstoque | '',
     quantidade: '1',
+    custoUnitario: '',
     origem: '',
     observacao: '',
   })
@@ -461,17 +471,49 @@ export function EstoquePage({
     return formatCodigoLocalEstoque(validado.estante, validado.prateleira, validado.divisoria)
   }, [localForm.estante, localForm.prateleira, localForm.divisoria])
 
+  function custoAtualItemMov(itemId: string): string {
+    const item = itens.find((i) => i.id === itemId)
+    return item ? String(roundMoney(Number(item.custo_medio) || 0)) : ''
+  }
+
   function abrirMovimentacao(tipo: TipoMovimentacao, itemId?: string) {
     setFormError(null)
+    const id = itemId ?? itensAtivos[0]?.id ?? ''
     setMovForm({
-      itemId: itemId ?? itensAtivos[0]?.id ?? '',
+      itemId: id,
       tipo,
-      quantidade: '1',
+      motivo: motivoPadraoMovimentacao(tipo),
+      quantidade: tipo === 'ajuste' ? '' : '1',
+      custoUnitario: custoAtualItemMov(id),
       origem: '',
       observacao: '',
     })
     setModalMovOpen(true)
   }
+
+  function alterarTipoMovimentacao(tipo: TipoMovimentacao) {
+    setMovForm((prev) => ({
+      ...prev,
+      tipo,
+      motivo: motivoPadraoMovimentacao(tipo),
+      quantidade: tipo === 'ajuste' ? '' : prev.tipo === 'ajuste' ? '1' : prev.quantidade,
+    }))
+  }
+
+  const movPreview = useMemo(() => {
+    const item = itens.find((i) => i.id === movForm.itemId)
+    if (!item) return null
+    const saldo = Number(item.saldo_atual) || 0
+    const custoAtual = Number(item.custo_medio) || 0
+    const qtd = parseQuantidadeInteira(movForm.quantidade)
+    const diferenca = movForm.tipo === 'ajuste' && Number.isFinite(qtd) ? qtd - saldo : null
+    const custoCompra = parseDecimalInput(movForm.custoUnitario)
+    const custoNovo =
+      movForm.motivo === 'compra' && Number.isFinite(qtd) && qtd > 0 && custoCompra >= 0
+        ? calcularCustoMedioPonderado(saldo, custoAtual, qtd, custoCompra)
+        : null
+    return { saldo, custoAtual, diferenca, custoNovo }
+  }, [itens, movForm.itemId, movForm.tipo, movForm.motivo, movForm.quantidade, movForm.custoUnitario])
 
   function abrirNovoLocal() {
     setFormError(null)
@@ -651,7 +693,7 @@ export function EstoquePage({
     return item?.saldo_atual ?? null
   }, [itens, kitDesmontagemSelecionado])
 
-  const custoPorItemResultanteId = useMemo(() => {
+  const custoMontagemPorItemResultanteId = useMemo(() => {
     const map = new Map<string, number>()
     for (const kit of kits) {
       if (!kit.item_resultante_id) continue
@@ -694,9 +736,18 @@ export function EstoquePage({
   }, [kitDoItemEmEdicao, itens])
 
   const custoExibicaoItem = useCallback(
-    (item: EstoqueItemComLocal) =>
-      custoPorItemResultanteId.get(item.id) ?? Number(item.custo_medio) ?? 0,
-    [custoPorItemResultanteId],
+    (item: EstoqueItemComLocal) => Number(item.custo_medio) || 0,
+    [],
+  )
+
+  /** Custo para montar 1 unidade hoje, só quando difere do custo médio gravado. */
+  const custoNovaMontagemItem = useCallback(
+    (item: EstoqueItemComLocal) => {
+      const custo = custoMontagemPorItemResultanteId.get(item.id)
+      if (custo === undefined || Math.abs(custo - (Number(item.custo_medio) || 0)) < 0.01) return null
+      return custo
+    },
+    [custoMontagemPorItemResultanteId],
   )
 
   const resumo = useMemo(() => {
@@ -704,12 +755,12 @@ export function EstoquePage({
     const totalSkus = ativos.length
     const criticos = ativos.filter((item) => statusItem(item) === 'critico').length
     const reposicao = ativos.filter((item) => statusItem(item) === 'reposicao').length
-    const valorEstoque = ativos.reduce((acc, item) => {
-      const custo = custoPorItemResultanteId.get(item.id) ?? Number(item.custo_medio) ?? 0
-      return acc + custo * Number(item.saldo_atual)
-    }, 0)
+    const valorEstoque = ativos.reduce(
+      (acc, item) => acc + (Number(item.custo_medio) || 0) * Number(item.saldo_atual),
+      0,
+    )
     return { totalSkus, criticos, reposicao, valorEstoque }
-  }, [itens, custoPorItemResultanteId])
+  }, [itens])
 
   function alternarComposicaoKitPainel(kitId: string) {
     setKitsComposicaoAberta((prev) => ({ ...prev, [kitId]: !prev[kitId] }))
@@ -773,16 +824,7 @@ export function EstoquePage({
     setItemEditandoId(item.id)
     setItemEditandoStoreId(item.store_id)
     setModalItemAba('dados')
-    const kitItem = kits.find((k) => k.item_resultante_id === item.id)
-    const custo = kitItem
-      ? calcularCustoComposicaoKit(
-        kitItem.componentes.map((c) => ({
-          componenteItemId: c.componenteItemId,
-          quantidade: c.quantidade,
-        })),
-        itens,
-      )
-      : item.custo_medio
+    const custo = item.custo_medio
     const pv = item.preco_varejo ?? 0
     const pa = item.preco_atacado ?? 0
     setItemForm({
@@ -848,15 +890,7 @@ export function EstoquePage({
     const nome = itemForm.nome.trim()
     const quantidadeInicial = parseQuantidadeInteira(itemForm.quantidadeInicial)
     const estoqueMinimo = parseQuantidadeInteira(itemForm.estoqueMinimo)
-    const custoMedio = kitDoItemEmEdicao
-      ? calcularCustoComposicaoKit(
-        kitDoItemEmEdicao.componentes.map((c) => ({
-          componenteItemId: c.componenteItemId,
-          quantidade: c.quantidade,
-        })),
-        itens,
-      )
-      : Number(itemForm.custoMedio)
+    const custoMedio = Number(itemForm.custoMedio)
     const precoVarejo = Number(itemForm.precoVarejo)
     const precoAtacado = Number(itemForm.precoAtacado)
 
@@ -927,7 +961,7 @@ export function EstoquePage({
           local_id: itemForm.localId || null,
           sku_fornecedor: skuFornecedor,
           estoque_minimo: estoqueMinimo,
-          custo_medio: custoMedio,
+          ...(kitDoItemEmEdicao ? {} : { custo_medio: custoMedio }),
           preco_varejo: precoVarejo,
           preco_atacado: precoAtacado,
           imagem_url: imagemUrl,
@@ -1015,18 +1049,31 @@ export function EstoquePage({
       return
     }
 
-    const permitirNegativo = movForm.tipo === 'ajuste'
-    const quantidade = parseQuantidadeInteira(movForm.quantidade, { permitirNegativo })
+    if (!movForm.motivo) {
+      setFormError('Escolha o motivo.')
+      return
+    }
+
+    const quantidade = parseQuantidadeInteira(movForm.quantidade)
     if (!Number.isFinite(quantidade)) {
       setFormError(MSG_QUANTIDADE_INTEIRA)
       return
     }
-    if (movForm.tipo === 'ajuste' && quantidade === 0) {
-      setFormError('Ajuste não pode ser zero.')
+
+    const balanco = movForm.tipo === 'ajuste'
+    if (!balanco && quantidade <= 0) {
+      setFormError('Entrada/saída exigem quantidade inteira maior que zero.')
       return
     }
-    if ((movForm.tipo === 'entrada' || movForm.tipo === 'saida') && quantidade <= 0) {
-      setFormError('Entrada/saída exigem quantidade inteira maior que zero.')
+    if (balanco && movPreview?.diferenca === 0) {
+      setFormError('A contagem confere com o saldo do sistema.')
+      return
+    }
+
+    const compra = movForm.motivo === 'compra'
+    const custoUnitario = compra ? parseDecimalInput(movForm.custoUnitario) : Number.NaN
+    if (compra && !(custoUnitario >= 0)) {
+      setFormError('Informe o custo unitário da compra.')
       return
     }
 
@@ -1036,7 +1083,11 @@ export function EstoquePage({
         company_id: companyId,
         item_id: movForm.itemId,
         tipo: movForm.tipo,
-        quantidade,
+        motivo: movForm.motivo,
+        // No balanço a diferença é recalculada no servidor a partir de saldo_contado, com o item bloqueado.
+        quantidade: balanco ? (movPreview?.diferenca ?? 0) || 1 : quantidade,
+        saldo_contado: balanco ? quantidade : null,
+        custo_unitario: compra ? roundMoney(custoUnitario) : null,
         origem: movForm.origem.trim() || null,
         observacao: movForm.observacao.trim() || null,
       })
@@ -1245,11 +1296,14 @@ export function EstoquePage({
           componentes,
         })
       }
-      await sincronizarCustoItemResultanteKit({
-        itemResultanteId,
-        componentes,
-        itens,
-      })
+      const itemResultante = itens.find((i) => i.id === itemResultanteId)
+      if (!itemResultante || Number(itemResultante.saldo_atual) <= 0) {
+        await sincronizarCustoItemResultanteKit({
+          itemResultanteId,
+          componentes,
+          itens,
+        })
+      }
       await carregarDados()
       fecharModalKit()
     } catch (err: unknown) {
@@ -1678,6 +1732,12 @@ export function EstoquePage({
                       <dt>Custo</dt>
                       <dd>{formatBRL(custoExibicaoItem(itemSelecionado))}</dd>
                     </div>
+                    {custoNovaMontagemItem(itemSelecionado) !== null && (
+                      <div title="Custo para montar 1 unidade com o custo atual dos componentes">
+                        <dt>Nova montagem</dt>
+                        <dd>{formatBRL(custoNovaMontagemItem(itemSelecionado) ?? 0)}</dd>
+                      </div>
+                    )}
                     <div>
                       <dt>Varejo</dt>
                       <dd>{formatBRL(itemSelecionado.preco_varejo)}</dd>
@@ -1738,6 +1798,7 @@ export function EstoquePage({
                             <span className="st-mov__meta">
                               {mov.quantidade > 0 ? '+' : ''}
                               {formatQuantidadeInteira(mov.quantidade)} un
+                              {labelMotivoMovimentacao(mov.motivo) ? ` · ${labelMotivoMovimentacao(mov.motivo)}` : ''}
                               {mov.origem ? ` · ${mov.origem}` : ''}
                             </span>
                           </li>
@@ -1851,7 +1912,7 @@ export function EstoquePage({
                           {kit.itemResultanteNome ?? 'item resultante'}
                         </span>
                         <span className="st-kit-painel__custo">
-                          Custo (1 un.): <strong>{formatBRL(custoKit)}</strong>
+                          Montar 1 un.: <strong>{formatBRL(custoKit)}</strong>
                         </span>
                         {kit.componentes.length > 0 && (
                           <>
@@ -2176,15 +2237,11 @@ export function EstoquePage({
                         type="number"
                         min={0}
                         step="0.01"
-                        value={
-                          custoItemKitEmEdicao !== null
-                            ? String(custoItemKitEmEdicao)
-                            : itemForm.custoMedio
-                        }
-                        readOnly={custoItemKitEmEdicao !== null}
-                        aria-readonly={custoItemKitEmEdicao !== null}
+                        value={itemForm.custoMedio}
+                        readOnly={kitDoItemEmEdicao !== null}
+                        aria-readonly={kitDoItemEmEdicao !== null}
                         onChange={(e) => {
-                          if (custoItemKitEmEdicao !== null) return
+                          if (kitDoItemEmEdicao !== null) return
                           const raw = e.target.value
                           setItemForm((prev) => {
                             const custo = parseDecimalInput(raw)
@@ -2217,8 +2274,7 @@ export function EstoquePage({
                       />
                       {custoItemKitEmEdicao !== null && (
                         <span className="st-field__hint">
-                          Calculado pela composição do kit. Para alterar, edite os componentes em Kits
-                          montáveis.
+                          Atualiza a cada montagem · nova montagem hoje: {formatBRL(custoItemKitEmEdicao)}
                         </span>
                       )}
                     </label>
@@ -2465,43 +2521,100 @@ export function EstoquePage({
                   <EstoqueItemPicker
                     itens={itensAtivos}
                     value={movForm.itemId}
-                    onChange={(itemId) => setMovForm((prev) => ({ ...prev, itemId }))}
+                    onChange={(itemId) =>
+                      setMovForm((prev) => ({ ...prev, itemId, custoUnitario: custoAtualItemMov(itemId) }))
+                    }
                     placeholder="Buscar por nome ou SKU…"
                     required
                   />
                 </label>
-                <label className="st-field">
+                <div className="st-field">
                   <span>Tipo *</span>
-                  <select
-                    className="st-input"
-                    value={movForm.tipo}
-                    onChange={(e) => setMovForm((prev) => ({ ...prev, tipo: e.target.value as TipoMovimentacao }))}
-                  >
-                    <option value="entrada">Entrada</option>
-                    <option value="saida">Saída</option>
-                    <option value="ajuste">Ajuste</option>
-                  </select>
-                </label>
+                  <div className="st-chips" role="group" aria-label="Tipo de movimentação">
+                    {TIPOS_MOVIMENTACAO.map((t) => (
+                      <button
+                        key={t.key}
+                        type="button"
+                        className={movForm.tipo === t.key ? 'st-chip st-chip--on' : 'st-chip'}
+                        onClick={() => alterarTipoMovimentacao(t.key)}
+                        aria-pressed={movForm.tipo === t.key}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {movForm.tipo !== 'ajuste' && (
+                  <div className="st-field">
+                    <span>Motivo *</span>
+                    <div className="st-chips" role="group" aria-label="Motivo da movimentação">
+                      {MOTIVOS_POR_TIPO[movForm.tipo].map((m) => (
+                        <button
+                          key={m.key}
+                          type="button"
+                          className={movForm.motivo === m.key ? 'st-chip st-chip--on' : 'st-chip'}
+                          onClick={() => setMovForm((prev) => ({ ...prev, motivo: m.key }))}
+                          aria-pressed={movForm.motivo === m.key}
+                        >
+                          {m.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <label className="st-field">
-                  <span>Quantidade *</span>
+                  <span>{movForm.tipo === 'ajuste' ? 'Quantidade contada *' : 'Quantidade *'}</span>
                   <input
                     className="st-input"
                     type="number"
+                    min={0}
                     step={1}
                     inputMode="numeric"
                     value={movForm.quantidade}
                     onChange={(e) =>
                       setMovForm((prev) => ({
                         ...prev,
-                        quantidade: filtrarInputQuantidadeInteira(
-                          e.target.value,
-                          prev.tipo === 'ajuste',
-                        ),
+                        quantidade: filtrarInputQuantidadeInteira(e.target.value),
                       }))
                     }
                     required
                   />
+                  {movForm.tipo === 'ajuste' && movPreview && (
+                    <p className="st-field__hint">
+                      Sistema: {formatQuantidadeInteira(movPreview.saldo)} un
+                      {movPreview.diferenca !== null && movPreview.diferenca !== 0 && (
+                        <>
+                          {' · '}
+                          <strong className={movPreview.diferenca > 0 ? 'st-mov__type--entrada' : 'st-mov__type--saida'}>
+                            {movPreview.diferenca > 0 ? '+' : ''}
+                            {formatQuantidadeInteira(movPreview.diferenca)} un
+                          </strong>
+                        </>
+                      )}
+                      {movPreview.diferenca === 0 && ' · confere ✓'}
+                    </p>
+                  )}
                 </label>
+                {movForm.motivo === 'compra' && (
+                  <label className="st-field">
+                    <span>Custo unitário (R$) *</span>
+                    <input
+                      className="st-input"
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      inputMode="decimal"
+                      value={movForm.custoUnitario}
+                      onChange={(e) => setMovForm((prev) => ({ ...prev, custoUnitario: e.target.value }))}
+                      required
+                    />
+                    {movPreview && movPreview.custoNovo !== null && movPreview.custoNovo !== movPreview.custoAtual && (
+                      <p className="st-field__hint">
+                        Custo médio: {formatBRL(movPreview.custoAtual)} → <strong>{formatBRL(movPreview.custoNovo)}</strong>
+                      </p>
+                    )}
+                  </label>
+                )}
               </div>
               <div className="st-form-grid">
                 <label className="st-field">

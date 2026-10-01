@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { RelatorioResultadoPanel } from '../components/relatorios/RelatorioResultadoPanel'
 import { RelatorioVendasPanel } from '../components/relatorios/RelatorioVendasPanel'
 import {
   intervaloPeriodo,
@@ -16,7 +17,7 @@ type RelatoriosPageProps = {
   onNavigateFinanceiro?: () => void
 }
 
-type AbaRelatorio = 'visao' | 'vendas' | 'oficina' | 'estoque' | 'clientes'
+type AbaRelatorio = 'visao' | 'resultado' | 'vendas' | 'oficina' | 'estoque' | 'clientes'
 
 const PERIODOS: { key: PeriodoRelatorio | 'custom'; label: string }[] = [
   { key: 'hoje', label: 'Hoje' },
@@ -34,6 +35,7 @@ function hojeIsoLocal(): string {
 
 const ABAS: { key: AbaRelatorio; label: string }[] = [
   { key: 'visao', label: 'Visão geral' },
+  { key: 'resultado', label: 'Resultado' },
   { key: 'vendas', label: 'Vendas' },
   { key: 'oficina', label: 'Oficina' },
   { key: 'estoque', label: 'Estoque' },
@@ -498,6 +500,12 @@ export function RelatoriosPage({
         <section className="cp-panel cp-panel--muted">
           <p className="cp-panel__hint">Informe as datas inicial e final para carregar o relatório.</p>
         </section>
+      ) : aba === 'resultado' && intervalo ? (
+        <RelatorioResultadoPanel
+          companyId={companyId}
+          activeStoreId={activeStoreId}
+          intervalo={intervalo}
+        />
       ) : aba === 'vendas' && intervalo ? (
         <RelatorioVendasPanel
           companyId={companyId}

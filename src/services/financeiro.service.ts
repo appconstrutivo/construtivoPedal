@@ -1,8 +1,13 @@
+import {
+  labelCategoriaSaida,
+  type CategoriaContaPagar,
+  type CategoriaSaida,
+} from '../lib/financeiro-categorias'
 import { supabase } from '../lib/supabaseClient'
 import type { FormaPagamento, PagamentoVendaInput } from './pdv.service'
 
+export type { CategoriaContaPagar, CategoriaSaida }
 export type TipoContaFinanceira = 'caixa' | 'banco' | 'pix'
-export type CategoriaContaPagar = 'fornecedor' | 'fixa' | 'imposto' | 'folha' | 'outro'
 export type StatusContaPagar = 'pendente' | 'pago' | 'cancelado'
 export type FiltroContaPagar = 'todas' | 'pendentes' | 'pagas' | 'vencidas' | 'canceladas'
 export type FrequenciaRecorrencia = 'mensal' | 'trimestral' | 'anual'
@@ -46,6 +51,7 @@ export type MovimentacaoFinanceira = {
   valor: number
   descricao: string
   origem: string
+  categoria: CategoriaSaida | null
   realizada_em: string
   created_at: string
 }
@@ -89,14 +95,6 @@ export type ResumoContasReceber = {
   recebidoMesOs: number
 }
 
-const CATEGORIA_LABEL: Record<CategoriaContaPagar, string> = {
-  fornecedor: 'Compra de insumos/peças',
-  fixa: 'Despesa fixa',
-  imposto: 'Imposto',
-  folha: 'Folha',
-  outro: 'Outro',
-}
-
 const TIPO_CONTA_LABEL: Record<TipoContaFinanceira, string> = {
   caixa: 'Caixa',
   banco: 'Banco',
@@ -104,7 +102,7 @@ const TIPO_CONTA_LABEL: Record<TipoContaFinanceira, string> = {
 }
 
 export function labelCategoriaContaPagar(c: CategoriaContaPagar) {
-  return CATEGORIA_LABEL[c] ?? c
+  return labelCategoriaSaida(c)
 }
 
 export function labelTipoConta(t: TipoContaFinanceira) {
@@ -302,6 +300,7 @@ export async function registrarMovimentacao(params: {
   tipo: 'entrada' | 'saida'
   valor: number
   descricao: string
+  categoria?: CategoriaSaida | null
 }): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any).rpc('financeiro_registrar_movimentacao', {
@@ -311,6 +310,7 @@ export async function registrarMovimentacao(params: {
     p_tipo: params.tipo,
     p_valor: params.valor,
     p_descricao: params.descricao,
+    p_categoria: params.tipo === 'saida' ? (params.categoria ?? null) : null,
   })
   if (error) throw new Error(error.message ?? 'Erro ao registrar movimentação.')
 }
@@ -324,7 +324,7 @@ export async function listarMovimentacoesConta(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('financeiro_movimentacoes')
-    .select('id, conta_id, tipo, valor, descricao, origem, realizada_em, created_at')
+    .select('id, conta_id, tipo, valor, descricao, origem, categoria, realizada_em, created_at')
     .eq('company_id', companyId)
     .eq('store_id', storeId)
     .eq('conta_id', contaId)
@@ -346,6 +346,7 @@ export type SaidaFluxoItem = {
   valor: number
   descricao: string
   origem: OrigemMovimentacao
+  categoria: CategoriaSaida | null
   realizada_em: string
   contaNome: string | null
 }
@@ -382,7 +383,7 @@ export async function obterResumoFluxoCaixa(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('financeiro_movimentacoes')
-    .select('id, valor, descricao, origem, realizada_em, financeiro_contas(nome)')
+    .select('id, valor, descricao, origem, categoria, realizada_em, financeiro_contas(nome)')
     .eq('company_id', companyId)
     .eq('store_id', storeId)
     .eq('tipo', 'saida')
@@ -398,6 +399,7 @@ export async function obterResumoFluxoCaixa(
     valor: number | string
     descricao: string
     origem: string
+    categoria: CategoriaSaida | null
     realizada_em: string
     financeiro_contas?: { nome?: string | null } | null
   }
@@ -407,6 +409,7 @@ export async function obterResumoFluxoCaixa(
     valor: Number(row.valor),
     descricao: row.descricao,
     origem: row.origem,
+    categoria: row.categoria ?? null,
     realizada_em: row.realizada_em,
     contaNome: row.financeiro_contas?.nome ?? null,
   }))

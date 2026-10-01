@@ -165,8 +165,8 @@ export function EstoqueImportModal({
           <p className="st-pricing-hint">
             Colunas da planilha: <strong>SKU</strong> (código do fornecedor, só para conferência),{' '}
             <strong>Nome</strong>, <strong>Preço de Venda</strong> (= <strong>Custo (R$)</strong> no cadastro) e{' '}
-            <strong>Quantidade</strong>. Se o item já existir, o sistema mantém o <strong>maior custo</strong> entre o
-            cadastro e a planilha e <strong>não altera</strong> o preço varejo/atacado já cadastrado.
+            <strong>Quantidade</strong>. Se o item já existir, o custo vira a <strong>média</strong> entre o estoque atual e
+            o que está entrando, e o preço varejo/atacado já cadastrado <strong>não muda</strong>.
             O arquivo é lido apenas no seu navegador — <strong>não é salvo no Supabase</strong>. Cada item
             novo recebe o <strong>SKU interno da loja</strong> (000001, 000002…) como no cadastro manual.
           </p>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { CATEGORIAS_CONTA_PAGAR } from '../../lib/financeiro-categorias'
 import { listarFornecedores } from '../../services/estoque.service'
 import {
   cancelarContaPagar,
@@ -38,21 +39,7 @@ const FILTROS: { key: FiltroContaPagar; label: string }[] = [
   { key: 'todas', label: 'Todas' },
 ]
 
-const CATEGORIAS: { key: CategoriaContaPagar; label: string; hint: string }[] = [
-  {
-    key: 'fixa',
-    label: 'Despesa fixa',
-    hint: 'Aluguel, luz, água, internet, condomínio, contabilidade…',
-  },
-  {
-    key: 'fornecedor',
-    label: 'Compra de insumos/peças',
-    hint: 'Despesas com peças e insumos de fornecedores cadastrados.',
-  },
-  { key: 'imposto', label: 'Imposto', hint: 'DAS, ISS, taxas municipais…' },
-  { key: 'folha', label: 'Folha', hint: 'Salários, pró-labore, benefícios…' },
-  { key: 'outro', label: 'Outro', hint: 'Demais despesas operacionais.' },
-]
+const CATEGORIAS = CATEGORIAS_CONTA_PAGAR
 
 function formatBRL(v: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)

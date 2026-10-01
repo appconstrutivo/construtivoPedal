@@ -10,4 +10,10 @@ if (!isSupabaseConfigured) {
   console.warn('[Supabase] VITE_SUPABASE_URL ou VITE_SUPABASE_ANON_KEY não configurados.')
 }
 
-export const supabase = createClient<Database>(url, anonKey)
+export const supabase = createClient<Database>(url ?? '', anonKey ?? '', {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+})

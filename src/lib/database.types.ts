@@ -158,6 +158,8 @@ export type Database = {
           quantidade: number
           preco_unitario: number
           movimentacao_id: string | null
+          custo_unitario: number | null
+          custo_origem: 'apurado' | 'estimado' | null
           created_at: string
         }
         Insert: {
@@ -303,6 +305,9 @@ export type Database = {
           quantidade: number
           store_id: string | null
           tipo: string
+          motivo: string | null
+          custo_unitario: number | null
+          saldo_contado: number | null
         }
         Insert: {
           company_id: string
@@ -315,6 +320,9 @@ export type Database = {
           quantidade: number
           store_id?: string | null
           tipo: string
+          motivo?: string | null
+          custo_unitario?: number | null
+          saldo_contado?: number | null
         }
         Update: {
           company_id?: string
@@ -838,6 +846,8 @@ export type Database = {
           preco_unitario: number
           quantidade: number
           venda_id: string
+          custo_unitario: number | null
+          custo_origem: 'apurado' | 'estimado' | null
         }
         Insert: {
           company_id: string

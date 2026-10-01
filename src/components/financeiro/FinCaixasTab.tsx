@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
+  CATEGORIAS_SAIDA,
+  labelCategoriaSaida,
+  opcaoCategoriaSaida,
+  type CategoriaSaida,
+} from '../../lib/financeiro-categorias'
+import {
   criarContaFinanceira,
   labelTipoConta,
   listarContasFinanceiras,
@@ -59,6 +65,7 @@ export function FinCaixasTab({ companyId, storeId }: FinCaixasTabProps) {
     tipo: 'entrada' as 'entrada' | 'saida',
     valor: '',
     descricao: '',
+    categoria: '' as CategoriaSaida | '',
   })
 
   const contaAtiva = contas.find((c) => c.id === contaAtivaId) ?? contas[0] ?? null
@@ -133,6 +140,10 @@ export function FinCaixasTab({ companyId, storeId }: FinCaixasTabProps) {
       setErro('Informe valor e descrição.')
       return
     }
+    if (formMov.tipo === 'saida' && !formMov.categoria) {
+      setErro('Escolha a categoria da saída.')
+      return
+    }
     setErro(null)
     setSucesso(null)
     try {
@@ -143,9 +154,10 @@ export function FinCaixasTab({ companyId, storeId }: FinCaixasTabProps) {
         tipo: formMov.tipo,
         valor,
         descricao: formMov.descricao,
+        categoria: formMov.tipo === 'saida' ? formMov.categoria || null : null,
       })
       setModalMov(false)
-      setFormMov({ tipo: 'entrada', valor: '', descricao: '' })
+      setFormMov({ tipo: 'entrada', valor: '', descricao: '', categoria: '' })
       setSucesso('Movimentação registrada.')
       await recarregarContas()
     } catch (err) {
@@ -241,7 +253,10 @@ export function FinCaixasTab({ companyId, storeId }: FinCaixasTabProps) {
                 <li key={m.id} className={`fin-mov-row fin-mov-row--${m.tipo}`}>
                   <div>
                     <span className="fin-mov-row__desc">{m.descricao}</span>
-                    <span className="fin-mov-row__meta">{formatShortDate(m.realizada_em ?? m.created_at)}</span>
+                    <span className="fin-mov-row__meta">
+                      {formatShortDate(m.realizada_em ?? m.created_at)}
+                      {m.categoria ? ` · ${labelCategoriaSaida(m.categoria)}` : ''}
+                    </span>
                   </div>
                   <strong className={m.tipo === 'entrada' ? 'fin-valor--entrada' : 'fin-valor--saida'}>
                     {m.tipo === 'entrada' ? '+' : '−'} {formatBRL(m.valor)}
@@ -358,6 +373,30 @@ export function FinCaixasTab({ companyId, storeId }: FinCaixasTabProps) {
                 required
               />
             </label>
+            {formMov.tipo === 'saida' ? (
+              <label className="fin-field">
+                <span>Categoria</span>
+                <select
+                  value={formMov.categoria}
+                  onChange={(e) =>
+                    setFormMov((p) => ({ ...p, categoria: e.target.value as CategoriaSaida | '' }))
+                  }
+                  required
+                >
+                  <option value="" disabled>
+                    Escolha…
+                  </option>
+                  {CATEGORIAS_SAIDA.map((c) => (
+                    <option key={c.key} value={c.key}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+                {opcaoCategoriaSaida(formMov.categoria) ? (
+                  <span className="fin-field__hint">{opcaoCategoriaSaida(formMov.categoria)?.hint}</span>
+                ) : null}
+              </label>
+            ) : null}
             <div className="fin-modal__actions">
               <button type="button" className="cp-btn cp-btn--ghost" onClick={() => setModalMov(false)}>
                 Voltar
