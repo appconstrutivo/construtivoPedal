@@ -19,6 +19,7 @@ import {
 import {
   atualizarItemEstoque,
   atualizarLocalEstoque,
+  calcularResumoEstoque,
   buscarItemEstoqueDuplicado,
   criarItemEstoque,
   criarLocalEstoque,
@@ -44,6 +45,20 @@ import {
   type EstoqueMovimentacaoComItem,
   type FornecedorRow,
 } from '../services/estoque.service'
+import {
+  atualizarTipoEstoque,
+  criarTipoEstoque,
+  excluirTipoEstoque,
+  labelTipoBase,
+  listarTiposEstoque,
+  toTipoBaseEstoque,
+  type ConfigTipoEstoque,
+  type EstoqueTipoRow,
+  type TipoBaseEstoque,
+} from '../services/estoque-tipos.service'
+import { TipoEstoqueField } from '../components/estoque/TipoEstoqueField'
+import { TiposEstoquePanel } from '../components/estoque/TiposEstoquePanel'
+import { IconCamadas, IconPencil, IconX } from '../components/estoque/icons'
 import { EstoqueImportModal } from '../components/EstoqueImportModal'
 import { EstoqueItemPicker } from '../components/EstoqueItemPicker'
 import { imprimirListaKit } from '../components/KitListaPrint'
@@ -54,7 +69,7 @@ import {
   parseQuantidadeInteira,
 } from '../lib/quantidade'
 
-type CategoriaEstoque = 'peca' | 'bike' | 'acessorio'
+type CategoriaEstoque = TipoBaseEstoque
 type StatusEstoque = 'critico' | 'reposicao' | 'saudavel'
 type FiltroAtivoItem = 'ativos' | 'inativos' | 'todos'
 type TipoMovimentacao = 'entrada' | 'saida' | 'ajuste'
@@ -100,6 +115,10 @@ function emptyKitForm() {
   }
 }
 
+function ordenarTipos(lista: EstoqueTipoRow[]): EstoqueTipoRow[] {
+  return [...lista].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }))
+}
+
 const CATEGORIAS: { key: CategoriaEstoque | 'todos'; label: string }[] = [
   { key: 'todos', label: 'Todos' },
   { key: 'peca', label: 'Peças' },
@@ -143,25 +162,7 @@ function priceFromCostAndMarkup(custo: number, markupPct: number): string {
   return String(roundMoney(custo * (1 + markupPct / 100)))
 }
 
-function toCategoriaEstoque(categoria: string): CategoriaEstoque {
-  if (categoria === 'bike') return 'bike'
-  if (categoria === 'acessorio' || categoria === 'componente') return 'acessorio'
-  return 'peca'
-}
-
-function IconPencil() {
-  return (
-    <svg aria-hidden width={14} height={14} viewBox="0 0 24 24" fill="none">
-      <path
-        d="m14.7 6.3 3 3a2 2 0 0 1-2.3 3.2l-.5-.5L10 17.6a2 2 0 1 1-2.8-2.8l5.1-5.1-.5-.5a2 2 0 0 1 3.2-2.3Z"
-        stroke="currentColor"
-        strokeWidth={1.75}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
+const toCategoriaEstoque = toTipoBaseEstoque
 
 function IconDesmontar() {
   return (
@@ -175,19 +176,6 @@ function IconDesmontar() {
       />
       <path
         d="m4 13 4 4M20 13l-4 4"
-        stroke="currentColor"
-        strokeWidth={1.75}
-        strokeLinecap="round"
-      />
-    </svg>
-  )
-}
-
-function IconX() {
-  return (
-    <svg aria-hidden width={14} height={14} viewBox="0 0 24 24" fill="none">
-      <path
-        d="M18 6 6 18M6 6l12 12"
         stroke="currentColor"
         strokeWidth={1.75}
         strokeLinecap="round"
@@ -256,6 +244,7 @@ function emptyItemForm() {
     imagemLink: '',
     descricao: '',
     categoria: 'peca' as CategoriaEstoque,
+    tipoId: '',
     unidade: 'un',
     fornecedorId: '',
     localId: '',
@@ -291,6 +280,7 @@ function toTipoMovimentacao(tipo: string): TipoMovimentacao {
 }
 
 function statusItem(item: EstoqueItemComLocal): StatusEstoque {
+  if (item.tipoPatrimonio) return 'saudavel'
   if (item.saldo_atual <= item.estoque_minimo * 0.5) return 'critico'
   if (item.saldo_atual <= item.estoque_minimo) return 'reposicao'
   return 'saudavel'
@@ -324,10 +314,13 @@ export function EstoquePage({
   activeStoreId,
 }: EstoquePageProps) {
   const [busca, setBusca] = useState('')
-  const [categoria, setCategoria] = useState<CategoriaEstoque | 'todos'>('todos')
+  /** 'todos', tipo nativo (peca/acessorio/bike) ou id de tipo personalizado. */
+  const [categoria, setCategoria] = useState<string>('todos')
   const [status, setStatus] = useState<StatusEstoque | 'todos'>('todos')
   const [filtroAtivo, setFiltroAtivo] = useState<FiltroAtivoItem>('ativos')
   const [filtroLocalId, setFiltroLocalId] = useState<string>('todos')
+  const [tiposItem, setTiposItem] = useState<EstoqueTipoRow[]>([])
+  const [valorComPatrimonio, setValorComPatrimonio] = useState(false)
   const [itens, setItens] = useState<EstoqueItemComLocal[]>([])
   const [movimentacoes, setMovimentacoes] = useState<EstoqueMovimentacaoComItem[]>([])
   const [kits, setKits] = useState<KitComComponentes[]>([])
@@ -392,18 +385,21 @@ export function EstoquePage({
     setLoading(true)
     setErro(null)
     try {
-      const [itensData, movimentacoesData, fornecedoresData, locaisData, kitsData] = await Promise.all([
-        listarItensEstoque(companyId, activeStoreId, { filtroAtivo: 'todos' }),
-        listarMovimentacoesHoje(companyId, activeStoreId),
-        listarFornecedores(companyId, activeStoreId),
-        listarLocaisEstoque(companyId, activeStoreId),
-        listarKits(companyId, activeStoreId),
-      ])
+      const [itensData, movimentacoesData, fornecedoresData, locaisData, kitsData, tiposData] =
+        await Promise.all([
+          listarItensEstoque(companyId, activeStoreId, { filtroAtivo: 'todos' }),
+          listarMovimentacoesHoje(companyId, activeStoreId),
+          listarFornecedores(companyId, activeStoreId),
+          listarLocaisEstoque(companyId, activeStoreId),
+          listarKits(companyId, activeStoreId),
+          listarTiposEstoque(companyId),
+        ])
       setItens(itensData)
       setMovimentacoes(movimentacoesData)
       setFornecedores(fornecedoresData)
       setLocais(locaisData)
       setKits(kitsData)
+      setTiposItem(tiposData)
     } catch (err: unknown) {
       setErro(err instanceof Error ? err.message : 'Erro ao carregar estoque.')
       setItens([])
@@ -411,6 +407,7 @@ export function EstoquePage({
       setFornecedores([])
       setLocais([])
       setKits([])
+      setTiposItem([])
     } finally {
       setLoading(false)
     }
@@ -436,8 +433,13 @@ export function EstoquePage({
       if (filtroAtivo === 'inativos' && item.ativo) return false
       if (filtroAtivo === 'ativos' && !item.ativo && !comBusca) return false
 
-      const categoriaItem = toCategoriaEstoque(item.categoria)
-      if (categoria !== 'todos' && categoriaItem !== categoria) return false
+      if (categoria !== 'todos') {
+        if (item.tipo_id) {
+          if (item.tipo_id !== categoria) return false
+        } else if (toCategoriaEstoque(item.categoria) !== categoria) {
+          return false
+        }
+      }
 
       const itemStatus = statusItem(item)
       if (status !== 'todos' && itemStatus !== status) return false
@@ -451,7 +453,8 @@ export function EstoquePage({
         (item.sku_fornecedor?.toLowerCase().includes(termo) ?? false) ||
         item.storeName.toLowerCase().includes(termo) ||
         (item.localCodigo?.toLowerCase().includes(termo) ?? false) ||
-        (item.localNome?.toLowerCase().includes(termo) ?? false)
+        (item.localNome?.toLowerCase().includes(termo) ?? false) ||
+        (item.tipoNome?.toLowerCase().includes(termo) ?? false)
       )
     })
 
@@ -460,6 +463,55 @@ export function EstoquePage({
       return a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' })
     })
   }, [busca, categoria, status, filtroAtivo, filtroLocalId, itens])
+
+  const itensPorTipo = useMemo(() => {
+    const contagem: Record<string, number> = {}
+    for (const item of itens) {
+      if (!item.tipo_id) continue
+      contagem[item.tipo_id] = (contagem[item.tipo_id] ?? 0) + 1
+    }
+    return contagem
+  }, [itens])
+
+  async function handleCriarTipo(config: ConfigTipoEstoque): Promise<EstoqueTipoRow> {
+    const novo = await criarTipoEstoque(companyId, config)
+    setTiposItem((prev) => ordenarTipos([...prev, novo]))
+    return novo
+  }
+
+  async function handleAtualizarTipo(id: string, config: ConfigTipoEstoque): Promise<void> {
+    const atualizado = await atualizarTipoEstoque(id, config)
+    setTiposItem((prev) => ordenarTipos(prev.map((t) => (t.id === id ? atualizado : t))))
+    setItens((prev) =>
+      prev.map((item) =>
+        item.tipo_id === id
+          ? {
+              ...item,
+              tipoNome: atualizado.nome,
+              tipoPatrimonio: atualizado.patrimonio,
+              categoria: atualizado.base,
+            }
+          : item,
+      ),
+    )
+  }
+
+  async function handleExcluirTipo(alvo: EstoqueTipoRow): Promise<void> {
+    const ok = window.confirm(
+      `Excluir o tipo "${alvo.nome}"?\n\nOs itens desse tipo (em todas as lojas) passam a ser "${labelTipoBase(alvo.base)}". Nenhum item será excluído.`,
+    )
+    if (!ok) return
+    await excluirTipoEstoque(alvo.id)
+    setTiposItem((prev) => prev.filter((t) => t.id !== alvo.id))
+    setItens((prev) =>
+      prev.map((item) =>
+        item.tipo_id === alvo.id
+          ? { ...item, tipo_id: null, tipoNome: null, tipoPatrimonio: false }
+          : item,
+      ),
+    )
+    if (categoria === alvo.id) setCategoria('todos')
+  }
 
   const localFormPreview = useMemo(() => {
     const validado = validarCamposLocalEstoque(
@@ -750,17 +802,8 @@ export function EstoquePage({
     [custoMontagemPorItemResultanteId],
   )
 
-  const resumo = useMemo(() => {
-    const ativos = itens.filter((item) => item.ativo)
-    const totalSkus = ativos.length
-    const criticos = ativos.filter((item) => statusItem(item) === 'critico').length
-    const reposicao = ativos.filter((item) => statusItem(item) === 'reposicao').length
-    const valorEstoque = ativos.reduce(
-      (acc, item) => acc + (Number(item.custo_medio) || 0) * Number(item.saldo_atual),
-      0,
-    )
-    return { totalSkus, criticos, reposicao, valorEstoque }
-  }, [itens])
+  const resumo = useMemo(() => calcularResumoEstoque(itens), [itens])
+  const temTipoPatrimonio = tiposItem.some((t) => t.patrimonio)
 
   function alternarComposicaoKitPainel(kitId: string) {
     setKitsComposicaoAberta((prev) => ({ ...prev, [kitId]: !prev[kitId] }))
@@ -834,6 +877,7 @@ export function EstoquePage({
       imagemLink: imagemLinkFromItem(item.imagem_url),
       descricao: item.descricao?.trim() ?? '',
       categoria: toCategoriaEstoque(item.categoria),
+      tipoId: item.tipo_id ?? '',
       unidade: item.unidade,
       fornecedorId: item.fornecedor_id ?? '',
       localId: item.local_id ?? '',
@@ -955,6 +999,7 @@ export function EstoquePage({
         await atualizarItemEstoque(itemEditandoId, {
           nome,
           categoria: itemForm.categoria,
+          tipo_id: itemForm.tipoId || null,
           unidade: itemForm.unidade.trim() || 'un',
           store_id: itemEditandoStoreId,
           fornecedor_id: itemForm.fornecedorId || null,
@@ -992,6 +1037,7 @@ export function EstoquePage({
           await atualizarItemEstoque(duplicado.id, {
             nome,
             categoria: itemForm.categoria,
+            tipo_id: itemForm.tipoId || null,
             unidade: itemForm.unidade.trim() || 'un',
             store_id: activeStoreId,
             fornecedor_id: itemForm.fornecedorId || null,
@@ -1013,6 +1059,7 @@ export function EstoquePage({
             sku_fornecedor: skuFornecedor,
             nome,
             categoria: itemForm.categoria,
+            tipo_id: itemForm.tipoId || null,
             unidade: itemForm.unidade.trim() || 'un',
             store_id: activeStoreId,
             fornecedor_id: itemForm.fornecedorId || null,
@@ -1426,9 +1473,42 @@ export function EstoquePage({
           <span className="st-kpi__label">Em reposição</span>
           <strong className="st-kpi__value">{resumo.reposicao}</strong>
         </article>
-        <article className="st-kpi st-kpi--blue">
-          <span className="st-kpi__label">Valor em estoque (custo)</span>
-          <strong className="st-kpi__value st-kpi__value--currency">{formatBRL(resumo.valorEstoque)}</strong>
+        <article
+          className="st-kpi st-kpi--blue"
+          title={
+            temTipoPatrimonio
+              ? `Mercadorias: ${formatBRL(resumo.valorEstoque)} · Patrimônio: ${formatBRL(resumo.valorPatrimonio)}`
+              : undefined
+          }
+        >
+          <div className="st-kpi__head">
+            <span className="st-kpi__label">
+              {temTipoPatrimonio && valorComPatrimonio ? 'Estoque + patrimônio (custo)' : 'Valor em estoque (custo)'}
+            </span>
+            {temTipoPatrimonio && (
+              <button
+                type="button"
+                className={valorComPatrimonio ? 'st-kpi__toggle st-kpi__toggle--on' : 'st-kpi__toggle'}
+                onClick={() => setValorComPatrimonio((v) => !v)}
+                aria-pressed={valorComPatrimonio}
+                aria-label="Incluir patrimônio da loja no valor"
+                title={
+                  valorComPatrimonio
+                    ? 'Mostrar só as mercadorias'
+                    : 'Incluir patrimônio da loja (ferramentas, equipamentos)'
+                }
+              >
+                <IconCamadas />
+              </button>
+            )}
+          </div>
+          <strong className="st-kpi__value st-kpi__value--currency">
+            {formatBRL(
+              temTipoPatrimonio && valorComPatrimonio
+                ? resumo.valorEstoque + resumo.valorPatrimonio
+                : resumo.valorEstoque,
+            )}
+          </strong>
         </article>
       </section>
 
@@ -1519,7 +1599,7 @@ export function EstoquePage({
               ))}
             </div>
 
-            <div className="st-chips" role="group" aria-label="Filtrar por categoria">
+            <div className="st-chips" role="group" aria-label="Filtrar por tipo">
               {CATEGORIAS.map((item) => (
                 <button
                   key={item.key}
@@ -1529,6 +1609,17 @@ export function EstoquePage({
                   aria-pressed={categoria === item.key}
                 >
                   {item.label}
+                </button>
+              ))}
+              {tiposItem.map((tipo) => (
+                <button
+                  key={tipo.id}
+                  type="button"
+                  className={categoria === tipo.id ? 'st-chip st-chip--on' : 'st-chip'}
+                  onClick={() => setCategoria(tipo.id)}
+                  aria-pressed={categoria === tipo.id}
+                >
+                  {tipo.nome}
                 </button>
               ))}
             </div>
@@ -1623,6 +1714,7 @@ export function EstoquePage({
                           >
                             {item.ativo ? 'Ativo' : 'Inativo'}
                           </span>
+                          {item.tipoNome && <span className="st-badge st-badge--tipo">{item.tipoNome}</span>}
                           {item.localCodigo && (
                             <span className="st-badge st-badge--local" title={item.localNome ?? undefined}>
                               {item.localCodigo}
@@ -1638,7 +1730,11 @@ export function EstoquePage({
                       </div>
 
                       <div className="st-row__status">
-                        <span className={`st-badge st-badge--${st}`}>{statusLabel(st)}</span>
+                        {item.tipoPatrimonio ? (
+                          <span className="st-badge st-badge--inativo">Patrimônio</span>
+                        ) : (
+                          <span className={`st-badge st-badge--${st}`}>{statusLabel(st)}</span>
+                        )}
                         <div className="st-row__prices">
                           <span className="st-row__price-item">
                             <span className="st-row__price-label">Custo</span>
@@ -1745,6 +1841,10 @@ export function EstoquePage({
                     <div>
                       <dt>SKU fornecedor</dt>
                       <dd>{itemSelecionado.sku_fornecedor?.trim() || '—'}</dd>
+                    </div>
+                    <div>
+                      <dt>Tipo</dt>
+                      <dd>{itemSelecionado.tipoNome || labelTipoBase(itemSelecionado.categoria)}</dd>
                     </div>
                     <div>
                       <dt>Local</dt>
@@ -1870,6 +1970,14 @@ export function EstoquePage({
               </ul>
             )}
           </section>
+
+          <TiposEstoquePanel
+            tipos={tiposItem}
+            itensPorTipo={itensPorTipo}
+            onCriar={handleCriarTipo}
+            onAtualizar={handleAtualizarTipo}
+            onExcluir={handleExcluirTipo}
+          />
 
           <section className="st-panel st-panel--kits">
             <div className="st-panel__head">
@@ -2160,20 +2268,15 @@ export function EstoquePage({
                     </label>
                   </div>
                   <div className="st-form-grid">
-                    <label className="st-field">
-                      <span>Categoria</span>
-                      <select
-                        className="st-input"
-                        value={itemForm.categoria}
-                        onChange={(e) =>
-                          setItemForm((prev) => ({ ...prev, categoria: e.target.value as CategoriaEstoque }))
-                        }
-                      >
-                        <option value="peca">Peça</option>
-                        <option value="bike">Bike</option>
-                        <option value="acessorio">Acessórios</option>
-                      </select>
-                    </label>
+                    <TipoEstoqueField
+                      tipos={tiposItem}
+                      base={itemForm.categoria}
+                      tipoId={itemForm.tipoId}
+                      onChange={(base, tipoId) =>
+                        setItemForm((prev) => ({ ...prev, categoria: base, tipoId }))
+                      }
+                      onCriar={handleCriarTipo}
+                    />
                     <label className="st-field">
                       <span>Unidade</span>
                       <input

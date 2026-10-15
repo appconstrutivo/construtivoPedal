@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabaseClient'
-import { obterResumoEstoqueLoja, listarItensEstoque } from './estoque.service'
+import { calcularResumoEstoque, listarItensEstoque } from './estoque.service'
 import type { FormaPagamento } from './pdv.service'
 import { totalOperacionalVenda, valorOperacionalPagamento } from '../lib/venda-valores'
 import { selectAllPages, selectByIdsInBatches } from '../lib/supabase-batch'
@@ -470,11 +470,15 @@ export async function obterRelatorioEstoque(
   }
   if (!storeId) return vazio
 
-  const resumo = await obterResumoEstoqueLoja(companyId, storeId)
   const itens = await listarItensEstoque(companyId, storeId)
+  const resumo = calcularResumoEstoque(itens)
 
   const itensCriticos = itens
-    .filter((i) => statusSaldoItem(Number(i.saldo_atual), Number(i.estoque_minimo)) === 'critico')
+    .filter(
+      (i) =>
+        !i.tipoPatrimonio &&
+        statusSaldoItem(Number(i.saldo_atual), Number(i.estoque_minimo)) === 'critico',
+    )
     .sort((a, b) => Number(a.saldo_atual) - Number(b.saldo_atual))
     .slice(0, 10)
     .map((i) => ({

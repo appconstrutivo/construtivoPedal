@@ -829,533 +829,533 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
           ) : null}
 
           <div className="os-layout">
-        <aside className="os-aside">
-          <div className="os-aside__toolbar">
-            <input
-              type="search"
-              className="os-search"
-              placeholder="Buscar por cliente, nº ou bike…"
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-            />
-            <div className="os-filter-row">
-              {(
-                [
-                  ['abertas', 'Abertas'],
-                  ['todas', 'Todas'],
-                  ['encerradas', 'Encerradas'],
-                ] as const
-              ).map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  className={filtro === key ? 'os-filter os-filter--on' : 'os-filter'}
-                  onClick={() => setFiltro(key)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="os-list" role="list">
-            {loadingLista ? (
-              <p className="os-muted">Carregando…</p>
-            ) : listaFiltrada.length === 0 ? (
-              <p className="os-muted">Nenhuma OS neste filtro.</p>
-            ) : (
-              listaFiltrada.map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  role="listitem"
-                  className={[
-                    'os-list-item',
-                    selectedId === r.id ? 'os-list-item--active' : '',
-                    r.pendenciaFinanceira ? 'os-list-item--notify' : '',
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
-                  onClick={() => setSelectedId(r.id)}
-                >
-                  {r.pendenciaFinanceira ? (
-                    <span
-                      className="os-list-item__dot"
-                      aria-label="OS entregue — pendente de faturamento ou recebimento"
-                    />
-                  ) : null}
-                  <div className="os-list-item__top">
-                    <span className="os-list-item__num">#{r.numero}</span>
-                    <span className={statusChipClass(r.status)}>{statusLabel(r.status)}</span>
-                  </div>
-                  <div className="os-list-item__name">{r.clienteNome}</div>
-                  {r.bikeLabel ? <div className="os-list-item__sub">{r.bikeLabel}</div> : null}
-                  <div className="os-list-item__meta">{formatShortDate(r.updated_at)}</div>
-                </button>
-              ))
-            )}
-          </div>
-        </aside>
-
-        <section className="os-detail">
-          {loadingDetalhe ? (
-            <p className="os-muted">Carregando OS…</p>
-          ) : !detalhe ? (
-            <div className="cp-panel cp-panel--muted">
-              <p className="cp-panel__hint">Selecione uma ordem de serviço ou abra uma nova.</p>
-            </div>
-          ) : (
-            <>
-              <div className="os-detail__head">
-                <div>
-                  <h2 className="os-detail__title">
-                    OS #{detalhe.numero}{' '}
-                    <span className="os-detail__client">— {detalhe.clienteNome}</span>
-                  </h2>
-                  {detalhe.bikeLabel ? (
-                    <p className="os-detail__bike">{detalhe.bikeLabel}</p>
-                  ) : (
-                    <p className="os-detail__bike os-detail__bike--muted">Sem bicicleta vinculada</p>
-                  )}
-                </div>
-                <div className="os-detail__actions">
-                  <button
-                    type="button"
-                    className="st-ghost-btn"
-                    onClick={() => {
-                      try {
-                        imprimirOrdemServico(detalhe, companyName, {
-                          storeName,
-                          cabecalho: formDetalhe,
-                          locaisPorItemId,
-                        })
-                      } catch (e: unknown) {
-                        setErro(e instanceof Error ? e.message : 'Erro ao imprimir OS.')
-                      }
-                    }}
-                  >
-                    Imprimir OS
-                  </button>
-                  <button
-                    type="button"
-                    className="os-danger-btn"
-                    disabled={excluindoOs || salvandoCabecalho}
-                    onClick={() => void handleExcluirOs()}
-                  >
-                    {excluindoOs ? 'Excluindo…' : 'Excluir OS'}
-                  </button>
+            <aside className="os-aside">
+              <div className="os-aside__toolbar">
+                <input
+                  type="search"
+                  className="os-search"
+                  placeholder="Buscar por cliente, nº ou bike…"
+                  value={busca}
+                  onChange={(e) => setBusca(e.target.value)}
+                />
+                <div className="os-filter-row">
+                  {(
+                    [
+                      ['abertas', 'Abertas'],
+                      ['todas', 'Todas'],
+                      ['encerradas', 'Encerradas'],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      className={filtro === key ? 'os-filter os-filter--on' : 'os-filter'}
+                      onClick={() => setFiltro(key)}
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </div>
               </div>
-
-              <div className="os-detail__grid">
-                <div className="os-card">
-                  <h3 className="os-card__title">Situação</h3>
-                  <label className="os-field">
-                    <span>Status</span>
-                    <select
-                      className="os-input"
-                      value={formDetalhe.status}
-                      disabled={detalhe.status === 'cancelada'}
-                      onChange={(e) =>
-                        setFormDetalhe((f) => ({ ...f, status: e.target.value as StatusOrdemServico }))
-                      }
+              <div className="os-list" role="list">
+                {loadingLista ? (
+                  <p className="os-muted">Carregando…</p>
+                ) : listaFiltrada.length === 0 ? (
+                  <p className="os-muted">Nenhuma OS neste filtro.</p>
+                ) : (
+                  listaFiltrada.map((r) => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      role="listitem"
+                      className={[
+                        'os-list-item',
+                        selectedId === r.id ? 'os-list-item--active' : '',
+                        r.pendenciaFinanceira ? 'os-list-item--notify' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                      onClick={() => setSelectedId(r.id)}
                     >
-                      {STATUS_OPTIONS.map((o) => (
-                        <option key={o.value} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="os-field">
-                    <span>Problema relatado</span>
-                    <textarea
-                      className="os-input os-input--area"
-                      rows={3}
-                      value={formDetalhe.problema}
-                      onChange={(e) => setFormDetalhe((f) => ({ ...f, problema: e.target.value }))}
-                    />
-                  </label>
-                  <label className="os-field">
-                    <span>Diagnóstico</span>
-                    <textarea
-                      className="os-input os-input--area"
-                      rows={3}
-                      value={formDetalhe.diagnostico}
-                      onChange={(e) => setFormDetalhe((f) => ({ ...f, diagnostico: e.target.value }))}
-                    />
-                  </label>
-                  <label className="os-field">
-                    <span>Obs. internas</span>
-                    <textarea
-                      className="os-input os-input--area"
-                      rows={2}
-                      value={formDetalhe.observacoes}
-                      onChange={(e) => setFormDetalhe((f) => ({ ...f, observacoes: e.target.value }))}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    className="st-primary-btn"
-                    disabled={salvandoCabecalho}
-                    onClick={() => void handleSalvarCabecalho()}
-                  >
-                    {salvandoCabecalho ? 'Salvando…' : 'Salvar dados da OS'}
-                  </button>
-                </div>
-
-                <div className="os-card">
-                  <h3 className="os-card__title">Checklist</h3>
-                  <ul className="os-checklist">
-                    {detalhe.checklist.map((i) => (
-                      <li key={i.id} className="os-checklist__row">
-                        <label className="os-check-label">
-                          <input type="checkbox" checked={i.concluido} onChange={() => void toggleCheck(i)} />
-                          <span>{i.rotulo}</span>
-                        </label>
-                        <button
-                          type="button"
-                          className="os-icon-btn"
-                          aria-label="Remover item"
-                          onClick={() => void removerCheck(i.id)}
-                        >
-                          ×
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                  <div className="os-inline-add">
-                    <input
-                      className="os-input"
-                      placeholder="Novo item (ex.: testar freios)"
-                      value={checkNovoRotulo}
-                      onChange={(e) => setCheckNovoRotulo(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') void addChecklist()
-                      }}
-                    />
-                    <button type="button" className="st-ghost-btn" onClick={() => void addChecklist()}>
-                      Adicionar
+                      {r.pendenciaFinanceira ? (
+                        <span
+                          className="os-list-item__dot"
+                          aria-label="OS entregue — pendente de faturamento ou recebimento"
+                        />
+                      ) : null}
+                      <div className="os-list-item__top">
+                        <span className="os-list-item__num">#{r.numero}</span>
+                        <span className={statusChipClass(r.status)}>{statusLabel(r.status)}</span>
+                      </div>
+                      <div className="os-list-item__name">{r.clienteNome}</div>
+                      {r.bikeLabel ? <div className="os-list-item__sub">{r.bikeLabel}</div> : null}
+                      <div className="os-list-item__meta">{formatShortDate(r.updated_at)}</div>
                     </button>
-                  </div>
-                </div>
+                  ))
+                )}
+              </div>
+            </aside>
 
-                <div className="os-card os-card--wide">
-                  <h3 className="os-card__title">Peças e serviços</h3>
-                  {osItensTravados ? (
-                    <p className="os-hint" role="status">
-                      {msgOsItensTravados}
-                    </p>
-                  ) : null}
-                  <div className="os-split-2">
+            <section className="os-detail">
+              {loadingDetalhe ? (
+                <p className="os-muted">Carregando OS…</p>
+              ) : !detalhe ? (
+                <div className="cp-panel cp-panel--muted">
+                  <p className="cp-panel__hint">Selecione uma ordem de serviço ou abra uma nova.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="os-detail__head">
                     <div>
-                      <p className="os-mini-title">Peça (estoque)</p>
-                      <EstoqueItemPicker
-                        itens={itensEstoque}
-                        value={pecaForm.itemId}
-                        onChange={selecionarPecaEstoque}
-                        disabled={osItensTravados}
-                      />
-                      <label className="os-field">
-                        <span>Quantidade</span>
-                        <input
-                          className="os-input"
-                          type="number"
-                          min={1}
-                          step={1}
-                          inputMode="numeric"
-                          value={pecaForm.qtd}
-                          disabled={osItensTravados}
-                          onChange={(e) =>
-                            setPecaForm((f) => ({
-                              ...f,
-                              qtd: filtrarInputQuantidadeInteira(e.target.value),
-                            }))
-                          }
-                        />
-                      </label>
-                      <label className="os-field">
-                        <span>Preço unitário na OS (R$)</span>
-                        <input
-                          className="os-input"
-                          inputMode="decimal"
-                          placeholder="0,00"
-                          value={pecaForm.preco}
-                          disabled={osItensTravados}
-                          onChange={(e) => setPecaForm((f) => ({ ...f, preco: e.target.value }))}
-                        />
-                      </label>
-                      <label className="os-field">
-                        <span>Descrição na linha (opcional)</span>
-                        <input
-                          className="os-input"
-                          placeholder={pecaForm.itemId ? 'Sobrescreve o nome exibido' : 'Selecione uma peça'}
-                          value={pecaForm.descricao}
-                          disabled={osItensTravados}
-                          onChange={(e) => setPecaForm((f) => ({ ...f, descricao: e.target.value }))}
-                        />
-                      </label>
+                      <h2 className="os-detail__title">
+                        OS #{detalhe.numero}{' '}
+                        <span className="os-detail__client">— {detalhe.clienteNome}</span>
+                      </h2>
+                      {detalhe.bikeLabel ? (
+                        <p className="os-detail__bike">{detalhe.bikeLabel}</p>
+                      ) : (
+                        <p className="os-detail__bike os-detail__bike--muted">Sem bicicleta vinculada</p>
+                      )}
+                    </div>
+                    <div className="os-detail__actions">
                       <button
                         type="button"
                         className="st-ghost-btn"
-                        disabled={osItensTravados}
-                        onClick={() => void addPeca()}
-                      >
-                        Incluir peça
-                      </button>
-                    </div>
-                    <div>
-                      <p className="os-mini-title">Serviço / mão de obra</p>
-                      <label className="os-field">
-                        <span>Serviço do catálogo</span>
-                        <ServicoCatalogoPicker
-                          servicos={servicosAtivosParaOs}
-                          value={servicoForm.catalogoId}
-                          onChange={selecionarServicoCatalogo}
-                          formatPreco={formatBRL}
-                          permitirAvulso
-                          disabled={osItensTravados}
-                          placeholder={
-                            servicosAtivosParaOs.length === 0
-                              ? 'Sem serviços ativos — use avulso abaixo'
-                              : 'Buscar serviço do catálogo…'
-                          }
-                          rotuloAvulso="Serviço avulso (descrição livre abaixo)"
-                          hintAvulso="Digite a descrição manualmente no campo abaixo"
-                        />
-                      </label>
-                      <label className="os-field">
-                        <span>Descrição na linha da OS</span>
-                        <input
-                          className="os-input"
-                          placeholder="Preenchida pelo catálogo ou digite à mão (serviço avulso)"
-                          value={servicoForm.desc}
-                          disabled={osItensTravados}
-                          onChange={(e) => setServicoForm((f) => ({ ...f, desc: e.target.value }))}
-                        />
-                      </label>
-                      <label className="os-field">
-                        <span>Quantidade</span>
-                        <input
-                          className="os-input"
-                          type="number"
-                          min={1}
-                          step={1}
-                          inputMode="numeric"
-                          value={servicoForm.qtd}
-                          disabled={osItensTravados}
-                          onChange={(e) =>
-                            setServicoForm((f) => ({
-                              ...f,
-                              qtd: filtrarInputQuantidadeInteira(e.target.value),
-                            }))
-                          }
-                        />
-                      </label>
-                      <label className="os-field">
-                        <span>Preço unitário na OS (R$)</span>
-                        <input
-                          className="os-input"
-                          inputMode="decimal"
-                          placeholder="0,00"
-                          value={servicoForm.preco}
-                          disabled={osItensTravados}
-                          onChange={(e) => setServicoForm((f) => ({ ...f, preco: e.target.value }))}
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        className="st-ghost-btn"
-                        disabled={osItensTravados}
-                        onClick={() => void addServico()}
-                      >
-                        Incluir serviço
-                      </button>
-                    </div>
-                  </div>
-
-                  <table className="os-table">
-                    <thead>
-                      <tr>
-                        <th>Tipo</th>
-                        <th>Descrição</th>
-                        <th>Qtd</th>
-                        <th title="Quantidade × preço unitário">Total (R$)</th>
-                        <th>Estoque</th>
-                        <th />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {detalhe.itens.map((it) => (
-                        <tr key={it.id}>
-                          <td>{it.tipo === 'peca' ? 'Peça' : 'Serviço'}</td>
-                          <td>
-                            <span className="os-table__desc">{it.descricao}</span>
-                            {it.tipo === 'servico' ? (
-                              <span className="os-table__src">
-                                {it.servico_catalogo_id ? 'Origem: catálogo da oficina' : 'Origem: serviço avulso'}
-                              </span>
-                            ) : null}
-                          </td>
-                          <td>{it.quantidade}</td>
-                          <td>{formatBRL(Number(it.preco_unitario) * Number(it.quantidade))}</td>
-                          <td>
-                            {it.tipo === 'peca' && it.estoque_item_id
-                              ? it.movimentacao_id
-                                ? 'Baixado'
-                                : 'Pendente'
-                              : '—'}
-                          </td>
-                          <td className="os-table__actions">
-                            {it.tipo === 'peca' && it.estoque_item_id && !it.movimentacao_id ? (
-                              <button
-                                type="button"
-                                className="st-primary-btn st-primary-btn--sm"
-                                disabled={
-                                  busyItemId === it.id || detalhe.status === 'cancelada'
-                                }
-                                onClick={() => void baixarItem(it)}
-                              >
-                                {busyItemId === it.id ? '…' : 'Baixar'}
-                              </button>
-                            ) : null}
-                            {it.tipo === 'peca' && it.estoque_item_id && it.movimentacao_id ? (
-                              <button
-                                type="button"
-                                className="os-icon-btn os-icon-btn--return"
-                                title="Retornar peça ao estoque"
-                                aria-label="Retornar peça ao estoque"
-                                disabled={busyItemId === it.id || osItensTravados}
-                                onClick={() => void retornarItemEstoque(it)}
-                              >
-                                {busyItemId === it.id ? '…' : '↩ Retornar'}
-                              </button>
-                            ) : null}
-                            {!it.movimentacao_id ? (
-                              <button
-                                type="button"
-                                className="os-icon-btn"
-                                disabled={osItensTravados}
-                                onClick={() => void removerItem(it)}
-                              >
-                                Remover
-                              </button>
-                            ) : null}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    {detalhe.itens.length > 0 ? (
-                      <tfoot>
-                        <tr className="os-table__total-row">
-                          <td colSpan={3} className="os-table__total-label">
-                            Total da OS
-                          </td>
-                          <td className="os-table__total-value">{formatBRL(totalOsValor)}</td>
-                          <td colSpan={2} className="os-table__total-pad" />
-                        </tr>
-                      </tfoot>
-                    ) : null}
-                  </table>
-                </div>
-
-                <div className="os-card os-card--wide os-finance">
-                  <h3 className="os-card__title">Faturamento</h3>
-                  <p className="os-hint">
-                    Gera conta a receber no Financeiro. Ao receber, o valor entra no caixa e aparece em
-                    Lançamentos (venda vinculada à OS).
-                  </p>
-                  {contaReceberOs ? (
-                    <div className="os-finance__status">
-                      <span
-                        className={
-                          contaReceberOs.status === 'recebido'
-                            ? 'os-chip os-chip--done'
-                            : 'os-chip os-chip--wait'
-                        }
-                      >
-                        {labelStatusContaReceber(contaReceberOs.status)}
-                      </span>
-                      <strong>{formatBRL(contaReceberOs.valor)}</strong>
-                      {contaReceberOs.status === 'pendente' ? (
-                        <span className="os-finance__meta">
-                          Vencimento {formatShortDate(contaReceberOs.vencimento)}
-                        </span>
-                      ) : null}
-                      {contaReceberOs.status === 'recebido' ? (
-                        <span className="os-finance__meta">
-                          {labelFormaRecebimento(contaReceberOs.forma_pagamento)}
-                          {contaReceberOs.vendaNumero ? ` · Venda #${contaReceberOs.vendaNumero}` : ''}
-                        </span>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <p className="os-muted">OS ainda não faturada.</p>
-                  )}
-                  <div className="os-finance__actions">
-                    {podeFaturarOs ? (
-                      <button
-                        type="button"
-                        className="st-primary-btn"
                         onClick={() => {
-                          setFaturarVencimento(new Date().toISOString().slice(0, 10))
-                          setFaturarEReceber(false)
-                          setPagamentosReceber([novaLinhaPagamento('pix')])
-                          setModalFaturar(true)
+                          try {
+                            imprimirOrdemServico(detalhe, companyName, {
+                              storeName,
+                              cabecalho: formDetalhe,
+                              locaisPorItemId,
+                            })
+                          } catch (e: unknown) {
+                            setErro(e instanceof Error ? e.message : 'Erro ao imprimir OS.')
+                          }
                         }}
                       >
-                        Faturar OS
+                        Imprimir OS
                       </button>
-                    ) : null}
-                    {contaReceberOs?.status === 'pendente' ? (
+                      <button
+                        type="button"
+                        className="os-danger-btn"
+                        disabled={excluindoOs || salvandoCabecalho}
+                        onClick={() => void handleExcluirOs()}
+                      >
+                        {excluindoOs ? 'Excluindo…' : 'Excluir OS'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="os-detail__grid">
+                    <div className="os-card">
+                      <h3 className="os-card__title">Situação</h3>
+                      <label className="os-field">
+                        <span>Status</span>
+                        <select
+                          className="os-input"
+                          value={formDetalhe.status}
+                          disabled={detalhe.status === 'cancelada'}
+                          onChange={(e) =>
+                            setFormDetalhe((f) => ({ ...f, status: e.target.value as StatusOrdemServico }))
+                          }
+                        >
+                          {STATUS_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="os-field">
+                        <span>Problema relatado</span>
+                        <textarea
+                          className="os-input os-input--area"
+                          rows={3}
+                          value={formDetalhe.problema}
+                          onChange={(e) => setFormDetalhe((f) => ({ ...f, problema: e.target.value }))}
+                        />
+                      </label>
+                      <label className="os-field">
+                        <span>Diagnóstico</span>
+                        <textarea
+                          className="os-input os-input--area"
+                          rows={3}
+                          value={formDetalhe.diagnostico}
+                          onChange={(e) => setFormDetalhe((f) => ({ ...f, diagnostico: e.target.value }))}
+                        />
+                      </label>
+                      <label className="os-field">
+                        <span>Obs. internas</span>
+                        <textarea
+                          className="os-input os-input--area"
+                          rows={2}
+                          value={formDetalhe.observacoes}
+                          onChange={(e) => setFormDetalhe((f) => ({ ...f, observacoes: e.target.value }))}
+                        />
+                      </label>
                       <button
                         type="button"
                         className="st-primary-btn"
-                        onClick={() => void abrirModalReceberOs()}
+                        disabled={salvandoCabecalho}
+                        onClick={() => void handleSalvarCabecalho()}
                       >
-                        Registrar recebimento
+                        {salvandoCabecalho ? 'Salvando…' : 'Salvar dados da OS'}
                       </button>
-                    ) : null}
-                  </div>
-                </div>
+                    </div>
 
-                <div className="os-card os-card--wide">
-                  <h3 className="os-card__title">Fotos</h3>
-                  <p className="os-hint">Imagens ficam no Storage privado (`os-fotos`), isoladas por empresa.</p>
-                  <label className="os-file">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      disabled={detalhe.status === 'cancelada'}
-                      onChange={(e) => void onUploadFoto(e)}
-                    />
-                    <span>Anexar imagem</span>
-                  </label>
-                  <div className="os-gallery">
-                    {detalhe.anexos.map((a) => (
-                      <figure key={a.id} className="os-thumb">
-                        {a.urlAssinada ? (
-                          <img src={a.urlAssinada} alt={a.nome_arquivo} />
-                        ) : (
-                          <div className="os-thumb__ph">{a.nome_arquivo}</div>
-                        )}
-                        <figcaption>{a.nome_arquivo}</figcaption>
-                        <button
-                          type="button"
-                          className="os-thumb__rm"
-                          onClick={() => void removerFoto(a)}
-                        >
-                          Excluir
+                    <div className="os-card">
+                      <h3 className="os-card__title">Checklist</h3>
+                      <ul className="os-checklist">
+                        {detalhe.checklist.map((i) => (
+                          <li key={i.id} className="os-checklist__row">
+                            <label className="os-check-label">
+                              <input type="checkbox" checked={i.concluido} onChange={() => void toggleCheck(i)} />
+                              <span>{i.rotulo}</span>
+                            </label>
+                            <button
+                              type="button"
+                              className="os-icon-btn"
+                              aria-label="Remover item"
+                              onClick={() => void removerCheck(i.id)}
+                            >
+                              ×
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                      <div className="os-inline-add">
+                        <input
+                          className="os-input"
+                          placeholder="Novo item (ex.: testar freios)"
+                          value={checkNovoRotulo}
+                          onChange={(e) => setCheckNovoRotulo(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') void addChecklist()
+                          }}
+                        />
+                        <button type="button" className="st-ghost-btn" onClick={() => void addChecklist()}>
+                          Adicionar
                         </button>
-                      </figure>
-                    ))}
+                      </div>
+                    </div>
+
+                    <div className="os-card os-card--wide">
+                      <h3 className="os-card__title">Peças e serviços</h3>
+                      {osItensTravados ? (
+                        <p className="os-hint" role="status">
+                          {msgOsItensTravados}
+                        </p>
+                      ) : null}
+                      <div className="os-split-2">
+                        <div>
+                          <p className="os-mini-title">Peça (estoque)</p>
+                          <EstoqueItemPicker
+                            itens={itensEstoque}
+                            value={pecaForm.itemId}
+                            onChange={selecionarPecaEstoque}
+                            disabled={osItensTravados}
+                          />
+                          <label className="os-field">
+                            <span>Quantidade</span>
+                            <input
+                              className="os-input"
+                              type="number"
+                              min={1}
+                              step={1}
+                              inputMode="numeric"
+                              value={pecaForm.qtd}
+                              disabled={osItensTravados}
+                              onChange={(e) =>
+                                setPecaForm((f) => ({
+                                  ...f,
+                                  qtd: filtrarInputQuantidadeInteira(e.target.value),
+                                }))
+                              }
+                            />
+                          </label>
+                          <label className="os-field">
+                            <span>Preço unitário na OS (R$)</span>
+                            <input
+                              className="os-input"
+                              inputMode="decimal"
+                              placeholder="0,00"
+                              value={pecaForm.preco}
+                              disabled={osItensTravados}
+                              onChange={(e) => setPecaForm((f) => ({ ...f, preco: e.target.value }))}
+                            />
+                          </label>
+                          <label className="os-field">
+                            <span>Descrição na linha (opcional)</span>
+                            <input
+                              className="os-input"
+                              placeholder={pecaForm.itemId ? 'Sobrescreve o nome exibido' : 'Selecione uma peça'}
+                              value={pecaForm.descricao}
+                              disabled={osItensTravados}
+                              onChange={(e) => setPecaForm((f) => ({ ...f, descricao: e.target.value }))}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            className="st-ghost-btn"
+                            disabled={osItensTravados}
+                            onClick={() => void addPeca()}
+                          >
+                            Incluir peça
+                          </button>
+                        </div>
+                        <div>
+                          <p className="os-mini-title">Serviço / mão de obra</p>
+                          <label className="os-field">
+                            <span>Serviço do catálogo</span>
+                            <ServicoCatalogoPicker
+                              servicos={servicosAtivosParaOs}
+                              value={servicoForm.catalogoId}
+                              onChange={selecionarServicoCatalogo}
+                              formatPreco={formatBRL}
+                              permitirAvulso
+                              disabled={osItensTravados}
+                              placeholder={
+                                servicosAtivosParaOs.length === 0
+                                  ? 'Sem serviços ativos — use avulso abaixo'
+                                  : 'Buscar serviço do catálogo…'
+                              }
+                              rotuloAvulso="Serviço avulso (descrição livre abaixo)"
+                              hintAvulso="Digite a descrição manualmente no campo abaixo"
+                            />
+                          </label>
+                          <label className="os-field">
+                            <span>Descrição na linha da OS</span>
+                            <input
+                              className="os-input"
+                              placeholder="Preenchida pelo catálogo ou digite à mão (serviço avulso)"
+                              value={servicoForm.desc}
+                              disabled={osItensTravados}
+                              onChange={(e) => setServicoForm((f) => ({ ...f, desc: e.target.value }))}
+                            />
+                          </label>
+                          <label className="os-field">
+                            <span>Quantidade</span>
+                            <input
+                              className="os-input"
+                              type="number"
+                              min={1}
+                              step={1}
+                              inputMode="numeric"
+                              value={servicoForm.qtd}
+                              disabled={osItensTravados}
+                              onChange={(e) =>
+                                setServicoForm((f) => ({
+                                  ...f,
+                                  qtd: filtrarInputQuantidadeInteira(e.target.value),
+                                }))
+                              }
+                            />
+                          </label>
+                          <label className="os-field">
+                            <span>Preço unitário na OS (R$)</span>
+                            <input
+                              className="os-input"
+                              inputMode="decimal"
+                              placeholder="0,00"
+                              value={servicoForm.preco}
+                              disabled={osItensTravados}
+                              onChange={(e) => setServicoForm((f) => ({ ...f, preco: e.target.value }))}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            className="st-ghost-btn"
+                            disabled={osItensTravados}
+                            onClick={() => void addServico()}
+                          >
+                            Incluir serviço
+                          </button>
+                        </div>
+                      </div>
+
+                      <table className="os-table">
+                        <thead>
+                          <tr>
+                            <th>Tipo</th>
+                            <th>Descrição</th>
+                            <th>Qtd</th>
+                            <th title="Quantidade × preço unitário">Total (R$)</th>
+                            <th>Estoque</th>
+                            <th />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {detalhe.itens.map((it) => (
+                            <tr key={it.id}>
+                              <td>{it.tipo === 'peca' ? 'Peça' : 'Serviço'}</td>
+                              <td>
+                                <span className="os-table__desc">{it.descricao}</span>
+                                {it.tipo === 'servico' ? (
+                                  <span className="os-table__src">
+                                    {it.servico_catalogo_id ? 'Origem: catálogo da oficina' : 'Origem: serviço avulso'}
+                                  </span>
+                                ) : null}
+                              </td>
+                              <td>{it.quantidade}</td>
+                              <td>{formatBRL(Number(it.preco_unitario) * Number(it.quantidade))}</td>
+                              <td>
+                                {it.tipo === 'peca' && it.estoque_item_id
+                                  ? it.movimentacao_id
+                                    ? 'Baixado'
+                                    : 'Pendente'
+                                  : '—'}
+                              </td>
+                              <td className="os-table__actions">
+                                {it.tipo === 'peca' && it.estoque_item_id && !it.movimentacao_id ? (
+                                  <button
+                                    type="button"
+                                    className="st-primary-btn st-primary-btn--sm"
+                                    disabled={
+                                      busyItemId === it.id || detalhe.status === 'cancelada'
+                                    }
+                                    onClick={() => void baixarItem(it)}
+                                  >
+                                    {busyItemId === it.id ? '…' : 'Baixar'}
+                                  </button>
+                                ) : null}
+                                {it.tipo === 'peca' && it.estoque_item_id && it.movimentacao_id ? (
+                                  <button
+                                    type="button"
+                                    className="os-icon-btn os-icon-btn--return"
+                                    title="Retornar peça ao estoque"
+                                    aria-label="Retornar peça ao estoque"
+                                    disabled={busyItemId === it.id || osItensTravados}
+                                    onClick={() => void retornarItemEstoque(it)}
+                                  >
+                                    {busyItemId === it.id ? '…' : '↩ Retornar'}
+                                  </button>
+                                ) : null}
+                                {!it.movimentacao_id ? (
+                                  <button
+                                    type="button"
+                                    className="os-icon-btn"
+                                    disabled={osItensTravados}
+                                    onClick={() => void removerItem(it)}
+                                  >
+                                    Remover
+                                  </button>
+                                ) : null}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        {detalhe.itens.length > 0 ? (
+                          <tfoot>
+                            <tr className="os-table__total-row">
+                              <td colSpan={3} className="os-table__total-label">
+                                Total da OS
+                              </td>
+                              <td className="os-table__total-value">{formatBRL(totalOsValor)}</td>
+                              <td colSpan={2} className="os-table__total-pad" />
+                            </tr>
+                          </tfoot>
+                        ) : null}
+                      </table>
+                    </div>
+
+                    <div className="os-card os-card--wide os-finance">
+                      <h3 className="os-card__title">Faturamento</h3>
+                      <p className="os-hint">
+                        Gera conta a receber no Financeiro. Ao receber, o valor entra no caixa e aparece em
+                        Lançamentos (venda vinculada à OS).
+                      </p>
+                      {contaReceberOs ? (
+                        <div className="os-finance__status">
+                          <span
+                            className={
+                              contaReceberOs.status === 'recebido'
+                                ? 'os-chip os-chip--done'
+                                : 'os-chip os-chip--wait'
+                            }
+                          >
+                            {labelStatusContaReceber(contaReceberOs.status)}
+                          </span>
+                          <strong>{formatBRL(contaReceberOs.valor)}</strong>
+                          {contaReceberOs.status === 'pendente' ? (
+                            <span className="os-finance__meta">
+                              Vencimento {formatShortDate(contaReceberOs.vencimento)}
+                            </span>
+                          ) : null}
+                          {contaReceberOs.status === 'recebido' ? (
+                            <span className="os-finance__meta">
+                              {labelFormaRecebimento(contaReceberOs.forma_pagamento)}
+                              {contaReceberOs.vendaNumero ? ` · Venda #${contaReceberOs.vendaNumero}` : ''}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <p className="os-muted">OS ainda não faturada.</p>
+                      )}
+                      <div className="os-finance__actions">
+                        {podeFaturarOs ? (
+                          <button
+                            type="button"
+                            className="st-primary-btn"
+                            onClick={() => {
+                              setFaturarVencimento(new Date().toISOString().slice(0, 10))
+                              setFaturarEReceber(false)
+                              setPagamentosReceber([novaLinhaPagamento('pix')])
+                              setModalFaturar(true)
+                            }}
+                          >
+                            Faturar OS
+                          </button>
+                        ) : null}
+                        {contaReceberOs?.status === 'pendente' ? (
+                          <button
+                            type="button"
+                            className="st-primary-btn"
+                            onClick={() => void abrirModalReceberOs()}
+                          >
+                            Registrar recebimento
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="os-card os-card--wide">
+                      <h3 className="os-card__title">Fotos</h3>
+                      <p className="os-hint">Imagens ficam no Storage privado (`os-fotos`), isoladas por empresa.</p>
+                      <label className="os-file">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          disabled={detalhe.status === 'cancelada'}
+                          onChange={(e) => void onUploadFoto(e)}
+                        />
+                        <span>Anexar imagem</span>
+                      </label>
+                      <div className="os-gallery">
+                        {detalhe.anexos.map((a) => (
+                          <figure key={a.id} className="os-thumb">
+                            {a.urlAssinada ? (
+                              <img src={a.urlAssinada} alt={a.nome_arquivo} />
+                            ) : (
+                              <div className="os-thumb__ph">{a.nome_arquivo}</div>
+                            )}
+                            <figcaption>{a.nome_arquivo}</figcaption>
+                            <button
+                              type="button"
+                              className="os-thumb__rm"
+                              onClick={() => void removerFoto(a)}
+                            >
+                              Excluir
+                            </button>
+                          </figure>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-            </>
-          )}
-        </section>
-      </div>
-    </>
+                </>
+              )}
+            </section>
+          </div>
+        </>
       )}
 
       {modalFaturar && detalhe ? (

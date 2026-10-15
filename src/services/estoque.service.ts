@@ -25,6 +25,10 @@ export type EstoqueItemComLocal = EstoqueItemRow & {
   fornecedorNome: string | null
   localCodigo: string | null
   localNome: string | null
+  /** Nome do tipo personalizado (null = tipo nativo em `categoria`). */
+  tipoNome: string | null
+  /** Item de tipo marcado como patrimônio da loja (não é mercadoria). */
+  tipoPatrimonio: boolean
 }
 
 export type EstoqueMovimentacaoComItem = EstoqueMovimentacaoRow & {
@@ -43,9 +47,13 @@ export type KitComComponentes = EstoqueKitRow & {
 
 export type ResumoEstoqueLoja = {
   totalSkus: number
+  /** Críticos/reposição consideram só mercadorias (patrimônio não é reposto). */
   criticos: number
   reposicao: number
+  /** Custo das mercadorias em estoque (sem patrimônio). */
   valorEstoque: number
+  /** Custo dos itens de tipos marcados como patrimônio da loja. */
+  valorPatrimonio: number
 }
 
 export type FiltroAtivoEstoque = 'ativos' | 'inativos' | 'todos'
@@ -74,21 +82,35 @@ export function normalizarNomeEstoque(nome: string): string {
   return nome.replace(/\s+/g, ' ').trim()
 }
 
+/** Resumo dos itens ativos, separando mercadoria de patrimônio da loja. */
+export function calcularResumoEstoque(itens: EstoqueItemComLocal[]): ResumoEstoqueLoja {
+  let totalSkus = 0
+  let criticos = 0
+  let reposicao = 0
+  let valorEstoque = 0
+  let valorPatrimonio = 0
+  for (const item of itens) {
+    if (!item.ativo) continue
+    totalSkus += 1
+    const valor = (Number(item.custo_medio) || 0) * Number(item.saldo_atual)
+    if (item.tipoPatrimonio) {
+      valorPatrimonio += valor
+      continue
+    }
+    valorEstoque += valor
+    const st = statusSaldoItem(Number(item.saldo_atual), Number(item.estoque_minimo))
+    if (st === 'critico') criticos += 1
+    else if (st === 'reposicao') reposicao += 1
+  }
+  return { totalSkus, criticos, reposicao, valorEstoque, valorPatrimonio }
+}
+
 export async function obterResumoEstoqueLoja(
   companyId: string,
   storeId: string,
 ): Promise<ResumoEstoqueLoja> {
   const itens = await listarItensEstoque(companyId, storeId)
-  let criticos = 0
-  let reposicao = 0
-  let valorEstoque = 0
-  for (const item of itens) {
-    const st = statusSaldoItem(Number(item.saldo_atual), Number(item.estoque_minimo))
-    if (st === 'critico') criticos += 1
-    else if (st === 'reposicao') reposicao += 1
-    valorEstoque += Number(item.custo_medio) * Number(item.saldo_atual)
-  }
-  return { totalSkus: itens.length, criticos, reposicao, valorEstoque }
+  return calcularResumoEstoque(itens)
 }
 
 export async function listarItensEstoque(
@@ -103,7 +125,9 @@ export async function listarItensEstoque(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let query = (supabase as any)
     .from('estoque_itens')
-    .select('*, stores(name), fornecedores(nome), estoque_locais(codigo, nome)')
+    .select(
+      '*, stores(name), fornecedores(nome), estoque_locais(codigo, nome), estoque_tipos(nome, patrimonio)',
+    )
     .eq('company_id', companyId)
     .eq('store_id', storeId)
 
@@ -118,6 +142,7 @@ export async function listarItensEstoque(
     stores?: { name?: string | null } | null
     fornecedores?: { nome?: string | null } | null
     estoque_locais?: { codigo?: string | null; nome?: string | null } | null
+    estoque_tipos?: { nome?: string | null; patrimonio?: boolean | null } | null
   }
   return ((data ?? []) as Raw[]).map((item) => ({
     ...item,
@@ -126,6 +151,8 @@ export async function listarItensEstoque(
     fornecedorNome: item.fornecedores?.nome ?? null,
     localCodigo: item.estoque_locais?.codigo ?? null,
     localNome: item.estoque_locais?.nome ?? null,
+    tipoNome: item.estoque_tipos?.nome ?? null,
+    tipoPatrimonio: item.estoque_tipos?.patrimonio === true,
   }))
 }
 

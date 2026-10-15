@@ -188,10 +188,41 @@ export type Database = {
           created_at?: string
         }
       }
+      estoque_tipos: {
+        Row: {
+          ativo: boolean
+          base: string
+          company_id: string
+          created_at: string
+          id: string
+          nome: string
+          patrimonio: boolean
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          base?: string
+          company_id: string
+          created_at?: string
+          id?: string
+          nome: string
+          patrimonio?: boolean
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          base?: string
+          company_id?: string
+          nome?: string
+          patrimonio?: boolean
+          updated_at?: string
+        }
+      }
       estoque_itens: {
         Row: {
           ativo: boolean
           categoria: string
+          tipo_id: string | null
           company_id: string
           created_at: string
           custo_medio: number
@@ -214,6 +245,7 @@ export type Database = {
         Insert: {
           ativo?: boolean
           categoria?: string
+          tipo_id?: string | null
           company_id: string
           created_at?: string
           custo_medio?: number
@@ -236,6 +268,7 @@ export type Database = {
         Update: {
           ativo?: boolean
           categoria?: string
+          tipo_id?: string | null
           company_id?: string
           custo_medio?: number
           descricao?: string | null
