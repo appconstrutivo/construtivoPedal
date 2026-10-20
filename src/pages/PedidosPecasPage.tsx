@@ -1,17 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ClientePicker } from '../components/ClientePicker'
 import { EstoqueItemPicker } from '../components/EstoqueItemPicker'
 import { listarClientes, type ClienteComRelacoes } from '../services/clientes.service'
 import { listarItensEstoque, type EstoqueItemComLocal } from '../services/estoque.service'
 import {
   cancelarPedidoPeca,
+  cancelarPedidosPecasEmLote,
   criarPedidoPeca,
-  desfazerPedidoChegou,
   labelStatusPedidoPeca,
   listarPedidosPecas,
   marcarClienteAvisado,
+  marcarClientesAvisadosEmLote,
   marcarPedidoChegou,
   marcarPedidoEntregue,
+  marcarPedidosChegaramEmLote,
+  marcarPedidosEntreguesEmLote,
   nomeClientePedido,
   pedidoTemCliente,
   telefoneClientePedido,
@@ -66,6 +69,10 @@ export function PedidosPecasPage({ companyId, activeStoreId, onBadgeChange }: Pe
   const [erro, setErro] = useState<string | null>(null)
   const [sucesso, setSucesso] = useState<string | null>(null)
   const [processandoId, setProcessandoId] = useState<string | null>(null)
+  const [processandoLote, setProcessandoLote] = useState(false)
+  const [selecionados, setSelecionados] = useState<Set<string>>(() => new Set())
+  const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null)
+  const [confirmCancelLote, setConfirmCancelLote] = useState(false)
 
   const [modalAberto, setModalAberto] = useState(false)
   const [salvando, setSalvando] = useState(false)
@@ -80,40 +87,85 @@ export function PedidosPecasPage({ companyId, activeStoreId, onBadgeChange }: Pe
   const [sinal, setSinal] = useState('')
   const [observacoes, setObservacoes] = useState('')
 
-  const recarregar = useCallback(async () => {
-    if (!activeStoreId) {
-      setPedidos([])
-      setLoading(false)
-      return
+  const cancelConfirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const cancelLoteTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const auxiliaresCarregados = useRef(false)
+
+  const limparConfirmCancel = useCallback(() => {
+    if (cancelConfirmTimer.current) {
+      clearTimeout(cancelConfirmTimer.current)
+      cancelConfirmTimer.current = null
     }
-    setLoading(true)
-    setErro(null)
-    try {
-      const [lista, cls, its] = await Promise.all([
-        listarPedidosPecas(companyId, activeStoreId, filtro),
-        listarClientes(companyId, activeStoreId),
-        listarItensEstoque(companyId, activeStoreId),
-      ])
-      setPedidos(lista)
-      setClientes(cls)
-      setItensEstoque(its)
-    } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Erro ao carregar pedidos.')
-    } finally {
-      setLoading(false)
+    setConfirmCancelId(null)
+  }, [])
+
+  const limparConfirmCancelLote = useCallback(() => {
+    if (cancelLoteTimer.current) {
+      clearTimeout(cancelLoteTimer.current)
+      cancelLoteTimer.current = null
     }
-  }, [companyId, activeStoreId, filtro])
+    setConfirmCancelLote(false)
+  }, [])
+
+  const recarregar = useCallback(
+    async (opts?: { silencioso?: boolean }) => {
+      if (!activeStoreId) {
+        setPedidos([])
+        setLoading(false)
+        auxiliaresCarregados.current = false
+        return
+      }
+
+      const silencioso = opts?.silencioso === true
+      if (!silencioso) setLoading(true)
+      setErro(null)
+
+      try {
+        if (!silencioso || !auxiliaresCarregados.current) {
+          const [lista, cls, its] = await Promise.all([
+            listarPedidosPecas(companyId, activeStoreId, filtro),
+            listarClientes(companyId, activeStoreId),
+            listarItensEstoque(companyId, activeStoreId),
+          ])
+          setPedidos(lista)
+          setClientes(cls)
+          setItensEstoque(its)
+          auxiliaresCarregados.current = true
+        } else {
+          const lista = await listarPedidosPecas(companyId, activeStoreId, filtro)
+          setPedidos(lista)
+        }
+      } catch (e) {
+        setErro(e instanceof Error ? e.message : 'Erro ao carregar pedidos.')
+      } finally {
+        if (!silencioso) setLoading(false)
+      }
+    },
+    [companyId, activeStoreId, filtro],
+  )
 
   useEffect(() => {
     setSucesso(null)
+    setSelecionados(new Set())
+    limparConfirmCancel()
+    limparConfirmCancelLote()
     void recarregar()
-  }, [recarregar])
+  }, [recarregar, limparConfirmCancel, limparConfirmCancelLote])
 
   useEffect(() => {
     if (!activeStoreId) return
     setPedidos([])
     setModalAberto(false)
+    setSelecionados(new Set())
+    auxiliaresCarregados.current = false
   }, [activeStoreId])
+
+  useEffect(() => {
+    return () => {
+      if (cancelConfirmTimer.current) clearTimeout(cancelConfirmTimer.current)
+      if (cancelLoteTimer.current) clearTimeout(cancelLoteTimer.current)
+    }
+  }, [])
 
   const resumo = useMemo(() => {
     const pendentes = pedidos.filter((p) => p.status === 'pendente').length
@@ -138,6 +190,38 @@ export function PedidosPecasPage({ companyId, activeStoreId, onBadgeChange }: Pe
     })
   }, [pedidos, busca])
 
+  const selecionaveis = useMemo(
+    () => pedidosFiltrados.filter((p) => p.status === 'pendente' || p.status === 'chegou'),
+    [pedidosFiltrados],
+  )
+
+  const idsSelecionados = useMemo(
+    () => selecionaveis.filter((p) => selecionados.has(p.id)).map((p) => p.id),
+    [selecionaveis, selecionados],
+  )
+
+  const loteStats = useMemo(() => {
+    const items = selecionaveis.filter((p) => selecionados.has(p.id))
+    const pendentes = items.filter((p) => p.status === 'pendente')
+    const chegaram = items.filter((p) => p.status === 'chegou')
+    const avisar = items.filter(
+      (p) => p.status === 'chegou' && pedidoTemCliente(p) && !p.cliente_avisado,
+    )
+    return {
+      total: items.length,
+      pendentes: pendentes.length,
+      chegaram: chegaram.length,
+      avisar: avisar.length,
+      idsPendentes: pendentes.map((p) => p.id),
+      idsChegaram: chegaram.map((p) => p.id),
+      idsAvisar: avisar.map((p) => p.id),
+      idsAtivos: items.map((p) => p.id),
+    }
+  }, [selecionaveis, selecionados])
+
+  const todosSelecionados =
+    selecionaveis.length > 0 && selecionaveis.every((p) => selecionados.has(p.id))
+
   function limparFormulario() {
     setModoItem('livre')
     setDescricaoLivre('')
@@ -161,6 +245,43 @@ export function PedidosPecasPage({ companyId, activeStoreId, onBadgeChange }: Pe
   function fecharModal() {
     if (salvando) return
     setModalAberto(false)
+  }
+
+  function toggleSelecionado(id: string) {
+    setSelecionados((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+    limparConfirmCancelLote()
+  }
+
+  function toggleSelecionarTodos() {
+    if (todosSelecionados) {
+      setSelecionados(new Set())
+    } else {
+      setSelecionados(new Set(selecionaveis.map((p) => p.id)))
+    }
+    limparConfirmCancelLote()
+  }
+
+  function pedirConfirmCancel(id: string) {
+    limparConfirmCancel()
+    setConfirmCancelId(id)
+    cancelConfirmTimer.current = setTimeout(() => {
+      setConfirmCancelId(null)
+      cancelConfirmTimer.current = null
+    }, 4000)
+  }
+
+  function pedirConfirmCancelLote() {
+    limparConfirmCancelLote()
+    setConfirmCancelLote(true)
+    cancelLoteTimer.current = setTimeout(() => {
+      setConfirmCancelLote(false)
+      cancelLoteTimer.current = null
+    }, 4000)
   }
 
   async function handleCriar(e: React.FormEvent) {
@@ -223,7 +344,7 @@ export function PedidosPecasPage({ companyId, activeStoreId, onBadgeChange }: Pe
       setModalAberto(false)
       limparFormulario()
       setSucesso('Pedido adicionado à lista.')
-      await recarregar()
+      await recarregar({ silencioso: true })
       onBadgeChange?.()
     } catch (err: unknown) {
       setErro(err instanceof Error ? err.message : 'Erro ao criar pedido.')
@@ -236,10 +357,17 @@ export function PedidosPecasPage({ companyId, activeStoreId, onBadgeChange }: Pe
     if (semLoja) return
     setProcessandoId(id)
     setErro(null)
+    limparConfirmCancel()
     try {
       await fn()
       if (msg) setSucesso(msg)
-      await recarregar()
+      setSelecionados((prev) => {
+        if (!prev.has(id)) return prev
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+      await recarregar({ silencioso: true })
       onBadgeChange?.()
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro na operação.')
@@ -247,6 +375,29 @@ export function PedidosPecasPage({ companyId, activeStoreId, onBadgeChange }: Pe
       setProcessandoId(null)
     }
   }
+
+  async function acaoLote(
+    fn: () => Promise<number>,
+    msg: (n: number) => string,
+  ) {
+    if (semLoja || idsSelecionados.length === 0) return
+    setProcessandoLote(true)
+    setErro(null)
+    limparConfirmCancelLote()
+    try {
+      const n = await fn()
+      setSucesso(msg(n))
+      setSelecionados(new Set())
+      await recarregar({ silencioso: true })
+      onBadgeChange?.()
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Erro na operação em lote.')
+    } finally {
+      setProcessandoLote(false)
+    }
+  }
+
+  const busyGlobal = processandoLote || processandoId != null
 
   return (
     <div className="cp-page cp-page--pedidos">
@@ -316,6 +467,130 @@ export function PedidosPecasPage({ companyId, activeStoreId, onBadgeChange }: Pe
         </div>
       </div>
 
+      {loteStats.total > 0 && (
+        <div className="ped-bulk" role="toolbar" aria-label="Ações em lote">
+          <div className="ped-bulk__info">
+            <strong>{loteStats.total}</strong>
+            <span>{loteStats.total === 1 ? 'selecionado' : 'selecionados'}</span>
+            <button
+              type="button"
+              className="ped-bulk__clear"
+              onClick={() => {
+                setSelecionados(new Set())
+                limparConfirmCancelLote()
+              }}
+              disabled={busyGlobal}
+            >
+              Limpar
+            </button>
+          </div>
+          <div className="ped-bulk__actions">
+            {loteStats.pendentes > 0 && (
+              <button
+                type="button"
+                className="cp-btn cp-btn--primary cp-btn--sm"
+                disabled={busyGlobal || semLoja}
+                onClick={() =>
+                  void acaoLote(
+                    () =>
+                      marcarPedidosChegaramEmLote(
+                        companyId,
+                        activeStoreId,
+                        loteStats.idsPendentes,
+                      ),
+                    (n) =>
+                      n === 1
+                        ? '1 item marcado como chegou.'
+                        : `${n} itens marcados como chegaram.`,
+                  )
+                }
+              >
+                Chegaram ({loteStats.pendentes})
+              </button>
+            )}
+            {loteStats.chegaram > 0 && (
+              <button
+                type="button"
+                className="cp-btn cp-btn--primary cp-btn--sm"
+                disabled={busyGlobal || semLoja}
+                onClick={() =>
+                  void acaoLote(
+                    () =>
+                      marcarPedidosEntreguesEmLote(
+                        companyId,
+                        activeStoreId,
+                        loteStats.idsChegaram,
+                      ),
+                    (n) =>
+                      n === 1
+                        ? '1 pedido entregue.'
+                        : `${n} pedidos entregues.`,
+                  )
+                }
+              >
+                Entregues ({loteStats.chegaram})
+              </button>
+            )}
+            {loteStats.avisar > 0 && (
+              <button
+                type="button"
+                className="cp-btn cp-btn--ghost cp-btn--sm"
+                disabled={busyGlobal || semLoja}
+                onClick={() =>
+                  void acaoLote(
+                    () =>
+                      marcarClientesAvisadosEmLote(
+                        companyId,
+                        activeStoreId,
+                        loteStats.idsAvisar,
+                        true,
+                      ),
+                    (n) =>
+                      n === 1
+                        ? 'Cliente marcado como avisado.'
+                        : `${n} clientes marcados como avisados.`,
+                  )
+                }
+              >
+                Avisados ({loteStats.avisar})
+              </button>
+            )}
+            {confirmCancelLote ? (
+              <button
+                type="button"
+                className="cp-btn cp-btn--danger cp-btn--sm"
+                disabled={busyGlobal || semLoja}
+                onClick={() =>
+                  void acaoLote(
+                    () =>
+                      cancelarPedidosPecasEmLote(
+                        companyId,
+                        activeStoreId,
+                        loteStats.idsAtivos,
+                      ),
+                    (n) =>
+                      n === 1
+                        ? '1 pedido cancelado.'
+                        : `${n} pedidos cancelados.`,
+                  )
+                }
+              >
+                Confirmar cancelamento
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="cp-btn cp-btn--ghost cp-btn--sm"
+                disabled={busyGlobal || semLoja}
+                onClick={pedirConfirmCancelLote}
+              >
+                Cancelar
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <p className="cp-panel__hint" role="status">Carregando pedidos…</p>
       ) : pedidosFiltrados.length === 0 ? (
@@ -334,171 +609,215 @@ export function PedidosPecasPage({ companyId, activeStoreId, onBadgeChange }: Pe
           )}
         </div>
       ) : (
-        <ul className="ped-list" aria-label="Lista de pedidos">
-          {pedidosFiltrados.map((p) => {
-            const temCliente = pedidoTemCliente(p)
-            const nomeCli = nomeClientePedido(p)
-            const telCli = telefoneClientePedido(p)
-            const busy = processandoId === p.id
-            const concluido = p.status === 'entregue' || p.status === 'cancelado'
+        <>
+          {selecionaveis.length > 0 && (
+            <div className="ped-select-all">
+              <label className="ped-select-all__label">
+                <input
+                  type="checkbox"
+                  checked={todosSelecionados}
+                  disabled={semLoja || busyGlobal}
+                  onChange={toggleSelecionarTodos}
+                />
+                <span>
+                  {todosSelecionados
+                    ? 'Desmarcar todos'
+                    : `Selecionar todos (${selecionaveis.length})`}
+                </span>
+              </label>
+              <span className="ped-select-all__hint">
+                Selecione vários para marcar chegada, entrega ou cancelar de uma vez.
+              </span>
+            </div>
+          )}
 
-            return (
-              <li
-                key={p.id}
-                className={[
-                  'ped-item',
-                  temCliente ? 'ped-item--cliente' : '',
-                  p.status === 'chegou' ? 'ped-item--chegou' : '',
-                  concluido ? 'ped-item--done' : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-              >
-                <div className="ped-item__check">
-                  {p.status === 'pendente' ? (
-                    <button
-                      type="button"
-                      className="ped-check"
-                      title="Marcar como chegou"
-                      aria-label={`Marcar ${p.descricao} como chegou`}
-                      disabled={busy || semLoja}
-                      onClick={() =>
-                        void acao(p.id, () => marcarPedidoChegou(companyId, activeStoreId, p.id), 'Item marcado como chegou.')
-                      }
-                    />
-                  ) : p.status === 'chegou' ? (
-                    <button
-                      type="button"
-                      className="ped-check ped-check--on"
-                      title="Desfazer chegada"
-                      aria-label={`Desfazer chegada de ${p.descricao}`}
-                      disabled={busy || semLoja}
-                      onClick={() =>
-                        void acao(p.id, () => desfazerPedidoChegou(companyId, activeStoreId, p.id))
-                      }
-                    />
-                  ) : (
-                    <span
-                      className={
-                        p.status === 'entregue'
-                          ? 'ped-check ped-check--done'
-                          : 'ped-check ped-check--cancel'
-                      }
-                      aria-hidden
-                    />
-                  )}
-                </div>
+          <ul className="ped-list" aria-label="Lista de pedidos">
+            {pedidosFiltrados.map((p) => {
+              const temCliente = pedidoTemCliente(p)
+              const nomeCli = nomeClientePedido(p)
+              const telCli = telefoneClientePedido(p)
+              const busy = processandoId === p.id || processandoLote
+              const concluido = p.status === 'entregue' || p.status === 'cancelado'
+              const podeSelecionar = !concluido
+              const selecionado = selecionados.has(p.id)
+              const confirmandoCancel = confirmCancelId === p.id
 
-                <div className="ped-item__body">
-                  <div className="ped-item__head">
-                    <strong className="ped-item__nome">
-                      {p.quantidade > 1 ? `${p.quantidade}× ` : ''}
-                      {p.descricao}
-                    </strong>
-                    <span className={`ped-status ped-status--${p.status}`}>
-                      {labelStatusPedidoPeca(p.status)}
-                    </span>
-                  </div>
-
-                  <div className="ped-item__meta">
-                    {p.estoque_item && (
-                      <span className="ped-tag ped-tag--estoque">SKU {p.estoque_item.sku}</span>
-                    )}
-                    {!p.estoque_item_id && (
-                      <span className="ped-tag ped-tag--livre">Texto livre</span>
-                    )}
-                    <span className="ped-tag">{formatShortDate(p.created_at)}</span>
-                    {p.sinal_valor != null && Number(p.sinal_valor) > 0 && (
-                      <span className="ped-tag ped-tag--sinal">Sinal {formatBRL(Number(p.sinal_valor))}</span>
+              return (
+                <li
+                  key={p.id}
+                  className={[
+                    'ped-item',
+                    temCliente ? 'ped-item--cliente' : '',
+                    p.status === 'chegou' ? 'ped-item--chegou' : '',
+                    concluido ? 'ped-item--done' : '',
+                    selecionado ? 'ped-item--selected' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                >
+                  <div className="ped-item__check">
+                    {podeSelecionar ? (
+                      <input
+                        type="checkbox"
+                        className="ped-select"
+                        checked={selecionado}
+                        disabled={busy || semLoja}
+                        aria-label={`Selecionar ${p.descricao}`}
+                        onChange={() => toggleSelecionado(p.id)}
+                      />
+                    ) : (
+                      <span
+                        className={
+                          p.status === 'entregue'
+                            ? 'ped-check ped-check--done'
+                            : 'ped-check ped-check--cancel'
+                        }
+                        aria-hidden
+                      />
                     )}
                   </div>
 
-                  {temCliente && (
-                    <div className="ped-item__cliente">
-                      <span className="ped-item__cliente-icon" aria-hidden>
-                        <svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-                          <circle cx={12} cy={8} r={3.5} stroke="currentColor" strokeWidth={1.75} />
-                          <path
-                            d="M5 20v-1a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v1"
-                            stroke="currentColor"
-                            strokeWidth={1.75}
-                            strokeLinecap="round"
-                          />
-                        </svg>
+                  <div className="ped-item__body">
+                    <div className="ped-item__head">
+                      <strong className="ped-item__nome">
+                        {p.quantidade > 1 ? `${p.quantidade}× ` : ''}
+                        {p.descricao}
+                      </strong>
+                      <span className={`ped-status ped-status--${p.status}`}>
+                        {labelStatusPedidoPeca(p.status)}
                       </span>
-                      <div className="ped-item__cliente-info">
-                        <span className="ped-item__cliente-nome">{nomeCli ?? 'Cliente'}</span>
-                        {telCli && (
-                          <a className="ped-item__cliente-tel" href={telHref(telCli)}>
-                            {telCli}
-                          </a>
+                    </div>
+
+                    <div className="ped-item__meta">
+                      {p.estoque_item && (
+                        <span className="ped-tag ped-tag--estoque">SKU {p.estoque_item.sku}</span>
+                      )}
+                      {!p.estoque_item_id && (
+                        <span className="ped-tag ped-tag--livre">Texto livre</span>
+                      )}
+                      <span className="ped-tag">{formatShortDate(p.created_at)}</span>
+                      {p.sinal_valor != null && Number(p.sinal_valor) > 0 && (
+                        <span className="ped-tag ped-tag--sinal">
+                          Sinal {formatBRL(Number(p.sinal_valor))}
+                        </span>
+                      )}
+                    </div>
+
+                    {temCliente && (
+                      <div className="ped-item__cliente">
+                        <span className="ped-item__cliente-icon" aria-hidden>
+                          <svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+                            <circle cx={12} cy={8} r={3.5} stroke="currentColor" strokeWidth={1.75} />
+                            <path
+                              d="M5 20v-1a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v1"
+                              stroke="currentColor"
+                              strokeWidth={1.75}
+                              strokeLinecap="round"
+                            />
+                          </svg>
+                        </span>
+                        <div className="ped-item__cliente-info">
+                          <span className="ped-item__cliente-nome">{nomeCli ?? 'Cliente'}</span>
+                          {telCli && (
+                            <a className="ped-item__cliente-tel" href={telHref(telCli)}>
+                              {telCli}
+                            </a>
+                          )}
+                        </div>
+                        {p.status === 'chegou' && (
+                          <label className="ped-avisado">
+                            <input
+                              type="checkbox"
+                              checked={p.cliente_avisado}
+                              disabled={busy || semLoja}
+                              onChange={(e) =>
+                                void acao(
+                                  p.id,
+                                  () =>
+                                    marcarClienteAvisado(
+                                      companyId,
+                                      activeStoreId,
+                                      p.id,
+                                      e.target.checked,
+                                    ),
+                                )
+                              }
+                            />
+                            Cliente avisado
+                          </label>
                         )}
                       </div>
+                    )}
+
+                    {p.observacoes && <p className="ped-item__obs">{p.observacoes}</p>}
+                  </div>
+
+                  {!concluido && (
+                    <div className="ped-item__actions">
+                      {p.status === 'pendente' && (
+                        <button
+                          type="button"
+                          className="cp-btn cp-btn--primary cp-btn--sm"
+                          disabled={busy || semLoja}
+                          onClick={() =>
+                            void acao(
+                              p.id,
+                              () => marcarPedidoChegou(companyId, activeStoreId, p.id),
+                              'Item marcado como chegou.',
+                            )
+                          }
+                        >
+                          Chegou
+                        </button>
+                      )}
                       {p.status === 'chegou' && (
-                        <label className="ped-avisado">
-                          <input
-                            type="checkbox"
-                            checked={p.cliente_avisado}
-                            disabled={busy || semLoja}
-                            onChange={(e) =>
-                              void acao(
-                                p.id,
-                                () =>
-                                  marcarClienteAvisado(
-                                    companyId,
-                                    activeStoreId,
-                                    p.id,
-                                    e.target.checked,
-                                  ),
-                              )
-                            }
-                          />
-                          Cliente avisado
-                        </label>
+                        <button
+                          type="button"
+                          className="cp-btn cp-btn--primary cp-btn--sm"
+                          disabled={busy || semLoja}
+                          onClick={() =>
+                            void acao(
+                              p.id,
+                              () => marcarPedidoEntregue(companyId, activeStoreId, p.id),
+                              'Pedido entregue ao cliente.',
+                            )
+                          }
+                        >
+                          Entregue
+                        </button>
+                      )}
+                      {confirmandoCancel ? (
+                        <button
+                          type="button"
+                          className="cp-btn cp-btn--danger cp-btn--sm"
+                          disabled={busy || semLoja}
+                          onClick={() =>
+                            void acao(
+                              p.id,
+                              () => cancelarPedidoPeca(companyId, activeStoreId, p.id),
+                              'Pedido cancelado.',
+                            )
+                          }
+                        >
+                          Confirmar
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="cp-btn cp-btn--ghost cp-btn--sm"
+                          disabled={busy || semLoja}
+                          onClick={() => pedirConfirmCancel(p.id)}
+                        >
+                          Cancelar
+                        </button>
                       )}
                     </div>
                   )}
-
-                  {p.observacoes && (
-                    <p className="ped-item__obs">{p.observacoes}</p>
-                  )}
-                </div>
-
-                {!concluido && (
-                  <div className="ped-item__actions">
-                    {p.status === 'chegou' && (
-                      <button
-                        type="button"
-                        className="cp-btn cp-btn--primary cp-btn--sm"
-                        disabled={busy || semLoja}
-                        onClick={() =>
-                          void acao(
-                            p.id,
-                            () => marcarPedidoEntregue(companyId, activeStoreId, p.id),
-                            'Pedido entregue ao cliente.',
-                          )
-                        }
-                      >
-                        Entregue
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className="cp-btn cp-btn--ghost cp-btn--sm"
-                      disabled={busy || semLoja}
-                      onClick={() => {
-                        if (!window.confirm('Cancelar este pedido?')) return
-                        void acao(p.id, () => cancelarPedidoPeca(companyId, activeStoreId, p.id), 'Pedido cancelado.')
-                      }}
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                )}
-              </li>
-            )
-          })}
-        </ul>
+                </li>
+              )
+            })}
+          </ul>
+        </>
       )}
 
       {modalAberto && (

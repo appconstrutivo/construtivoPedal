@@ -1,10 +1,61 @@
-import { opcaoCategoriaSaida, type CategoriaSaida } from '../lib/financeiro-categorias'
+import {
+  labelCategoriaSaida,
+  opcaoCategoriaSaida,
+  type CategoriaSaida,
+  type GrupoDre,
+} from '../lib/financeiro-categorias'
 import { selectAllPages, selectByIdsInBatches } from '../lib/supabase-batch'
 import { supabase } from '../lib/supabaseClient'
 import { totalOperacionalVenda } from '../lib/venda-valores'
 import type { IntervaloRelatorio } from './relatorios.service'
 
 export type TipoMargem = 'peca' | 'bike' | 'acessorio' | 'servico'
+
+/** Grupos de despesa do card Despesas / linhas do DRE (sem impostos nem fora do resultado). */
+export type GrupoDespesaDre = 'variavel' | 'fixa' | 'operacional' | 'financeira'
+
+export type OrigemDespesaDre = 'conta_pagar' | 'saida_manual' | 'consumo_interno'
+
+export type DespesaDreItem = {
+  id: string
+  descricao: string
+  categoria: string | null
+  categoriaLabel: string
+  grupo: GrupoDespesaDre
+  valor: number
+  data: string
+  origem: OrigemDespesaDre
+  origemLabel: string
+  meta?: string
+}
+
+export type DetalheDespesasDre = {
+  itens: DespesaDreItem[]
+  totais: Record<GrupoDespesaDre, number>
+  total: number
+}
+
+export const GRUPO_DESPESA_DRE_LABEL: Record<GrupoDespesaDre, string> = {
+  variavel: 'Despesas variáveis',
+  fixa: 'Despesas fixas e folha',
+  operacional: 'Outras despesas',
+  financeira: 'Tarifas e juros',
+}
+
+function grupoDespesaFromDre(grupo: GrupoDre | undefined): GrupoDespesaDre | null {
+  switch (grupo) {
+    case 'despesa_variavel':
+      return 'variavel'
+    case 'despesa_fixa':
+      return 'fixa'
+    case 'despesa_operacional':
+      return 'operacional'
+    case 'despesa_financeira':
+      return 'financeira'
+    default:
+      return null
+  }
+}
 
 /**
  * DRE gerencial por loja.
@@ -328,5 +379,160 @@ function montarDre(
     }).filter((m) => m.receita > 0),
     cmvEstimado: round2(cmvEstimado),
     itensSemCusto,
+  }
+}
+
+type ContaPagarDetalheRaw = {
+  id: string
+  descricao: string
+  categoria: string | null
+  valor: number
+  vencimento: string
+  status: string
+  credor_nome: string | null
+  fornecedores?: { nome?: string | null } | null
+}
+
+type SaidaManualDetalheRaw = {
+  id: string
+  descricao: string
+  categoria: string | null
+  valor: number
+  realizada_em: string
+}
+
+type ConsumoInternoRaw = {
+  id: string
+  quantidade: number
+  custo_unitario: number | null
+  created_at: string
+  observacao: string | null
+  estoque_itens?: { nome?: string | null } | null
+}
+
+/**
+ * Lista as despesas que compõem o card Despesas / linhas do DRE,
+ * com os mesmos filtros de apuração (vencimento / data do lançamento / consumo interno).
+ */
+export async function listarDetalheDespesasDre(
+  companyId: string,
+  storeId: string,
+  intervalo: IntervaloRelatorio,
+): Promise<DetalheDespesasDre> {
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const db = supabase as any
+
+  const [contasPagar, saidasManuais, consumos] = await Promise.all([
+    selectAllPages<ContaPagarDetalheRaw>((from, to) =>
+      db
+        .from('financeiro_contas_pagar')
+        .select('id, descricao, categoria, valor, vencimento, status, credor_nome, fornecedores(nome)')
+        .eq('company_id', companyId)
+        .eq('store_id', storeId)
+        .in('status', ['pendente', 'pago'])
+        .gte('vencimento', dataLocalIso(intervalo.desde))
+        .lte('vencimento', dataLocalIso(intervalo.ate))
+        .order('vencimento', { ascending: false })
+        .range(from, to),
+    ),
+    selectAllPages<SaidaManualDetalheRaw>((from, to) =>
+      db
+        .from('financeiro_movimentacoes')
+        .select('id, descricao, categoria, valor, realizada_em')
+        .eq('company_id', companyId)
+        .eq('store_id', storeId)
+        .eq('tipo', 'saida')
+        .eq('origem', 'manual')
+        .gte('realizada_em', intervalo.desde)
+        .lte('realizada_em', intervalo.ate)
+        .order('realizada_em', { ascending: false })
+        .range(from, to),
+    ),
+    selectAllPages<ConsumoInternoRaw>((from, to) =>
+      db
+        .from('estoque_movimentacoes')
+        .select('id, quantidade, custo_unitario, created_at, observacao, estoque_itens(nome)')
+        .eq('company_id', companyId)
+        .eq('store_id', storeId)
+        .eq('motivo', 'consumo_interno')
+        .gte('created_at', intervalo.desde)
+        .lte('created_at', intervalo.ate)
+        .order('created_at', { ascending: false })
+        .range(from, to),
+    ),
+  ])
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+
+  const itens: DespesaDreItem[] = []
+
+  for (const cp of contasPagar) {
+    const grupo = grupoDespesaFromDre(opcaoCategoriaSaida(cp.categoria)?.grupoDre)
+    if (!grupo) continue
+    const credor = cp.fornecedores?.nome?.trim() || cp.credor_nome?.trim() || null
+    const statusLabel = cp.status === 'pago' ? 'Pago' : 'Pendente'
+    itens.push({
+      id: `cp-${cp.id}`,
+      descricao: cp.descricao,
+      categoria: cp.categoria,
+      categoriaLabel: labelCategoriaSaida(cp.categoria) || 'Sem categoria',
+      grupo,
+      valor: round2(Number(cp.valor) || 0),
+      data: cp.vencimento,
+      origem: 'conta_pagar',
+      origemLabel: 'Conta a pagar',
+      meta: credor ? `${statusLabel} · ${credor}` : statusLabel,
+    })
+  }
+
+  for (const s of saidasManuais) {
+    const grupo = grupoDespesaFromDre(opcaoCategoriaSaida(s.categoria)?.grupoDre)
+    if (!grupo) continue
+    itens.push({
+      id: `sm-${s.id}`,
+      descricao: s.descricao,
+      categoria: s.categoria,
+      categoriaLabel: labelCategoriaSaida(s.categoria) || 'Sem categoria',
+      grupo,
+      valor: round2(Number(s.valor) || 0),
+      data: dataLocalIso(s.realizada_em),
+      origem: 'saida_manual',
+      origemLabel: 'Saída do caixa',
+    })
+  }
+
+  for (const m of consumos) {
+    const valor = round2(Math.abs((Number(m.quantidade) || 0) * (Number(m.custo_unitario) || 0)))
+    if (valor <= 0) continue
+    const nomeItem = m.estoque_itens?.nome?.trim() || 'Item do estoque'
+    itens.push({
+      id: `ci-${m.id}`,
+      descricao: m.observacao?.trim() ? `${nomeItem} — ${m.observacao.trim()}` : nomeItem,
+      categoria: 'outro',
+      categoriaLabel: 'Consumo interno',
+      grupo: 'operacional',
+      valor,
+      data: dataLocalIso(m.created_at),
+      origem: 'consumo_interno',
+      origemLabel: 'Estoque',
+    })
+  }
+
+  itens.sort((a, b) => {
+    if (a.data !== b.data) return a.data < b.data ? 1 : -1
+    return b.valor - a.valor
+  })
+
+  const totais: Record<GrupoDespesaDre, number> = {
+    variavel: 0,
+    fixa: 0,
+    operacional: 0,
+    financeira: 0,
+  }
+  for (const i of itens) totais[i.grupo] = round2(totais[i.grupo] + i.valor)
+
+  return {
+    itens,
+    totais,
+    total: round2(totais.variavel + totais.fixa + totais.operacional + totais.financeira),
   }
 }

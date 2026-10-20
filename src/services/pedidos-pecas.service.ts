@@ -256,6 +256,93 @@ export async function cancelarPedidoPeca(
   return data as PedidoPecaRow
 }
 
+/** Atualiza vários pedidos de uma vez (mesma transição de status). */
+export async function atualizarPedidosPecasEmLote(
+  companyId: string,
+  storeId: string,
+  ids: string[],
+  patch: {
+    status?: PedidoPecaStatus
+    chegou_em?: string | null
+    entregue_em?: string | null
+    cliente_avisado?: boolean
+  },
+  statusPermitidos: PedidoPecaStatus[],
+): Promise<number> {
+  const unique = [...new Set(ids.filter(Boolean))]
+  if (unique.length === 0) return 0
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('pedidos_pecas')
+    .update(patch)
+    .eq('company_id', companyId)
+    .eq('store_id', storeId)
+    .in('id', unique)
+    .in('status', statusPermitidos)
+    .select('id')
+
+  if (error) throw new Error((error as { message: string }).message)
+  return ((data ?? []) as { id: string }[]).length
+}
+
+export async function marcarPedidosChegaramEmLote(
+  companyId: string,
+  storeId: string,
+  ids: string[],
+): Promise<number> {
+  return atualizarPedidosPecasEmLote(
+    companyId,
+    storeId,
+    ids,
+    { status: 'chegou', chegou_em: new Date().toISOString() },
+    ['pendente'],
+  )
+}
+
+export async function marcarPedidosEntreguesEmLote(
+  companyId: string,
+  storeId: string,
+  ids: string[],
+): Promise<number> {
+  return atualizarPedidosPecasEmLote(
+    companyId,
+    storeId,
+    ids,
+    { status: 'entregue', entregue_em: new Date().toISOString() },
+    ['pendente', 'chegou'],
+  )
+}
+
+export async function cancelarPedidosPecasEmLote(
+  companyId: string,
+  storeId: string,
+  ids: string[],
+): Promise<number> {
+  return atualizarPedidosPecasEmLote(
+    companyId,
+    storeId,
+    ids,
+    { status: 'cancelado' },
+    ['pendente', 'chegou'],
+  )
+}
+
+export async function marcarClientesAvisadosEmLote(
+  companyId: string,
+  storeId: string,
+  ids: string[],
+  avisado = true,
+): Promise<number> {
+  return atualizarPedidosPecasEmLote(
+    companyId,
+    storeId,
+    ids,
+    { cliente_avisado: avisado },
+    ['chegou'],
+  )
+}
+
 export async function excluirPedidoPeca(
   companyId: string,
   storeId: string,
