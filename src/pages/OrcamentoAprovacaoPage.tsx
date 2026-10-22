@@ -86,71 +86,78 @@ export function OrcamentoAprovacaoPage({ token }: OrcamentoAprovacaoPageProps) {
 
   return (
     <div className="orc-pub">
-      <div className="orc-pub__card">
-        {loading && <p className="orc-pub__hint">Carregando orçamento…</p>}
-        {erro && <p className="orc-pub__erro">{erro}</p>}
-        {!loading && dados && !dados.erro && (
-          <>
-            <header className="orc-pub__head">
-              <p className="orc-pub__loja">{dados.loja_nome}</p>
-              <h1 className="orc-pub__title">Orçamento #{dados.numero}</h1>
-              <p className="orc-pub__cliente">{dados.cliente_nome}</p>
-              <span className={`orc-pub__status orc-pub__status--${dados.status}`}>
-                {labelStatusOrcamento(dados.status as StatusOrcamento)}
-              </span>
-            </header>
-            {dados.resumo && <p className="orc-pub__resumo">{dados.resumo}</p>}
-            {formatDate(dados.valido_ate) && (
-              <p className="orc-pub__validade">Válido até {formatDate(dados.valido_ate)}</p>
-            )}
-            <table className="orc-pub__table">
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th>Qtd</th>
-                  <th>Valor</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dados.itens.map((item, idx) => (
-                  <tr key={`${item.descricao}-${idx}`}>
-                    <td>
-                      {item.descricao}
-                      <small>{item.tipo === 'servico' ? 'Serviço' : 'Peça'}</small>
-                      {itemOrcamentoSemSaldo(item) && (
-                        <small className="orc-pub__obs">{OBS_ITEM_ORCAMENTO_SEM_SALDO}</small>
-                      )}
-                    </td>
-                    <td>{item.quantidade}</td>
-                    <td>{formatBRL(Number(item.quantidade) * Number(item.preco_unitario))}</td>
+      <div className="orc-pub__shell">
+        <div className="orc-pub__card">
+          {loading && <p className="orc-pub__hint">Carregando orçamento…</p>}
+          {erro && <p className="orc-pub__erro">{erro}</p>}
+          {!loading && dados && !dados.erro && (
+            <>
+              <header className="orc-pub__head">
+                <p className="orc-pub__loja">{dados.loja_nome}</p>
+                <h1 className="orc-pub__title">Orçamento #{dados.numero}</h1>
+                <p className="orc-pub__cliente">{dados.cliente_nome}</p>
+                <span className={`orc-pub__status orc-pub__status--${dados.status}`}>
+                  {labelStatusOrcamento(dados.status as StatusOrcamento)}
+                </span>
+              </header>
+              {dados.resumo && <p className="orc-pub__resumo">{dados.resumo}</p>}
+              {formatDate(dados.valido_ate) && (
+                <p className="orc-pub__validade">Válido até {formatDate(dados.valido_ate)}</p>
+              )}
+              <table className="orc-pub__table">
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>Qtd</th>
+                    <th>Valor</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            <p className="orc-pub__total">Total: {formatBRL(total)}</p>
-            {mensagem && <p className="orc-pub__ok">{mensagem}</p>}
-            {podeResponder && !mensagem && (
-              <div className="orc-pub__actions">
-                <button
-                  type="button"
-                  className="orc-pub__btn orc-pub__btn--no"
-                  disabled={respondendo}
-                  onClick={() => void responder(false)}
-                >
-                  Recusar
-                </button>
-                <button
-                  type="button"
-                  className="orc-pub__btn orc-pub__btn--yes"
-                  disabled={respondendo}
-                  onClick={() => void responder(true)}
-                >
-                  Aprovar orçamento
-                </button>
-              </div>
-            )}
-          </>
-        )}
+                </thead>
+                <tbody>
+                  {dados.itens.map((item, idx) => (
+                    <tr key={`${item.descricao}-${idx}`}>
+                      <td>
+                        {item.descricao}
+                        <small>{item.tipo === 'servico' ? 'Serviço' : 'Peça'}</small>
+                        {itemOrcamentoSemSaldo(item) && (
+                          <small className="orc-pub__obs">{OBS_ITEM_ORCAMENTO_SEM_SALDO}</small>
+                        )}
+                      </td>
+                      <td>{item.quantidade}</td>
+                      <td>{formatBRL(Number(item.quantidade) * Number(item.preco_unitario))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="orc-pub__total">Total: {formatBRL(total)}</p>
+              {mensagem && <p className="orc-pub__ok">{mensagem}</p>}
+              {podeResponder && !mensagem && (
+                <div className="orc-pub__actions">
+                  <button
+                    type="button"
+                    className="orc-pub__btn orc-pub__btn--no"
+                    disabled={respondendo}
+                    onClick={() => void responder(false)}
+                  >
+                    Recusar
+                  </button>
+                  <button
+                    type="button"
+                    className="orc-pub__btn orc-pub__btn--yes"
+                    disabled={respondendo}
+                    onClick={() => void responder(true)}
+                  >
+                    Aprovar orçamento
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        <footer className="orc-pub__foot">
+          <p className="orc-pub__credito">
+            Construtivo Pedal · desenvolvido por Eng. Thiago Wendley
+          </p>
+        </footer>
       </div>
     </div>
   )

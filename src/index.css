@@ -8866,13 +8866,30 @@ button {
   background: var(--cp-bg);
 }
 
-.orc-pub__card {
+.orc-pub__shell {
   width: min(520px, 100%);
+}
+
+.orc-pub__card {
+  width: 100%;
   background: var(--cp-surface);
   border: 1px solid var(--cp-border);
   border-radius: var(--cp-radius-lg);
   padding: 20px;
   box-shadow: var(--cp-shadow-md);
+}
+
+.orc-pub__foot {
+  margin-top: 16px;
+  padding-top: 12px;
+}
+
+.orc-pub__credito {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--cp-text-soft);
+  text-align: center;
 }
 
 .orc-pub__head {
