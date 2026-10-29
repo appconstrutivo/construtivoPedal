@@ -2697,6 +2697,11 @@ export function EstoquePage({
                       {movPreview.diferenca === 0 && ' · confere ✓'}
                     </p>
                   )}
+                  {movForm.tipo === 'ajuste' && (
+                    <p className="st-field__hint">
+                      Corrige o saldo · não altera o lucro líquido. Perda real: use Saída → Perda / avaria.
+                    </p>
+                  )}
                 </label>
                 {movForm.motivo === 'compra' && (
                   <label className="st-field">

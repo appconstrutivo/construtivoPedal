@@ -35,7 +35,12 @@ const LINHAS_DRE: LinhaDre[] = [
   { label: 'Receita', valor: (d) => d.receita, sinal: '=', destaque: 'subtotal' },
   { label: 'Impostos', valor: (d) => d.impostos, sinal: '−' },
   { label: 'Custo das mercadorias vendidas', valor: (d) => d.cmv, sinal: '−' },
-  { label: 'Perdas de estoque', valor: (d) => d.perdasEstoque, sinal: '−', ocultarSeZero: true },
+  {
+    label: 'Perdas / avarias',
+    valor: (d) => d.perdasEstoque,
+    sinal: '−',
+    ocultarSeZero: true,
+  },
   { label: 'Lucro bruto', valor: (d) => d.lucroBruto, sinal: '=', destaque: 'subtotal' },
   {
     label: 'Despesas variáveis',
@@ -428,7 +433,11 @@ export function RelatorioResultadoPanel({ companyId, activeStoreId, intervalo }:
           valor={d.lucroBruto}
           anterior={anterior?.lucroBruto}
           comparacao={intervaloAnt.label}
-          hint={`Receita − custo e impostos · margem ${formatPct(pct(d.lucroBruto, d.receita))}`}
+          hint={
+            d.perdasEstoque > 0
+              ? `Receita − CMV, impostos e perdas · margem ${formatPct(pct(d.lucroBruto, d.receita))}`
+              : `Receita − CMV e impostos · margem ${formatPct(pct(d.lucroBruto, d.receita))}`
+          }
         />
         <Kpi
           tom="slate"
@@ -446,7 +455,7 @@ export function RelatorioResultadoPanel({ companyId, activeStoreId, intervalo }:
           valor={d.lucroLiquido}
           anterior={anterior?.lucroLiquido}
           comparacao={intervaloAnt.label}
-          hint={`Lucro bruto − despesas · margem ${formatPct(pct(d.lucroLiquido, d.receita))}`}
+          hint={`Operacional · balanço não entra · margem ${formatPct(pct(d.lucroLiquido, d.receita))}`}
         />
       </div>
 
@@ -508,8 +517,8 @@ export function RelatorioResultadoPanel({ companyId, activeStoreId, intervalo }:
           )}
         </div>
         <p className="rl-card__hint">
-          Receitas pela data da venda · despesas pelo vencimento. Clique em uma linha de despesa para ver
-          o detalhe.
+          Receitas pela data da venda · despesas pelo vencimento · balanço de estoque não entra no lucro.
+          Clique em uma linha de despesa para ver o detalhe. Perda real use Saída → Perda / avaria.
         </p>
       </section>
 
@@ -545,10 +554,25 @@ export function RelatorioResultadoPanel({ companyId, activeStoreId, intervalo }:
 
         <section className="rl-card">
           <h2 className="rl-sec__title">Fora do lucro</h2>
-          {d.foraResultado.length === 0 ? (
-            <p className="rl-empty">Nenhuma compra de mercadoria, investimento ou retirada no período.</p>
+          {d.foraResultado.length === 0 && d.ajustesInventario === 0 ? (
+            <p className="rl-empty">
+              Nenhuma compra de mercadoria, investimento, retirada ou balanço no período.
+            </p>
           ) : (
             <ul className="rl-metrics">
+              {d.ajustesInventario !== 0 ? (
+                <li>
+                  <span>
+                    Balanço de estoque
+                    <em className="rl-muted">
+                      {d.ajustesInventario > 0 ? ' · redução inventário' : ' · sobra inventário'}
+                    </em>
+                  </span>
+                  <strong className={d.ajustesInventario > 0 ? 'rl-dre__neg' : undefined}>
+                    {formatBRL(Math.abs(d.ajustesInventario))}
+                  </strong>
+                </li>
+              ) : null}
               {d.foraResultado.map((f) => (
                 <li key={f.categoria}>
                   <span>{labelCategoriaSaida(f.categoria)}</span>
@@ -557,7 +581,9 @@ export function RelatorioResultadoPanel({ companyId, activeStoreId, intervalo }:
               ))}
             </ul>
           )}
-          <p className="rl-card__hint">Saem do caixa, mas não são despesa do período.</p>
+          <p className="rl-card__hint">
+            Movimentam caixa ou estoque, mas não entram no lucro líquido operacional.
+          </p>
         </section>
       </div>
 

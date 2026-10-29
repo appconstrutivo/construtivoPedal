@@ -60,7 +60,9 @@ function grupoDespesaFromDre(grupo: GrupoDre | undefined): GrupoDespesaDre | nul
 /**
  * DRE gerencial por loja.
  * Receita pela data da venda (valor da nota − taxas = faturamento operacional dos relatórios);
- * CMV pelo custo congelado no item vendido; perdas pelas movimentações de estoque;
+ * CMV pelo custo congelado no item vendido;
+ * perdas (motivo `perda`) entram no lucro bruto;
+ * balanço de inventário fica fora do lucro (correção de saldo, não resultado operacional);
  * despesas pelas contas a pagar (vencimento) + saídas avulsas (data do lançamento).
  */
 export type ResultadoDre = {
@@ -71,7 +73,14 @@ export type ResultadoDre = {
   impostos: number
   receitaLiquida: number
   cmv: number
+  /** Perda / avaria explícita (Saída → Perda). Entra no lucro bruto. */
   perdasEstoque: number
+  /**
+   * Efeito líquido do balanço de estoque (custo × diferença).
+   * Positivo = redução de inventário; negativo = sobra encontrada.
+   * Não entra no lucro líquido — só informativo.
+   */
+  ajustesInventario: number
   lucroBruto: number
   despesasVariaveis: number
   margemContribuicao: number
@@ -309,10 +318,12 @@ function montarDre(
   }
 
   let perdasEstoque = 0
+  let ajustesInventario = 0
   let consumoInterno = 0
   for (const m of movsEstoque) {
     const valor = (Number(m.quantidade) || 0) * (Number(m.custo_unitario) || 0)
     if (m.motivo === 'consumo_interno') consumoInterno += Math.abs(valor)
+    else if (m.motivo === 'balanco') ajustesInventario -= valor
     else perdasEstoque -= valor
   }
 
@@ -362,6 +373,7 @@ function montarDre(
     receitaLiquida: round2(receitaLiquida),
     cmv: round2(cmv),
     perdasEstoque: round2(perdasEstoque),
+    ajustesInventario: round2(ajustesInventario),
     lucroBruto: round2(lucroBruto),
     despesasVariaveis: round2(despesasVariaveis),
     margemContribuicao: round2(margemContribuicao),
