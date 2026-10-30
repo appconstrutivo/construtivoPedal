@@ -9212,8 +9212,20 @@ button {
   cursor: pointer;
 }
 
+.man-capa__install-btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.man-capa__install-btn--ghost {
+  background: transparent;
+  border-color: var(--cp-border);
+  color: var(--cp-text-muted);
+  font-weight: 650;
+}
+
 .man-capa__install-ok {
-  margin: 0;
+  margin: 8px 0 0;
   text-align: center;
   font-size: 0.84rem;
   font-weight: 650;

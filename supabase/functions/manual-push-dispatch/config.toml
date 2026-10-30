@@ -1,0 +1,2 @@
+[functions.manual-push-dispatch]
+verify_jwt = false

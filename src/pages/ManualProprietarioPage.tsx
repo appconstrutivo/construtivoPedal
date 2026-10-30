@@ -8,6 +8,13 @@ import {
   type ManualInstallKind,
 } from '../lib/manual-pwa'
 import {
+  ativarManualPush,
+  atualizarBadgeManual,
+  desativarManualPush,
+  getManualPushStatus,
+  type ManualPushStatus,
+} from '../lib/manual-push'
+import {
   carregarManualPublico,
   labelTipoRevisao,
   MANUAL_SECOES,
@@ -23,6 +30,14 @@ type ManualProprietarioPageProps = {
 }
 
 type View = 'capa' | ManualSecao
+
+function viewInicialDaUrl(): View {
+  if (typeof window === 'undefined') return 'capa'
+  const secao = new URLSearchParams(window.location.search).get('secao')
+  if (secao && MANUAL_SECOES.some((s) => s.id === secao)) return secao as ManualSecao
+  if (secao === 'sumario') return 'sumario'
+  return 'capa'
+}
 
 function formatDate(iso: string | null) {
   if (!iso) return null
@@ -596,13 +611,94 @@ function InstallManualCard({
   )
 }
 
+function PushAvisosCard({
+  status,
+  busy,
+  msg,
+  onAtivar,
+  onDesativar,
+}: {
+  status: ManualPushStatus
+  busy: boolean
+  msg: string | null
+  onAtivar: () => void
+  onDesativar: () => void
+}) {
+  if (status === 'unsupported') return null
+
+  if (status === 'missing_vapid') {
+    return (
+      <aside className="man-capa__install" aria-label="Avisos de revisão">
+        <p className="man-capa__install-title">Avisos de revisão</p>
+        <p className="man-capa__install-hint">
+          Notificações push ainda não configuradas neste ambiente.
+        </p>
+      </aside>
+    )
+  }
+
+  if (status === 'denied') {
+    return (
+      <aside className="man-capa__install" aria-label="Avisos de revisão">
+        <p className="man-capa__install-title">Avisos de revisão</p>
+        <p className="man-capa__install-hint">
+          As notificações estão bloqueadas neste aparelho. Libere nas configurações do navegador
+          para receber avisos de prazo.
+        </p>
+      </aside>
+    )
+  }
+
+  if (status === 'active') {
+    return (
+      <aside className="man-capa__install man-capa__install--action" aria-label="Avisos de revisão">
+        <p className="man-capa__install-title">Avisos de revisão ativos</p>
+        <p className="man-capa__install-hint">
+          Você será avisado 3 dias antes, no dia e se passar do prazo.
+        </p>
+        <button
+          type="button"
+          className="man-capa__install-btn man-capa__install-btn--ghost"
+          disabled={busy}
+          onClick={onDesativar}
+        >
+          {busy ? 'Desativando…' : 'Desativar avisos'}
+        </button>
+        {msg && <p className="man-capa__install-ok">{msg}</p>}
+      </aside>
+    )
+  }
+
+  return (
+    <aside className="man-capa__install man-capa__install--action" aria-label="Avisos de revisão">
+      <p className="man-capa__install-title">Avisar revisões no celular</p>
+      <p className="man-capa__install-hint">
+        Receba uma notificação quando chegar a hora da revisão — mesmo com o manual fechado.
+        No Android, o ícone pode mostrar um sinal de aviso.
+      </p>
+      <button
+        type="button"
+        className="man-capa__install-btn"
+        disabled={busy}
+        onClick={onAtivar}
+      >
+        {busy ? 'Ativando…' : 'Ativar avisos de revisão'}
+      </button>
+      {msg && <p className="man-capa__install-ok">{msg}</p>}
+    </aside>
+  )
+}
+
 export function ManualProprietarioPage({ token }: ManualProprietarioPageProps) {
   const [dados, setDados] = useState<ManualProprietarioPublico | null>(null)
   const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
-  const [view, setView] = useState<View>('capa')
+  const [view, setView] = useState<View>(() => viewInicialDaUrl())
   const [installKind, setInstallKind] = useState<ManualInstallKind>('manual')
   const [installMsg, setInstallMsg] = useState<string | null>(null)
+  const [pushStatus, setPushStatus] = useState<ManualPushStatus>('prompt')
+  const [pushBusy, setPushBusy] = useState(false)
+  const [pushMsg, setPushMsg] = useState<string | null>(null)
 
   useEffect(() => {
     ensureInstallPromptListener()
@@ -616,6 +712,10 @@ export function ManualProprietarioPage({ token }: ManualProprietarioPageProps) {
       window.removeEventListener('cp-manual-installed', refresh)
     }
   }, [])
+
+  useEffect(() => {
+    void getManualPushStatus().then(setPushStatus)
+  }, [token])
 
   useEffect(() => {
     setLoading(true)
@@ -643,6 +743,12 @@ export function ManualProprietarioPage({ token }: ManualProprietarioPageProps) {
     })
   }, [dados, token])
 
+  useEffect(() => {
+    if (!dados) return
+    const atrasadas = dados.revisoes.filter((r) => r.status !== 'realizada' && r.atrasada).length
+    void atualizarBadgeManual(atrasadas)
+  }, [dados])
+
   async function handleInstalar() {
     setInstallMsg(null)
     const outcome = await promptManualInstall()
@@ -653,6 +759,36 @@ export function ManualProprietarioPage({ token }: ManualProprietarioPageProps) {
       setInstallMsg('Você pode instalar depois pelo menu do navegador.')
     } else {
       setInstallKind(getManualInstallKind())
+    }
+  }
+
+  async function handleAtivarPush() {
+    setPushBusy(true)
+    setPushMsg(null)
+    try {
+      const next = await ativarManualPush(token)
+      setPushStatus(next)
+      if (next === 'active') setPushMsg('Avisos ativados neste aparelho.')
+      else if (next === 'denied') setPushMsg(null)
+    } catch (e) {
+      setPushMsg(e instanceof Error ? e.message : 'Não foi possível ativar os avisos.')
+    } finally {
+      setPushBusy(false)
+    }
+  }
+
+  async function handleDesativarPush() {
+    setPushBusy(true)
+    setPushMsg(null)
+    try {
+      const next = await desativarManualPush(token)
+      setPushStatus(next)
+      setPushMsg('Avisos desativados neste aparelho.')
+      await atualizarBadgeManual(0)
+    } catch (e) {
+      setPushMsg(e instanceof Error ? e.message : 'Não foi possível desativar.')
+    } finally {
+      setPushBusy(false)
     }
   }
 
@@ -719,6 +855,14 @@ export function ManualProprietarioPage({ token }: ManualProprietarioPageProps) {
 
             <InstallManualCard kind={installKind} onPrompt={() => void handleInstalar()} />
             {installMsg && <p className="man-capa__install-ok">{installMsg}</p>}
+
+            <PushAvisosCard
+              status={pushStatus}
+              busy={pushBusy}
+              msg={pushMsg}
+              onAtivar={() => void handleAtivarPush()}
+              onDesativar={() => void handleDesativarPush()}
+            />
           </div>
 
           <CreditoRodape />
