@@ -42,6 +42,8 @@ import {
   type EstoqueItemComLocal,
   type EstoqueLocalRow,
   type KitComComponentes,
+  type KitVersaoComComponentes,
+  type KitVersaoInput,
   type EstoqueMovimentacaoComItem,
   type FornecedorRow,
 } from '../services/estoque.service'
@@ -80,6 +82,15 @@ type KitComponenteLinha = {
   quantidade: string
 }
 
+type KitVersaoForm = {
+  key: string
+  id: string | null
+  nome: string
+  ehPadrao: boolean
+  itemResultanteId: string
+  componentes: KitComponenteLinha[]
+}
+
 function novoIdLinhaKit() {
   return typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
@@ -106,13 +117,72 @@ function kitComponentesComLinhaNova(linhas: KitComponenteLinha[]): KitComponente
   return [...preenchidas, linhaVazia ?? novoComponenteKitLinha()]
 }
 
-function emptyKitForm() {
+function emptyVersaoForm(nome = 'Principal', ehPadrao = true): KitVersaoForm {
   return {
-    sku: '',
-    nome: '',
+    key: novoIdLinhaKit(),
+    id: null,
+    nome,
+    ehPadrao,
     itemResultanteId: '',
     componentes: kitComponentesComLinhaNova([]),
   }
+}
+
+function emptyKitForm() {
+  const versao = emptyVersaoForm()
+  return {
+    sku: '',
+    nome: '',
+    versoes: [versao],
+    versaoAtivaKey: versao.key,
+  }
+}
+
+function versaoFormDeKit(versao: KitVersaoComComponentes): KitVersaoForm {
+  return {
+    key: versao.id,
+    id: versao.id,
+    nome: versao.nome,
+    ehPadrao: versao.ehPadrao,
+    itemResultanteId: versao.itemResultanteId,
+    componentes: kitComponentesComLinhaNova(
+      versao.componentes.map((c) => ({
+        id: novoIdLinhaKit(),
+        itemId: c.componenteItemId,
+        quantidade: formatQuantidadeInteira(c.quantidade),
+      })),
+    ),
+  }
+}
+
+function montarVersoesInputDoForm(versoes: KitVersaoForm[]): KitVersaoInput[] {
+  return versoes.map((versao) => {
+    const linhasPreenchidas = versao.componentes.filter((c) => c.itemId.trim())
+    const idsUsados = new Set<string>()
+    const componentes: Array<{ componenteItemId: string; quantidade: number }> = []
+
+    for (const linha of linhasPreenchidas) {
+      if (idsUsados.has(linha.itemId)) {
+        throw new Error(
+          `Na versão "${versao.nome.trim() || 'sem nome'}", não repita o mesmo componente.`,
+        )
+      }
+      const quantidade = parseQuantidadeInteira(linha.quantidade)
+      if (!Number.isFinite(quantidade) || quantidade <= 0) {
+        throw new Error(MSG_QUANTIDADE_INTEIRA)
+      }
+      idsUsados.add(linha.itemId)
+      componentes.push({ componenteItemId: linha.itemId, quantidade })
+    }
+
+    return {
+      id: versao.id,
+      nome: versao.nome.trim(),
+      ehPadrao: versao.ehPadrao,
+      itemResultanteId: versao.itemResultanteId,
+      componentes,
+    }
+  })
 }
 
 function ordenarTipos(lista: EstoqueTipoRow[]): EstoqueTipoRow[] {
@@ -340,6 +410,7 @@ export function EstoquePage({
   /** Nome do kit usado como base ao duplicar receita (somente exibição no modal). */
   const [kitReceitaOrigemNome, setKitReceitaOrigemNome] = useState<string | null>(null)
   const [kitsComposicaoAberta, setKitsComposicaoAberta] = useState<Record<string, boolean>>({})
+  const [pdfKitSelecionado, setPdfKitSelecionado] = useState<KitComComponentes | null>(null)
   const [modalMontagemOpen, setModalMontagemOpen] = useState(false)
   const [modalDesmontagemOpen, setModalDesmontagemOpen] = useState(false)
   const [modalImportOpen, setModalImportOpen] = useState(false)
@@ -372,11 +443,14 @@ export function EstoquePage({
   const [kitForm, setKitForm] = useState(emptyKitForm)
   const [montagemForm, setMontagemForm] = useState({
     kitId: '',
+    versaoId: '',
     quantidade: '1',
     origem: '',
+    substituicoes: {} as Record<string, string>,
   })
   const [desmontagemForm, setDesmontagemForm] = useState({
     kitId: '',
+    versaoId: '',
     quantidade: '1',
     origem: '',
   })
@@ -692,9 +766,14 @@ export function EstoquePage({
     [itens, itemSelecionadoId],
   )
 
+  const versaoKitFormAtiva = useMemo(
+    () => kitForm.versoes.find((v) => v.key === kitForm.versaoAtivaKey) ?? kitForm.versoes[0] ?? null,
+    [kitForm.versoes, kitForm.versaoAtivaKey],
+  )
+
   const itensParaComponenteKit = useMemo(
-    () => itensAtivos.filter((i) => i.id !== kitForm.itemResultanteId),
-    [itensAtivos, kitForm.itemResultanteId],
+    () => itensAtivos.filter((i) => i.id !== versaoKitFormAtiva?.itemResultanteId),
+    [itensAtivos, versaoKitFormAtiva?.itemResultanteId],
   )
 
   const kitMontagemSelecionado = useMemo(
@@ -702,28 +781,60 @@ export function EstoquePage({
     [kits, montagemForm.kitId],
   )
 
+  const versaoMontagemSelecionada = useMemo(() => {
+    if (!kitMontagemSelecionado) return null
+    return (
+      kitMontagemSelecionado.versoes.find((v) => v.id === montagemForm.versaoId) ??
+      kitMontagemSelecionado.versaoPadrao ??
+      kitMontagemSelecionado.versoes[0] ??
+      null
+    )
+  }, [kitMontagemSelecionado, montagemForm.versaoId])
+
   const kitDesmontagemSelecionado = useMemo(
     () => kits.find((k) => k.id === desmontagemForm.kitId) ?? null,
     [kits, desmontagemForm.kitId],
   )
+
+  const versaoDesmontagemSelecionada = useMemo(() => {
+    if (!kitDesmontagemSelecionado) return null
+    return (
+      kitDesmontagemSelecionado.versoes.find((v) => v.id === desmontagemForm.versaoId) ??
+      kitDesmontagemSelecionado.versaoPadrao ??
+      kitDesmontagemSelecionado.versoes[0] ??
+      null
+    )
+  }, [kitDesmontagemSelecionado, desmontagemForm.versaoId])
 
   const qtdMontagemNum = useMemo(() => {
     const n = parseQuantidadeInteira(montagemForm.quantidade)
     return Number.isFinite(n) && n > 0 ? n : 0
   }, [montagemForm.quantidade])
 
+  const substituicoesMontagemLista = useMemo(
+    () =>
+      Object.entries(montagemForm.substituicoes)
+        .filter(([, subId]) => Boolean(subId))
+        .map(([componenteItemId, substituirPorItemId]) => ({
+          componenteItemId,
+          substituirPorItemId,
+        })),
+    [montagemForm.substituicoes],
+  )
+
   const faltasEstoqueMontagem = useMemo(() => {
-    if (!kitMontagemSelecionado || qtdMontagemNum <= 0) return []
+    if (!versaoMontagemSelecionada || qtdMontagemNum <= 0) return []
     return verificarEstoqueMontagemKit(
-      kitMontagemSelecionado.componentes.map((c) => ({
+      versaoMontagemSelecionada.componentes.map((c) => ({
         componenteItemId: c.componenteItemId,
         componenteNome: c.componenteNome,
         quantidade: c.quantidade,
       })),
       qtdMontagemNum,
       itens.map((i) => ({ id: i.id, nome: i.nome, saldo_atual: i.saldo_atual })),
+      substituicoesMontagemLista,
     )
-  }, [kitMontagemSelecionado, qtdMontagemNum, itens])
+  }, [versaoMontagemSelecionada, qtdMontagemNum, itens, substituicoesMontagemLista])
 
   const saldoComponenteMontagemPorId = useMemo(() => {
     const map = new Map<string, number>()
@@ -739,39 +850,43 @@ export function EstoquePage({
   }, [desmontagemForm.quantidade])
 
   const saldoItemResultanteDesmontagem = useMemo(() => {
-    const kit = kitDesmontagemSelecionado
-    if (!kit?.item_resultante_id) return null
-    const item = itens.find((i) => i.id === kit.item_resultante_id)
+    const versao = versaoDesmontagemSelecionada
+    if (!versao?.itemResultanteId) return null
+    const item = itens.find((i) => i.id === versao.itemResultanteId)
     return item?.saldo_atual ?? null
-  }, [itens, kitDesmontagemSelecionado])
+  }, [itens, versaoDesmontagemSelecionada])
 
   const custoMontagemPorItemResultanteId = useMemo(() => {
     const map = new Map<string, number>()
     for (const kit of kits) {
-      if (!kit.item_resultante_id) continue
-      map.set(
-        kit.item_resultante_id,
-        calcularCustoComposicaoKit(
-          kit.componentes.map((c) => ({
-            componenteItemId: c.componenteItemId,
-            quantidade: c.quantidade,
-          })),
-          itens,
-        ),
-      )
+      for (const versao of kit.versoes) {
+        map.set(
+          versao.itemResultanteId,
+          calcularCustoComposicaoKit(
+            versao.componentes.map((c) => ({
+              componenteItemId: c.componenteItemId,
+              quantidade: c.quantidade,
+            })),
+            itens,
+          ),
+        )
+      }
     }
     return map
   }, [kits, itens])
 
   const custoKitForm = useMemo(
-    () => calcularCustoLinhasKitForm(kitForm.componentes, itens),
-    [kitForm.componentes, itens],
+    () =>
+      versaoKitFormAtiva
+        ? calcularCustoLinhasKitForm(versaoKitFormAtiva.componentes, itens)
+        : 0,
+    [versaoKitFormAtiva, itens],
   )
 
   const kitDoItemEmEdicao = useMemo(
     () =>
       itemEditandoId
-        ? (kits.find((k) => k.item_resultante_id === itemEditandoId) ?? null)
+        ? (kits.find((k) => k.versoes.some((v) => v.itemResultanteId === itemEditandoId)) ?? null)
         : null,
     [kits, itemEditandoId],
   )
@@ -1156,9 +1271,30 @@ export function EstoquePage({
     void reservarSkuKitParaFormulario()
   }
 
-  function gerarPdfListaKit(kit: KitComComponentes) {
+  function gerarPdfListaKit(kit: KitComComponentes, versao?: KitVersaoComComponentes) {
     try {
-      imprimirListaKit(kit, itens, companyName, storeName)
+      if (!versao && kit.versoes.length > 1) {
+        setPdfKitSelecionado(kit)
+        return
+      }
+      const alvo = versao ?? kit.versaoPadrao ?? kit.versoes[0]
+      if (!alvo) throw new Error('Kit sem versão para imprimir.')
+      if (alvo.componentes.length === 0) {
+        throw new Error(`A versão "${alvo.nome}" não possui componentes.`)
+      }
+      imprimirListaKit(
+        {
+          ...kit,
+          item_resultante_id: alvo.itemResultanteId,
+          itemResultanteNome: alvo.itemResultanteNome,
+          componentes: alvo.componentes,
+        },
+        itens,
+        companyName,
+        storeName,
+        alvo.nome,
+      )
+      setPdfKitSelecionado(null)
     } catch (err: unknown) {
       window.alert(err instanceof Error ? err.message : 'Não foi possível gerar o PDF da lista.')
     }
@@ -1169,17 +1305,22 @@ export function EstoquePage({
     setKitEditandoId(null)
     setKitReceitaOrigemNome(kit.nome)
     setKitSkuLoading(false)
-    setKitForm({
-      sku: '',
-      nome: `${kit.nome} (cópia)`,
-      itemResultanteId: '',
-      componentes: kitComponentesComLinhaNova(
-        kit.componentes.map((c) => ({
+    const base = kit.versaoPadrao ?? kit.versoes[0]
+    const versao = emptyVersaoForm('Principal', true)
+    if (base) {
+      versao.componentes = kitComponentesComLinhaNova(
+        base.componentes.map((c) => ({
           id: novoIdLinhaKit(),
           itemId: c.componenteItemId,
           quantidade: formatQuantidadeInteira(c.quantidade),
         })),
-      ),
+      )
+    }
+    setKitForm({
+      sku: '',
+      nome: `${kit.nome} (cópia)`,
+      versoes: [versao],
+      versaoAtivaKey: versao.key,
     })
     setModalKitOpen(true)
     void reservarSkuKitParaFormulario()
@@ -1190,17 +1331,13 @@ export function EstoquePage({
     setKitEditandoId(kit.id)
     setKitReceitaOrigemNome(null)
     setKitSkuLoading(false)
+    const versoes = kit.versoes.map(versaoFormDeKit)
+    const ativa = versoes.find((v) => v.ehPadrao) ?? versoes[0]
     setKitForm({
       sku: kit.sku,
       nome: kit.nome,
-      itemResultanteId: kit.item_resultante_id ?? '',
-      componentes: kitComponentesComLinhaNova(
-        kit.componentes.map((c) => ({
-          id: novoIdLinhaKit(),
-          itemId: c.componenteItemId,
-          quantidade: formatQuantidadeInteira(c.quantidade),
-        })),
-      ),
+      versoes,
+      versaoAtivaKey: ativa?.key ?? versoes[0]?.key ?? '',
     })
     setModalKitOpen(true)
   }
@@ -1214,30 +1351,99 @@ export function EstoquePage({
     setFormError(null)
   }
 
-  function adicionarLinhaComponenteKit() {
+  function atualizarVersaoKitFormAtiva(patch: Partial<KitVersaoForm>) {
+    setKitForm((prev) => ({
+      ...prev,
+      versoes: prev.versoes.map((v) =>
+        v.key === prev.versaoAtivaKey ? { ...v, ...patch } : v,
+      ),
+    }))
+  }
+
+  function adicionarVersaoKitForm() {
     setKitForm((prev) => {
-      const normalizado = kitComponentesComLinhaNova(prev.componentes)
-      const preenchidas = normalizado.filter((c) => c.itemId.trim())
-      const linhaVazia = normalizado.find((c) => !c.itemId.trim())!
+      const origem =
+        prev.versoes.find((v) => v.key === prev.versaoAtivaKey) ?? prev.versoes[0] ?? null
+      const nova = emptyVersaoForm(`Versão ${prev.versoes.length + 1}`, false)
+      if (origem) {
+        nova.componentes = kitComponentesComLinhaNova(
+          origem.componentes
+            .filter((c) => c.itemId.trim())
+            .map((c) => ({
+              id: novoIdLinhaKit(),
+              itemId: c.itemId,
+              quantidade: c.quantidade,
+            })),
+        )
+      }
       return {
         ...prev,
-        componentes: [...preenchidas, novoComponenteKitLinha(), linhaVazia],
+        versoes: [...prev.versoes, nova],
+        versaoAtivaKey: nova.key,
       }
     })
   }
 
-  function removerLinhaComponenteKit(linhaId: string) {
+  function removerVersaoKitFormAtiva() {
     setKitForm((prev) => {
-      const idx = prev.componentes.findIndex((c) => c.id === linhaId)
-      if (idx < 0) return prev
-      const alvo = prev.componentes[idx]
-      const ehLinhaNovaFinal = idx === prev.componentes.length - 1 && !alvo.itemId.trim()
-      if (ehLinhaNovaFinal) return prev
+      if (prev.versoes.length <= 1) return prev
+      const restante = prev.versoes.filter((v) => v.key !== prev.versaoAtivaKey)
+      if (restante.length === 0) return prev
+      const tinhaPadrao = prev.versoes.find((v) => v.key === prev.versaoAtivaKey)?.ehPadrao
+      const versoes = tinhaPadrao
+        ? restante.map((v, idx) => ({ ...v, ehPadrao: idx === 0 ? true : v.ehPadrao }))
+        : restante
+      const ativa = versoes.find((v) => v.ehPadrao) ?? versoes[0]
       return {
         ...prev,
-        componentes: kitComponentesComLinhaNova(prev.componentes.filter((c) => c.id !== linhaId)),
+        versoes,
+        versaoAtivaKey: ativa.key,
       }
     })
+  }
+
+  function marcarVersaoKitFormPadrao() {
+    setKitForm((prev) => ({
+      ...prev,
+      versoes: prev.versoes.map((v) => ({
+        ...v,
+        ehPadrao: v.key === prev.versaoAtivaKey,
+      })),
+    }))
+  }
+
+  function adicionarLinhaComponenteKit() {
+    setKitForm((prev) => ({
+      ...prev,
+      versoes: prev.versoes.map((versao) => {
+        if (versao.key !== prev.versaoAtivaKey) return versao
+        const normalizado = kitComponentesComLinhaNova(versao.componentes)
+        const preenchidas = normalizado.filter((c) => c.itemId.trim())
+        const linhaVazia = normalizado.find((c) => !c.itemId.trim())!
+        return {
+          ...versao,
+          componentes: [...preenchidas, novoComponenteKitLinha(), linhaVazia],
+        }
+      }),
+    }))
+  }
+
+  function removerLinhaComponenteKit(linhaId: string) {
+    setKitForm((prev) => ({
+      ...prev,
+      versoes: prev.versoes.map((versao) => {
+        if (versao.key !== prev.versaoAtivaKey) return versao
+        const idx = versao.componentes.findIndex((c) => c.id === linhaId)
+        if (idx < 0) return versao
+        const alvo = versao.componentes[idx]
+        const ehLinhaNovaFinal = idx === versao.componentes.length - 1 && !alvo.itemId.trim()
+        if (ehLinhaNovaFinal) return versao
+        return {
+          ...versao,
+          componentes: kitComponentesComLinhaNova(versao.componentes.filter((c) => c.id !== linhaId)),
+        }
+      }),
+    }))
   }
 
   function atualizarLinhaComponenteKit(
@@ -1246,38 +1452,60 @@ export function EstoquePage({
   ) {
     setKitForm((prev) => ({
       ...prev,
-      componentes: kitComponentesComLinhaNova(
-        prev.componentes.map((c) => (c.id === linhaId ? { ...c, ...patch } : c)),
-      ),
+      versoes: prev.versoes.map((versao) => {
+        if (versao.key !== prev.versaoAtivaKey) return versao
+        return {
+          ...versao,
+          componentes: kitComponentesComLinhaNova(
+            versao.componentes.map((c) => (c.id === linhaId ? { ...c, ...patch } : c)),
+          ),
+        }
+      }),
     }))
   }
 
   function definirItemResultanteKit(itemResultanteId: string) {
     setKitForm((prev) => ({
       ...prev,
-      itemResultanteId,
-      componentes: kitComponentesComLinhaNova(
-        prev.componentes.map((c) =>
-          c.itemId === itemResultanteId ? { ...c, itemId: '' } : c,
-        ),
-      ),
+      versoes: prev.versoes.map((versao) => {
+        if (versao.key !== prev.versaoAtivaKey) return versao
+        return {
+          ...versao,
+          itemResultanteId,
+          componentes: kitComponentesComLinhaNova(
+            versao.componentes.map((c) =>
+              c.itemId === itemResultanteId ? { ...c, itemId: '' } : c,
+            ),
+          ),
+        }
+      }),
     }))
   }
 
   function abrirMontagemKit() {
     setFormError(null)
+    const kit = kits[0]
+    const versao = kit?.versaoPadrao ?? kit?.versoes[0]
     setMontagemForm({
-      kitId: kits[0]?.id ?? '',
+      kitId: kit?.id ?? '',
+      versaoId: versao?.id ?? '',
       quantidade: '1',
       origem: '',
+      substituicoes: {},
     })
     setModalMontagemOpen(true)
   }
 
-  function abrirDesmontagemKit(kitIdPreselect?: string) {
+  function abrirDesmontagemKit(kitIdPreselect?: string, versaoIdPreselect?: string) {
     setFormError(null)
+    const kit = kits.find((k) => k.id === kitIdPreselect) ?? kits[0]
+    const versao =
+      kit?.versoes.find((v) => v.id === versaoIdPreselect) ??
+      kit?.versaoPadrao ??
+      kit?.versoes[0]
     setDesmontagemForm({
-      kitId: kitIdPreselect ?? kits[0]?.id ?? '',
+      kitId: kit?.id ?? '',
+      versaoId: versao?.id ?? '',
       quantidade: '1',
       origem: '',
     })
@@ -1290,38 +1518,18 @@ export function EstoquePage({
 
     const sku = kitForm.sku.trim()
     const nome = kitForm.nome.trim()
-    const itemResultanteId = kitForm.itemResultanteId
 
-    if (!sku || !nome || !itemResultanteId) {
-      setFormError('Aguarde o SKU do kit ou preencha nome e item resultante.')
+    if (!sku || !nome) {
+      setFormError('Aguarde o SKU do kit ou preencha o nome.')
       return
     }
 
-    const linhasPreenchidas = kitForm.componentes.filter((c) => c.itemId.trim())
-    if (linhasPreenchidas.length === 0) {
-      setFormError('Adicione ao menos um componente à lista do kit.')
+    let versoes: KitVersaoInput[]
+    try {
+      versoes = montarVersoesInputDoForm(kitForm.versoes)
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Revise as versões do kit.')
       return
-    }
-
-    const idsUsados = new Set<string>()
-    const componentes: Array<{ componenteItemId: string; quantidade: number }> = []
-
-    for (const linha of linhasPreenchidas) {
-      if (linha.itemId === itemResultanteId) {
-        setFormError('O item resultante não pode aparecer também como componente.')
-        return
-      }
-      if (idsUsados.has(linha.itemId)) {
-        setFormError('Não repita o mesmo componente na lista. Ajuste a quantidade na linha existente.')
-        return
-      }
-      const quantidade = parseQuantidadeInteira(linha.quantidade)
-      if (!Number.isFinite(quantidade) || quantidade <= 0) {
-        setFormError(MSG_QUANTIDADE_INTEIRA)
-        return
-      }
-      idsUsados.add(linha.itemId)
-      componentes.push({ componenteItemId: linha.itemId, quantidade })
     }
 
     setSalvandoKit(true)
@@ -1331,25 +1539,25 @@ export function EstoquePage({
           companyId,
           kitId: kitEditandoId,
           nome,
-          itemResultanteId,
-          componentes,
+          versoes,
         })
       } else {
         await criarKitComComponentes({
           companyId,
           sku,
           nome,
-          itemResultanteId,
-          componentes,
+          versoes,
         })
       }
-      const itemResultante = itens.find((i) => i.id === itemResultanteId)
-      if (!itemResultante || Number(itemResultante.saldo_atual) <= 0) {
-        await sincronizarCustoItemResultanteKit({
-          itemResultanteId,
-          componentes,
-          itens,
-        })
+      for (const versao of versoes) {
+        const itemResultante = itens.find((i) => i.id === versao.itemResultanteId)
+        if (!itemResultante || Number(itemResultante.saldo_atual) <= 0) {
+          await sincronizarCustoItemResultanteKit({
+            itemResultanteId: versao.itemResultanteId,
+            componentes: versao.componentes,
+            itens,
+          })
+        }
       }
       await carregarDados()
       fecharModalKit()
@@ -1364,8 +1572,8 @@ export function EstoquePage({
     e.preventDefault()
     setFormError(null)
 
-    if (!montagemForm.kitId) {
-      setFormError('Selecione um kit para montar.')
+    if (!montagemForm.kitId || !montagemForm.versaoId) {
+      setFormError('Selecione o kit e a versão para montar.')
       return
     }
 
@@ -1375,15 +1583,16 @@ export function EstoquePage({
       return
     }
 
-    const faltas = kitMontagemSelecionado
+    const faltas = versaoMontagemSelecionada
       ? verificarEstoqueMontagemKit(
-        kitMontagemSelecionado.componentes.map((c) => ({
+        versaoMontagemSelecionada.componentes.map((c) => ({
           componenteItemId: c.componenteItemId,
           componenteNome: c.componenteNome,
           quantidade: c.quantidade,
         })),
         quantidade,
         itens.map((i) => ({ id: i.id, nome: i.nome, saldo_atual: i.saldo_atual })),
+        substituicoesMontagemLista,
       )
       : []
 
@@ -1397,8 +1606,10 @@ export function EstoquePage({
       await montarKit({
         companyId,
         kitId: montagemForm.kitId,
+        versaoId: montagemForm.versaoId,
         quantidade,
         origem: montagemForm.origem.trim() || undefined,
+        substituicoes: substituicoesMontagemLista,
       })
       await carregarDados()
       setModalMontagemOpen(false)
@@ -1413,8 +1624,8 @@ export function EstoquePage({
     e.preventDefault()
     setFormError(null)
 
-    if (!desmontagemForm.kitId) {
-      setFormError('Selecione um kit para desmontar.')
+    if (!desmontagemForm.kitId || !desmontagemForm.versaoId) {
+      setFormError('Selecione o kit e a versão para desmontar.')
       return
     }
 
@@ -1433,9 +1644,12 @@ export function EstoquePage({
     }
 
     const kit = kitDesmontagemSelecionado
+    const versao = versaoDesmontagemSelecionada
     if (
       !window.confirm(
-        `Desmontar ${formatQuantidadeInteira(quantidade)} unidade(s) do kit "${kit?.nome ?? ''}"?\n\nO item montado será baixado do estoque e os componentes voltarão automaticamente.`,
+        `Desmontar ${formatQuantidadeInteira(quantidade)} unidade(s) do kit "${kit?.nome ?? ''}"` +
+          (versao ? ` · ${versao.nome}` : '') +
+          `?\n\nO item montado será baixado do estoque e os componentes voltarão automaticamente.`,
       )
     ) {
       return
@@ -1446,6 +1660,7 @@ export function EstoquePage({
       await desmontarKit({
         companyId,
         kitId: desmontagemForm.kitId,
+        versaoId: desmontagemForm.versaoId,
         quantidade,
         origem: desmontagemForm.origem.trim() || undefined,
       })
@@ -1996,19 +2211,24 @@ export function EstoquePage({
             ) : (
               <ul className="st-sup-list st-sup-list--kits">
                 {kits.map((kit) => {
-                  const custoKit = calcularCustoComposicaoKit(
-                    kit.componentes.map((c) => ({
-                      componenteItemId: c.componenteItemId,
-                      quantidade: c.quantidade,
-                    })),
-                    itens,
-                  )
+                  const versaoRef = kit.versaoPadrao ?? kit.versoes[0]
+                  const custoKit = versaoRef
+                    ? calcularCustoComposicaoKit(
+                        versaoRef.componentes.map((c) => ({
+                          componenteItemId: c.componenteItemId,
+                          quantidade: c.quantidade,
+                        })),
+                        itens,
+                      )
+                    : 0
                   const composicaoAberta = Boolean(kitsComposicaoAberta[kit.id])
                   const previewLimite = 3
                   const componentesVisiveis = composicaoAberta
-                    ? kit.componentes
-                    : kit.componentes.slice(0, previewLimite)
-                  const temMaisComponentes = kit.componentes.length > previewLimite
+                    ? (versaoRef?.componentes ?? [])
+                    : (versaoRef?.componentes ?? []).slice(0, previewLimite)
+                  const temMaisComponentes = (versaoRef?.componentes.length ?? 0) > previewLimite
+                  const qtdVersoes = kit.versoes.length
+                  const multiVersao = qtdVersoes > 1
 
                   return (
                     <li key={kit.id} className="st-sup-item st-sup-item--kit">
@@ -2016,13 +2236,66 @@ export function EstoquePage({
                         <strong>{kit.nome}</strong>
                         <span className="st-sup-item__meta">{kit.sku}</span>
                         <span className="st-kit-painel__resumo">
-                          {kit.componentes.length} componente{kit.componentes.length === 1 ? '' : 's'} ·{' '}
-                          {kit.itemResultanteNome ?? 'item resultante'}
+                          {qtdVersoes} versão{qtdVersoes === 1 ? '' : 'ões'}
+                          {!multiVersao && versaoRef
+                            ? ` · ${versaoRef.itemResultanteNome ?? 'item resultante'}`
+                            : multiVersao && versaoRef
+                              ? ` · padrão: ${versaoRef.nome}`
+                              : ''}
                         </span>
-                        <span className="st-kit-painel__custo">
-                          Montar 1 un.: <strong>{formatBRL(custoKit)}</strong>
-                        </span>
-                        {kit.componentes.length > 0 && (
+                        {!multiVersao && versaoRef && (
+                          <span className="st-kit-painel__custo">
+                            Montar 1 un.: <strong>{formatBRL(custoKit)}</strong>
+                          </span>
+                        )}
+                        {multiVersao && (
+                          <ul className="st-kit-versoes-acoes">
+                            {kit.versoes.map((v) => {
+                              const custoVersao = calcularCustoComposicaoKit(
+                                v.componentes.map((c) => ({
+                                  componenteItemId: c.componenteItemId,
+                                  quantidade: c.quantidade,
+                                })),
+                                itens,
+                              )
+                              return (
+                                <li key={v.id} className="st-kit-versoes-acoes__item">
+                                  <div className="st-kit-versoes-acoes__info">
+                                    <span className="st-kit-versoes-acoes__nome">
+                                      {v.nome}
+                                      {v.ehPadrao ? ' · padrão' : ''}
+                                    </span>
+                                    <span className="st-kit-versoes-acoes__meta">
+                                      {v.itemResultanteNome ?? 'item'} · {formatBRL(custoVersao)}
+                                    </span>
+                                  </div>
+                                  <div className="st-kit-versoes-acoes__btns">
+                                    <button
+                                      type="button"
+                                      className="st-row__action st-row__action--icon"
+                                      aria-label={`PDF da versão ${v.nome}`}
+                                      title="Gerar PDF desta versão"
+                                      onClick={() => gerarPdfListaKit(kit, v)}
+                                      disabled={v.componentes.length === 0}
+                                    >
+                                      <IconPdf />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="st-row__action st-row__action--icon"
+                                      aria-label={`Desmontar versão ${v.nome}`}
+                                      title="Desmontar esta versão"
+                                      onClick={() => abrirDesmontagemKit(kit.id, v.id)}
+                                    >
+                                      <IconDesmontar />
+                                    </button>
+                                  </div>
+                                </li>
+                              )
+                            })}
+                          </ul>
+                        )}
+                        {!multiVersao && (versaoRef?.componentes.length ?? 0) > 0 && (
                           <>
                             <ul
                               className={`st-kit-comp-preview${composicaoAberta ? ' is-aberta' : ''}`}
@@ -2041,23 +2314,36 @@ export function EstoquePage({
                               >
                                 {composicaoAberta
                                   ? 'Ocultar composição'
-                                  : `Ver todos (${kit.componentes.length})`}
+                                  : `Ver todos (${versaoRef?.componentes.length ?? 0})`}
                               </button>
                             )}
                           </>
                         )}
                       </div>
                       <div className="st-sup-item__actions">
-                        <button
-                          type="button"
-                          className="st-row__action st-row__action--icon"
-                          aria-label={`Gerar PDF da lista do kit ${kit.nome}`}
-                          title="Gerar PDF da lista (descrição, quantidade, valor e fornecedor)"
-                          onClick={() => gerarPdfListaKit(kit)}
-                          disabled={kit.componentes.length === 0}
-                        >
-                          <IconPdf />
-                        </button>
+                        {!multiVersao && (
+                          <>
+                            <button
+                              type="button"
+                              className="st-row__action st-row__action--icon"
+                              aria-label={`Gerar PDF da lista do kit ${kit.nome}`}
+                              title="Gerar PDF da lista"
+                              onClick={() => gerarPdfListaKit(kit)}
+                              disabled={!versaoRef || versaoRef.componentes.length === 0}
+                            >
+                              <IconPdf />
+                            </button>
+                            <button
+                              type="button"
+                              className="st-row__action st-row__action--icon"
+                              aria-label={`Desmontar kit ${kit.nome}`}
+                              onClick={() => abrirDesmontagemKit(kit.id)}
+                              title="Desmontar e devolver componentes ao estoque"
+                            >
+                              <IconDesmontar />
+                            </button>
+                          </>
+                        )}
                         <button
                           type="button"
                           className="st-row__action st-row__action--icon"
@@ -2070,19 +2356,10 @@ export function EstoquePage({
                         <button
                           type="button"
                           className="st-row__action st-row__action--icon"
-                          aria-label={`Editar composição do kit ${kit.nome}`}
+                          aria-label={`Editar kit ${kit.nome}`}
                           onClick={() => abrirEditarKit(kit)}
                         >
                           <IconPencil />
-                        </button>
-                        <button
-                          type="button"
-                          className="st-row__action st-row__action--icon"
-                          aria-label={`Desmontar kit ${kit.nome}`}
-                          onClick={() => abrirDesmontagemKit(kit.id)}
-                          title="Desmontar e devolver componentes ao estoque"
-                        >
-                          <IconDesmontar />
                         </button>
                       </div>
                     </li>
@@ -2768,7 +3045,7 @@ export function EstoquePage({
             <div className="st-modal__head">
               <h2 id="st-kit-title" className="st-modal__title">
                 {kitEditandoId
-                  ? 'Editar composição do kit'
+                  ? 'Editar kit e versões'
                   : kitReceitaOrigemNome
                     ? 'Novo kit a partir de receita'
                     : 'Novo kit composto'}
@@ -2807,99 +3084,171 @@ export function EstoquePage({
                     />
                   </label>
                 </div>
-                <label className="st-field">
-                  <span>Item resultante (entrada) *</span>
-                  <EstoqueItemPicker
-                    itens={itensAtivos}
-                    value={kitForm.itemResultanteId}
-                    onChange={definirItemResultanteKit}
-                    placeholder="Buscar produto montado (nome ou SKU)…"
-                    required
-                  />
-                </label>
-                <div className="st-kit-comp">
-                  <div className="st-kit-comp__head">
-                    <span className="st-kit-comp__title">Componentes (saída no estoque) *</span>
-                    <button
-                      type="button"
-                      className="st-link-btn"
-                      onClick={adicionarLinhaComponenteKit}
-                    >
-                      + Adicionar item
+
+                <div className="st-kit-versoes">
+                  <div className="st-kit-versoes__head">
+                    <span className="st-kit-versoes__title">Versões da receita</span>
+                    <button type="button" className="st-link-btn" onClick={adicionarVersaoKitForm}>
+                      + Nova versão
                     </button>
                   </div>
                   <p className="st-field__hint">
-                    Liste todas as peças consumidas na montagem. Linhas em branco são ignoradas ao salvar.
-                    {kitEditandoId && (
-                      <>
-                        {' '}
-                        Alterações valem para novas montagens; movimentações já registradas não são alteradas.
-                      </>
-                    )}
+                    Cada versão tem composição e item montado próprios (ex.: quadro 17 / 19, freio mecânico /
+                    hidráulico). A substituição temporária de peça é feita só na montagem.
                   </p>
-                  <ul className="st-kit-comp__list" aria-label="Lista de componentes do kit">
-                    {kitForm.componentes.map((linha, index) => {
-                      const ehLinhaNova = !linha.itemId.trim()
-                      const ehUltimaLinha = index === kitForm.componentes.length - 1
-                      const bloquearRemoverLinhaNova = ehLinhaNova && ehUltimaLinha
+                  <div className="st-kit-versoes__tabs" role="tablist" aria-label="Versões do kit">
+                    {kitForm.versoes.map((versao) => (
+                      <button
+                        key={versao.key}
+                        type="button"
+                        role="tab"
+                        aria-selected={versao.key === kitForm.versaoAtivaKey}
+                        className={`st-kit-versoes__tab${versao.key === kitForm.versaoAtivaKey ? ' is-active' : ''}`}
+                        onClick={() => setKitForm((prev) => ({ ...prev, versaoAtivaKey: versao.key }))}
+                      >
+                        {versao.nome.trim() || 'Sem nome'}
+                        {versao.ehPadrao ? ' · padrão' : ''}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-                      return (
-                        <li
-                          key={linha.id}
-                          className={`st-kit-comp__row${ehLinhaNova && ehUltimaLinha ? ' is-nova-linha' : ''}`}
-                        >
-                          <label className="st-field st-kit-comp__item">
-                            <span>
-                              {ehLinhaNova && ehUltimaLinha
-                                ? 'Novo componente'
-                                : `Item ${index + 1}`}
-                            </span>
-                            <EstoqueItemPicker
-                              itens={itensParaComponenteKit}
-                              value={linha.itemId}
-                              onChange={(itemId) =>
-                                atualizarLinhaComponenteKit(linha.id, { itemId })
-                              }
-                              placeholder="Buscar peça (nome ou SKU)…"
-                            />
-                          </label>
-                          <label className="st-field st-kit-comp__qtd">
-                            <span>Qtd.</span>
+                {versaoKitFormAtiva && (
+                  <>
+                    <div className="st-form-grid">
+                      <label className="st-field">
+                        <span>Nome da versão *</span>
+                        <input
+                          className="st-input"
+                          value={versaoKitFormAtiva.nome}
+                          onChange={(e) => atualizarVersaoKitFormAtiva({ nome: e.target.value })}
+                          placeholder="Ex.: Quadro 19 · Freio hidráulico"
+                          required
+                        />
+                      </label>
+                      <div className="st-field st-kit-versao-acoes">
+                        <span>Opções</span>
+                        <div className="st-kit-versao-acoes__row">
+                          <label className="st-check">
                             <input
-                              className="st-input"
-                              type="number"
-                              step={1}
-                              min={1}
-                              inputMode="numeric"
-                              value={linha.quantidade}
-                              onChange={(e) =>
-                                atualizarLinhaComponenteKit(linha.id, {
-                                  quantidade: filtrarInputQuantidadeInteira(e.target.value),
-                                })
-                              }
+                              type="checkbox"
+                              checked={versaoKitFormAtiva.ehPadrao}
+                              onChange={() => {
+                                if (!versaoKitFormAtiva.ehPadrao) marcarVersaoKitFormPadrao()
+                              }}
                             />
+                            Versão padrão
                           </label>
-                          <button
-                            type="button"
-                            className="st-kit-comp__remove"
-                            aria-label={`Remover componente ${index + 1}`}
-                            onClick={() => removerLinhaComponenteKit(linha.id)}
-                            disabled={bloquearRemoverLinhaNova}
-                          >
-                            ×
-                          </button>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </div>
-                <div className="st-kit-custo-total" aria-live="polite">
-                  <span className="st-kit-custo-total__label">Custo total do kit (1 un.)</span>
-                  <strong className="st-kit-custo-total__valor">{formatBRL(custoKitForm)}</strong>
-                  <span className="st-kit-custo-total__hint">
-                    Soma do custo médio de cada componente × quantidade na receita.
-                  </span>
-                </div>
+                          {kitForm.versoes.length > 1 && (
+                            <button
+                              type="button"
+                              className="st-link-btn st-link-btn--danger"
+                              onClick={removerVersaoKitFormAtiva}
+                            >
+                              Remover versão
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <label className="st-field">
+                      <span>Item resultante desta versão *</span>
+                      <EstoqueItemPicker
+                        itens={itensAtivos}
+                        value={versaoKitFormAtiva.itemResultanteId}
+                        onChange={definirItemResultanteKit}
+                        placeholder="Buscar produto montado (nome ou SKU)…"
+                        required
+                      />
+                    </label>
+                    <div className="st-kit-comp">
+                      <div className="st-kit-comp__head">
+                        <span className="st-kit-comp__title">Componentes (saída no estoque) *</span>
+                        <button
+                          type="button"
+                          className="st-link-btn"
+                          onClick={adicionarLinhaComponenteKit}
+                        >
+                          + Adicionar item
+                        </button>
+                      </div>
+                      <p className="st-field__hint">
+                        Liste as peças desta versão. Linhas em branco são ignoradas ao salvar.
+                        {kitEditandoId && (
+                          <>
+                            {' '}
+                            Alterações valem para novas montagens; o histórico já montado permanece no
+                            snapshot.
+                          </>
+                        )}
+                      </p>
+                      <ul className="st-kit-comp__list" aria-label="Lista de componentes da versão">
+                        {versaoKitFormAtiva.componentes.map((linha, index) => {
+                          const ehLinhaNova = !linha.itemId.trim()
+                          const ehUltimaLinha = index === versaoKitFormAtiva.componentes.length - 1
+                          const bloquearRemoverLinhaNova = ehLinhaNova && ehUltimaLinha
+
+                          return (
+                            <li
+                              key={linha.id}
+                              className={`st-kit-comp__row${ehLinhaNova && ehUltimaLinha ? ' is-nova-linha' : ''}`}
+                            >
+                              <label className="st-field st-kit-comp__item">
+                                <span>
+                                  {ehLinhaNova && ehUltimaLinha
+                                    ? 'Novo componente'
+                                    : `Item ${index + 1}`}
+                                </span>
+                                <EstoqueItemPicker
+                                  itens={itensParaComponenteKit}
+                                  value={linha.itemId}
+                                  onChange={(itemId) =>
+                                    atualizarLinhaComponenteKit(linha.id, { itemId })
+                                  }
+                                  placeholder="Buscar peça (nome ou SKU)…"
+                                />
+                              </label>
+                              <label className="st-field st-kit-comp__qtd">
+                                <span>Qtd.</span>
+                                <input
+                                  className="st-input"
+                                  type="number"
+                                  step={1}
+                                  min={1}
+                                  inputMode="numeric"
+                                  value={linha.quantidade}
+                                  onChange={(e) =>
+                                    atualizarLinhaComponenteKit(linha.id, {
+                                      quantidade: filtrarInputQuantidadeInteira(e.target.value),
+                                    })
+                                  }
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                className="st-kit-comp__remove"
+                                aria-label={`Remover componente ${index + 1}`}
+                                onClick={() => removerLinhaComponenteKit(linha.id)}
+                                disabled={bloquearRemoverLinhaNova}
+                              >
+                                ×
+                              </button>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </div>
+                    <div className="st-kit-custo-total" aria-live="polite">
+                      <span className="st-kit-custo-total__label">
+                        Custo desta versão (1 un.)
+                      </span>
+                      <strong className="st-kit-custo-total__valor">{formatBRL(custoKitForm)}</strong>
+                      <span className="st-kit-custo-total__hint">
+                        Soma do custo médio de cada componente × quantidade na receita.
+                      </span>
+                    </div>
+                  </>
+                )}
               </div>
               {formError && <p className="st-form-error st-form-error--modal-foot">{formError}</p>}
               <div className="st-form-actions st-form-actions--modal-foot">
@@ -2921,6 +3270,61 @@ export function EstoquePage({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {pdfKitSelecionado && (
+        <div
+          className="st-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="st-kit-pdf-title"
+        >
+          <div className="st-modal st-modal--sm">
+            <div className="st-modal__head">
+              <h2 id="st-kit-pdf-title" className="st-modal__title">
+                PDF da lista
+              </h2>
+              <button
+                type="button"
+                className="st-modal__close"
+                onClick={() => setPdfKitSelecionado(null)}
+                aria-label="Fechar"
+              >
+                ×
+              </button>
+            </div>
+            <div className="st-modal__body">
+              <p className="st-field__hint">
+                Escolha a versão de <strong>{pdfKitSelecionado.nome}</strong> para gerar o PDF.
+              </p>
+              <ul className="st-kit-pdf-versoes">
+                {pdfKitSelecionado.versoes.map((versao) => (
+                  <li key={versao.id}>
+                    <button
+                      type="button"
+                      className="st-kit-pdf-versoes__btn"
+                      disabled={versao.componentes.length === 0}
+                      onClick={() => gerarPdfListaKit(pdfKitSelecionado, versao)}
+                    >
+                      <span className="st-kit-pdf-versoes__nome">
+                        {versao.nome}
+                        {versao.ehPadrao ? ' · padrão' : ''}
+                      </span>
+                      <span className="st-kit-pdf-versoes__meta">
+                        {versao.itemResultanteNome ?? 'item'} · {versao.componentes.length} peça(s)
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="st-form-actions st-form-actions--modal-foot">
+              <button type="button" className="st-ghost-btn" onClick={() => setPdfKitSelecionado(null)}>
+                Cancelar
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -2950,9 +3354,15 @@ export function EstoquePage({
                   <select
                     className="st-input"
                     value={desmontagemForm.kitId}
-                    onChange={(e) =>
-                      setDesmontagemForm((prev) => ({ ...prev, kitId: e.target.value }))
-                    }
+                    onChange={(e) => {
+                      const kit = kits.find((k) => k.id === e.target.value)
+                      const versao = kit?.versaoPadrao ?? kit?.versoes[0]
+                      setDesmontagemForm((prev) => ({
+                        ...prev,
+                        kitId: e.target.value,
+                        versaoId: versao?.id ?? '',
+                      }))
+                    }}
                     required
                   >
                     <option value="">Selecione...</option>
@@ -2963,6 +3373,36 @@ export function EstoquePage({
                     ))}
                   </select>
                 </label>
+                {kitDesmontagemSelecionado && kitDesmontagemSelecionado.versoes.length > 1 && (
+                  <label className="st-field">
+                    <span>Versão *</span>
+                    <select
+                      className="st-input"
+                      value={desmontagemForm.versaoId}
+                      onChange={(e) =>
+                        setDesmontagemForm((prev) => ({ ...prev, versaoId: e.target.value }))
+                      }
+                      required
+                    >
+                      {kitDesmontagemSelecionado.versoes.map((versao) => (
+                        <option key={versao.id} value={versao.id}>
+                          {versao.nome}
+                          {versao.ehPadrao ? ' (padrão)' : ''} —{' '}
+                          {versao.itemResultanteNome ?? 'item'}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {kitDesmontagemSelecionado &&
+                  kitDesmontagemSelecionado.versoes.length === 1 &&
+                  versaoDesmontagemSelecionada && (
+                    <p className="st-field__hint">
+                      Versão: <strong>{versaoDesmontagemSelecionada.nome}</strong>
+                      {' → '}
+                      {versaoDesmontagemSelecionada.itemResultanteNome ?? 'item montado'}
+                    </p>
+                  )}
                 <div className="st-form-grid">
                   <label className="st-field">
                     <span>Quantidade a desmontar *</span>
@@ -3003,17 +3443,19 @@ export function EstoquePage({
                     />
                   </label>
                 </div>
-                {kitDesmontagemSelecionado && (
+                {versaoDesmontagemSelecionada && (
                   <div className="st-kit-montagem-preview">
-                    <p className="st-kit-montagem-preview__title">Movimentações desta desmontagem</p>
+                    <p className="st-kit-montagem-preview__title">
+                      Prévia pela receita da versão (desmontagem usa o histórico real quando existir)
+                    </p>
                     <ul>
                       <li>
                         <span className="st-kit-montagem-preview__saida">
                           Saída: {formatQuantidadeInteira(qtdDesmontagemNum)}×{' '}
-                          {kitDesmontagemSelecionado.itemResultanteNome ?? 'item montado'}
+                          {versaoDesmontagemSelecionada.itemResultanteNome ?? 'item montado'}
                         </span>
                       </li>
-                      {kitDesmontagemSelecionado.componentes.map((c) => (
+                      {versaoDesmontagemSelecionada.componentes.map((c) => (
                         <li key={c.id}>
                           <span className="st-kit-montagem-preview__entrada">
                             Entrada: {formatQuantidadeInteira(c.quantidade * qtdDesmontagemNum)}×{' '}
@@ -3072,7 +3514,16 @@ export function EstoquePage({
                   <select
                     className="st-input"
                     value={montagemForm.kitId}
-                    onChange={(e) => setMontagemForm((prev) => ({ ...prev, kitId: e.target.value }))}
+                    onChange={(e) => {
+                      const kit = kits.find((k) => k.id === e.target.value)
+                      const versao = kit?.versaoPadrao ?? kit?.versoes[0]
+                      setMontagemForm((prev) => ({
+                        ...prev,
+                        kitId: e.target.value,
+                        versaoId: versao?.id ?? '',
+                        substituicoes: {},
+                      }))
+                    }}
                     required
                   >
                     <option value="">Selecione...</option>
@@ -3083,6 +3534,40 @@ export function EstoquePage({
                     ))}
                   </select>
                 </label>
+                {kitMontagemSelecionado && kitMontagemSelecionado.versoes.length > 1 && (
+                  <label className="st-field">
+                    <span>Versão *</span>
+                    <select
+                      className="st-input"
+                      value={montagemForm.versaoId}
+                      onChange={(e) =>
+                        setMontagemForm((prev) => ({
+                          ...prev,
+                          versaoId: e.target.value,
+                          substituicoes: {},
+                        }))
+                      }
+                      required
+                    >
+                      {kitMontagemSelecionado.versoes.map((versao) => (
+                        <option key={versao.id} value={versao.id}>
+                          {versao.nome}
+                          {versao.ehPadrao ? ' (padrão)' : ''} —{' '}
+                          {versao.itemResultanteNome ?? 'item'}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {kitMontagemSelecionado &&
+                  kitMontagemSelecionado.versoes.length === 1 &&
+                  versaoMontagemSelecionada && (
+                    <p className="st-field__hint">
+                      Versão: <strong>{versaoMontagemSelecionada.nome}</strong>
+                      {' → '}
+                      {versaoMontagemSelecionada.itemResultanteNome ?? 'item resultante'}
+                    </p>
+                  )}
                 <div className="st-form-grid">
                   <label className="st-field">
                     <span>Quantidade *</span>
@@ -3112,23 +3597,47 @@ export function EstoquePage({
                     />
                   </label>
                 </div>
-                {kitMontagemSelecionado && (
+                {versaoMontagemSelecionada && (
                   <div
                     className={`st-kit-montagem-preview${faltasEstoqueMontagem.length > 0 ? ' has-falta' : ''}`}
                   >
                     <p className="st-kit-montagem-preview__title">Movimentações desta montagem</p>
+                    <p className="st-field__hint st-kit-montagem-preview__hint">
+                      Se faltar uma peça, troque manualmente só nesta montagem — a receita da versão não muda.
+                    </p>
                     <ul>
-                      {kitMontagemSelecionado.componentes.map((c) => {
+                      {versaoMontagemSelecionada.componentes.map((c) => {
+                        const substitutoId = montagemForm.substituicoes[c.componenteItemId] ?? ''
+                        const itemBaixaId = substitutoId || c.componenteItemId
+                        const itemBaixaNome =
+                          substitutoId
+                            ? (itens.find((i) => i.id === substitutoId)?.nome ?? 'Peça substituta')
+                            : c.componenteNome
                         const qtdSaida = c.quantidade * qtdMontagemNum
-                        const saldo = saldoComponenteMontagemPorId.get(c.componenteItemId) ?? 0
+                        const saldo = saldoComponenteMontagemPorId.get(itemBaixaId) ?? 0
                         const insuficiente = qtdMontagemNum > 0 && saldo < qtdSaida
+                        const idsReceita = new Set(
+                          versaoMontagemSelecionada.componentes.map((x) => x.componenteItemId),
+                        )
+                        const itensSubstituto = itensAtivos.filter(
+                          (i) =>
+                            i.id !== versaoMontagemSelecionada.itemResultanteId &&
+                            i.id !== c.componenteItemId &&
+                            !idsReceita.has(i.id),
+                        )
 
                         return (
-                          <li key={c.id}>
+                          <li key={c.id} className="st-kit-montagem-preview__linha">
                             <span
                               className={`st-kit-montagem-preview__saida${insuficiente ? ' is-insuficiente' : ''}`}
                             >
-                              Saída: {formatQuantidadeInteira(qtdSaida)}× {c.componenteNome}
+                              Saída: {formatQuantidadeInteira(qtdSaida)}× {itemBaixaNome}
+                              {substitutoId ? (
+                                <span className="st-kit-montagem-preview__subtag">
+                                  {' '}
+                                  (no lugar de {c.componenteNome})
+                                </span>
+                              ) : null}
                               {qtdMontagemNum > 0 && (
                                 <span className="st-kit-montagem-preview__saldo">
                                   {' '}
@@ -3136,13 +3645,51 @@ export function EstoquePage({
                                 </span>
                               )}
                             </span>
+                            <div className="st-kit-montagem-preview__subst">
+                              {substitutoId ? (
+                                <button
+                                  type="button"
+                                  className="st-link-btn"
+                                  onClick={() =>
+                                    setMontagemForm((prev) => {
+                                      const next = { ...prev.substituicoes }
+                                      delete next[c.componenteItemId]
+                                      return { ...prev, substituicoes: next }
+                                    })
+                                  }
+                                >
+                                  Usar peça da receita
+                                </button>
+                              ) : (
+                                <details className="st-kit-subst-details">
+                                  <summary>Substituir nesta montagem</summary>
+                                  <div className="st-kit-subst-details__body">
+                                    <EstoqueItemPicker
+                                      itens={itensSubstituto}
+                                      value=""
+                                      onChange={(itemId) => {
+                                        if (!itemId) return
+                                        setMontagemForm((prev) => ({
+                                          ...prev,
+                                          substituicoes: {
+                                            ...prev.substituicoes,
+                                            [c.componenteItemId]: itemId,
+                                          },
+                                        }))
+                                      }}
+                                      placeholder="Buscar peça substituta…"
+                                    />
+                                  </div>
+                                </details>
+                              )}
+                            </div>
                           </li>
                         )
                       })}
                       <li>
                         <span className="st-kit-montagem-preview__entrada">
                           Entrada: {formatQuantidadeInteira(qtdMontagemNum)}×{' '}
-                          {kitMontagemSelecionado.itemResultanteNome ?? 'item resultante'}
+                          {versaoMontagemSelecionada.itemResultanteNome ?? 'item resultante'}
                         </span>
                       </li>
                     </ul>

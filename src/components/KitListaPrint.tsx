@@ -22,6 +22,7 @@ type KitListaPrintProps = {
   custoTotal: number
   companyName: string
   storeName?: string | null
+  versaoNome?: string | null
 }
 
 function formatBRL(v: number) {
@@ -70,6 +71,7 @@ export function KitListaPrintHtml({
   custoTotal,
   companyName,
   storeName,
+  versaoNome,
 }: KitListaPrintProps) {
   const linhasHtml = linhas
     .map(
@@ -110,6 +112,9 @@ export function KitListaPrintHtml({
   parts.push(`<h1>${escapeHtml(companyName)}</h1>`)
   parts.push('<h2>Lista de componentes do kit</h2>')
   parts.push(`<p class="meta"><strong>${escapeHtml(kit.nome)}</strong> · ${escapeHtml(kit.sku)}</p>`)
+  if (versaoNome?.trim()) {
+    parts.push(`<p class="meta">Versão: <strong>${escapeHtml(versaoNome.trim())}</strong></p>`)
+  }
   parts.push('</div><div class="meta" style="text-align:right">')
   if (storeName?.trim()) parts.push(`<div>Loja: <strong>${escapeHtml(storeName.trim())}</strong></div>`)
   if (kit.itemResultanteNome) {
@@ -151,10 +156,11 @@ export function imprimirListaKit(
   itens: ItemListaKit[],
   companyName: string,
   storeName?: string | null,
+  versaoNome?: string | null,
 ) {
   const linhas = montarLinhasListaKit(kit, itens)
   const custoTotal = roundMoney(linhas.reduce((acc, l) => acc + l.subtotal, 0))
-  const html = KitListaPrintHtml({ kit, linhas, custoTotal, companyName, storeName })
+  const html = KitListaPrintHtml({ kit, linhas, custoTotal, companyName, storeName, versaoNome })
   const w = window.open('', '_blank', 'width=1200,height=850')
   if (!w) throw new Error('Permita pop-ups para gerar o PDF da lista do kit.')
   w.document.open()

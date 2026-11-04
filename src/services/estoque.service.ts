@@ -19,6 +19,7 @@ export type { StoreRow } from './lojas.service'
 export { listarLojas } from './lojas.service'
 export type EstoqueKitRow = Tables<'estoque_kits'>
 export type EstoqueKitComponenteRow = Tables<'estoque_kit_componentes'>
+export type EstoqueKitVersaoRow = Tables<'estoque_kit_versoes'>
 
 export type EstoqueItemComLocal = EstoqueItemRow & {
   storeName: string
@@ -35,14 +36,32 @@ export type EstoqueMovimentacaoComItem = EstoqueMovimentacaoRow & {
   itemNome: string
 }
 
-export type KitComComponentes = EstoqueKitRow & {
+export type KitComponenteView = {
+  id: string
+  componenteItemId: string
+  componenteNome: string
+  quantidade: number
+}
+
+export type KitVersaoComComponentes = {
+  id: string
+  kitId: string
+  nome: string
+  ehPadrao: boolean
+  ativo: boolean
+  itemResultanteId: string
   itemResultanteNome: string | null
-  componentes: Array<{
-    id: string
-    componenteItemId: string
-    componenteNome: string
-    quantidade: number
-  }>
+  itemResultanteStoreId: string | null
+  componentes: KitComponenteView[]
+}
+
+export type KitComComponentes = EstoqueKitRow & {
+  versoes: KitVersaoComComponentes[]
+  /** Versão padrão (ou a primeira ativa). */
+  versaoPadrao: KitVersaoComComponentes | null
+  /** Atalhos da versão padrão — compatíveis com listagens/PDF. */
+  itemResultanteNome: string | null
+  componentes: KitComponenteView[]
 }
 
 export type ResumoEstoqueLoja = {
@@ -340,6 +359,30 @@ export async function excluirItemEstoque(itemId: string): Promise<void> {
   if (kitRow) {
     const nomeKit = kitRow.estoque_kits?.nome?.trim() || 'sem nome'
     throw new Error(`Este item compõe o kit "${nomeKit}". Remova-o do kit antes de excluir.`)
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: emVersao, error: versaoErr } = await (supabase as any)
+    .from('estoque_kit_versoes')
+    .select('nome, estoque_kits(nome)')
+    .eq('item_resultante_id', itemId)
+    .eq('ativo', true)
+    .limit(1)
+
+  if (versaoErr) {
+    throw new Error(
+      (versaoErr as { message?: string }).message ?? 'Erro ao verificar uso do item como resultante de kit.',
+    )
+  }
+
+  type VersaoRef = { nome?: string | null; estoque_kits?: { nome?: string | null } | null }
+  const versaoRow = ((emVersao ?? []) as VersaoRef[])[0]
+  if (versaoRow) {
+    const nomeKit = versaoRow.estoque_kits?.nome?.trim() || 'sem nome'
+    const nomeVersao = versaoRow.nome?.trim() || 'versão'
+    throw new Error(
+      `Este item é o resultante da versão "${nomeVersao}" do kit "${nomeKit}". Altere a versão antes de excluir.`,
+    )
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -663,34 +706,88 @@ export async function criarMovimentacaoEstoque(
   return data as EstoqueMovimentacaoRow
 }
 
+export type KitVersaoInput = {
+  id?: string | null
+  nome: string
+  ehPadrao: boolean
+  itemResultanteId: string
+  componentes: Array<{ componenteItemId: string; quantidade: number }>
+}
+
+function mapearVersaoComComponentes(
+  versao: EstoqueKitVersaoRow & {
+    item_resultante?: { nome?: string | null; store_id?: string | null } | null
+  },
+  compsRaw: Array<
+    EstoqueKitComponenteRow & { componente?: { nome?: string | null } | null }
+  >,
+): KitVersaoComComponentes {
+  return {
+    id: versao.id,
+    kitId: versao.kit_id,
+    nome: versao.nome,
+    ehPadrao: Boolean(versao.eh_padrao),
+    ativo: Boolean(versao.ativo),
+    itemResultanteId: versao.item_resultante_id,
+    itemResultanteNome: versao.item_resultante?.nome ?? null,
+    itemResultanteStoreId: versao.item_resultante?.store_id ?? null,
+    componentes: compsRaw
+      .filter((c) => c.versao_id === versao.id)
+      .map((c) => ({
+        id: c.id,
+        componenteItemId: c.componente_item_id,
+        componenteNome: c.componente?.nome ?? 'Componente removido',
+        quantidade: c.quantidade,
+      })),
+  }
+}
+
 export async function listarKits(companyId: string, storeId: string): Promise<KitComComponentes[]> {
   if (!storeId) return []
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('estoque_kits')
-    .select(
-      '*, item_resultante:estoque_itens!estoque_kits_item_resultante_id_fkey(nome, store_id)',
-    )
+    .select('*')
     .eq('company_id', companyId)
     .eq('ativo', true)
     .order('nome', { ascending: true })
 
   if (error) throw new Error((error as { message?: string }).message ?? 'Erro ao carregar kits.')
 
-  const kitsRaw = (
-    (data ?? []) as Array<
-      EstoqueKitRow & { item_resultante?: { nome?: string | null; store_id?: string | null } | null }
-    >
-  ).filter((k) => k.item_resultante?.store_id === storeId)
-
+  const kitsRaw = (data ?? []) as EstoqueKitRow[]
   if (kitsRaw.length === 0) return []
 
   const kitIds = kitsRaw.map((k) => k.id)
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: versoesData, error: versoesError } = await (supabase as any)
+    .from('estoque_kit_versoes')
+    .select(
+      '*, item_resultante:estoque_itens!estoque_kit_versoes_item_resultante_id_fkey(nome, store_id)',
+    )
+    .eq('company_id', companyId)
+    .eq('ativo', true)
+    .in('kit_id', kitIds)
+    .order('eh_padrao', { ascending: false })
+    .order('nome', { ascending: true })
+
+  if (versoesError) {
+    throw new Error((versoesError as { message?: string }).message ?? 'Erro ao carregar versões dos kits.')
+  }
+
+  const versoesRaw = (versoesData ?? []) as Array<
+    EstoqueKitVersaoRow & {
+      item_resultante?: { nome?: string | null; store_id?: string | null } | null
+    }
+  >
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: compsData, error: compsError } = await (supabase as any)
     .from('estoque_kit_componentes')
-    .select('id, kit_id, componente_item_id, quantidade, componente:estoque_itens!estoque_kit_componentes_componente_item_id_fkey(nome)')
+    .select(
+      'id, kit_id, versao_id, componente_item_id, quantidade, componente:estoque_itens!estoque_kit_componentes_componente_item_id_fkey(nome)',
+    )
     .eq('company_id', companyId)
     .in('kit_id', kitIds)
 
@@ -702,34 +799,124 @@ export async function listarKits(companyId: string, storeId: string): Promise<Ki
     EstoqueKitComponenteRow & { componente?: { nome?: string | null } | null }
   >
 
-  return kitsRaw.map((kit) => ({
-    ...kit,
-    itemResultanteNome: kit.item_resultante?.nome ?? null,
-    componentes: compsRaw
-      .filter((c) => c.kit_id === kit.id)
-      .map((c) => ({
-        id: c.id,
-        componenteItemId: c.componente_item_id,
-        componenteNome: c.componente?.nome ?? 'Componente removido',
-        quantidade: c.quantidade,
-      })),
-  }))
+  const kits: KitComComponentes[] = []
+
+  for (const kit of kitsRaw) {
+    const versoes = versoesRaw
+      .filter((v) => v.kit_id === kit.id)
+      .map((v) => mapearVersaoComComponentes(v, compsRaw))
+      .filter((v) => v.itemResultanteStoreId === storeId)
+
+    if (versoes.length === 0) continue
+
+    const versaoPadrao = versoes.find((v) => v.ehPadrao) ?? versoes[0] ?? null
+
+    kits.push({
+      ...kit,
+      item_resultante_id: versaoPadrao?.itemResultanteId ?? kit.item_resultante_id,
+      versoes,
+      versaoPadrao,
+      itemResultanteNome: versaoPadrao?.itemResultanteNome ?? null,
+      componentes: versaoPadrao?.componentes ?? [],
+    })
+  }
+
+  return kits
 }
 
-export async function criarKitComComponentes(params: {
+async function salvarComponentesVersao(params: {
   companyId: string
-  sku: string
-  nome: string
-  itemResultanteId: string
+  kitId: string
+  versaoId: string
   componentes: Array<{ componenteItemId: string; quantidade: number }>
 }): Promise<void> {
-  const { companyId, sku, nome, itemResultanteId, componentes } = params
+  const { companyId, kitId, versaoId, componentes } = params
 
   for (const comp of componentes) {
     if (!ehQuantidadeInteiraPositiva(comp.quantidade)) {
       throw new Error(MSG_QUANTIDADE_INTEIRA)
     }
   }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: deleteError } = await (supabase as any)
+    .from('estoque_kit_componentes')
+    .delete()
+    .eq('versao_id', versaoId)
+    .eq('company_id', companyId)
+
+  if (deleteError) {
+    throw new Error((deleteError as { message?: string }).message ?? 'Erro ao atualizar componentes da versão.')
+  }
+
+  if (componentes.length === 0) return
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: compsError } = await (supabase as any).from('estoque_kit_componentes').insert(
+    componentes.map((comp) => ({
+      company_id: companyId,
+      kit_id: kitId,
+      versao_id: versaoId,
+      componente_item_id: comp.componenteItemId,
+      quantidade: comp.quantidade,
+    })),
+  )
+
+  if (compsError) {
+    throw new Error((compsError as { message?: string }).message ?? 'Erro ao salvar componentes da versão.')
+  }
+}
+
+function validarVersoesKitInput(versoes: KitVersaoInput[]): void {
+  if (versoes.length === 0) {
+    throw new Error('O kit precisa de ao menos uma versão.')
+  }
+
+  const nomes = new Set<string>()
+  let padraoCount = 0
+
+  for (const versao of versoes) {
+    const nome = versao.nome.trim()
+    if (!nome) throw new Error('Informe o nome de cada versão.')
+    if (!versao.itemResultanteId) throw new Error('Cada versão precisa de um item resultante (SKU montado).')
+    if (versao.componentes.length === 0) {
+      throw new Error(`A versão "${nome}" precisa de ao menos um componente.`)
+    }
+    const key = nome.toLocaleLowerCase('pt-BR')
+    if (nomes.has(key)) throw new Error('Não use o mesmo nome em duas versões do kit.')
+    nomes.add(key)
+    if (versao.ehPadrao) padraoCount += 1
+
+    for (const comp of versao.componentes) {
+      if (comp.componenteItemId === versao.itemResultanteId) {
+        throw new Error(`Na versão "${nome}", o item resultante não pode ser componente.`)
+      }
+      if (!ehQuantidadeInteiraPositiva(comp.quantidade)) {
+        throw new Error(MSG_QUANTIDADE_INTEIRA)
+      }
+    }
+  }
+
+  if (padraoCount !== 1) {
+    throw new Error('Marque exatamente uma versão como padrão.')
+  }
+
+  const itensResultantes = versoes.map((v) => v.itemResultanteId)
+  if (new Set(itensResultantes).size !== itensResultantes.length) {
+    throw new Error('Cada versão deve usar um item resultante diferente.')
+  }
+}
+
+export async function criarKitComComponentes(params: {
+  companyId: string
+  sku: string
+  nome: string
+  versoes: KitVersaoInput[]
+}): Promise<void> {
+  const { companyId, sku, nome, versoes } = params
+  validarVersoesKitInput(versoes)
+
+  const padrao = versoes.find((v) => v.ehPadrao)!
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: kitData, error: kitError } = await (supabase as any)
@@ -738,7 +925,7 @@ export async function criarKitComComponentes(params: {
       company_id: companyId,
       sku,
       nome,
-      item_resultante_id: itemResultanteId,
+      item_resultante_id: padrao.itemResultanteId,
     })
     .select()
     .single()
@@ -746,18 +933,37 @@ export async function criarKitComComponentes(params: {
   if (kitError) throw new Error((kitError as { message?: string }).message ?? 'Erro ao criar kit.')
   const kitId = (kitData as EstoqueKitRow).id
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error: compsError } = await (supabase as any).from('estoque_kit_componentes').insert(
-    componentes.map((comp) => ({
-      company_id: companyId,
-      kit_id: kitId,
-      componente_item_id: comp.componenteItemId,
-      quantidade: comp.quantidade,
-    })),
-  )
+  try {
+    for (const versao of versoes) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: versaoData, error: versaoError } = await (supabase as any)
+        .from('estoque_kit_versoes')
+        .insert({
+          company_id: companyId,
+          kit_id: kitId,
+          nome: versao.nome.trim(),
+          item_resultante_id: versao.itemResultanteId,
+          eh_padrao: versao.ehPadrao,
+          ativo: true,
+        })
+        .select()
+        .single()
 
-  if (compsError) {
-    throw new Error((compsError as { message?: string }).message ?? 'Erro ao salvar componentes do kit.')
+      if (versaoError) {
+        throw new Error((versaoError as { message?: string }).message ?? 'Erro ao criar versão do kit.')
+      }
+
+      await salvarComponentesVersao({
+        companyId,
+        kitId,
+        versaoId: (versaoData as EstoqueKitVersaoRow).id,
+        componentes: versao.componentes,
+      })
+    }
+  } catch (err) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('estoque_kits').delete().eq('id', kitId)
+    throw err
   }
 }
 
@@ -765,52 +971,106 @@ export async function atualizarKitComComponentes(params: {
   companyId: string
   kitId: string
   nome: string
-  itemResultanteId: string
-  componentes: Array<{ componenteItemId: string; quantidade: number }>
+  versoes: KitVersaoInput[]
 }): Promise<void> {
-  const { companyId, kitId, nome, itemResultanteId, componentes } = params
-
-  for (const comp of componentes) {
-    if (!ehQuantidadeInteiraPositiva(comp.quantidade)) {
-      throw new Error(MSG_QUANTIDADE_INTEIRA)
-    }
-  }
+  const { companyId, kitId, nome, versoes } = params
+  validarVersoesKitInput(versoes)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error: kitError } = await (supabase as any)
     .from('estoque_kits')
-    .update({
-      nome,
-      item_resultante_id: itemResultanteId,
-    })
+    .update({ nome })
     .eq('id', kitId)
     .eq('company_id', companyId)
 
   if (kitError) throw new Error((kitError as { message?: string }).message ?? 'Erro ao atualizar kit.')
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error: deleteError } = await (supabase as any)
-    .from('estoque_kit_componentes')
-    .delete()
+  const { data: atuaisData, error: atuaisError } = await (supabase as any)
+    .from('estoque_kit_versoes')
+    .select('id')
+    .eq('company_id', companyId)
+    .eq('kit_id', kitId)
+    .eq('ativo', true)
+
+  if (atuaisError) {
+    throw new Error((atuaisError as { message?: string }).message ?? 'Erro ao carregar versões atuais.')
+  }
+
+  const idsMantidos = new Set(versoes.map((v) => v.id).filter(Boolean) as string[])
+  const idsAtuais = ((atuaisData ?? []) as Array<{ id: string }>).map((v) => v.id)
+
+  for (const idAtual of idsAtuais) {
+    if (idsMantidos.has(idAtual)) continue
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: softError } = await (supabase as any)
+      .from('estoque_kit_versoes')
+      .update({ ativo: false, eh_padrao: false })
+      .eq('id', idAtual)
+      .eq('company_id', companyId)
+    if (softError) {
+      throw new Error((softError as { message?: string }).message ?? 'Erro ao remover versão do kit.')
+    }
+  }
+
+  // Garante um único padrão: primeiro zera, depois aplica.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase as any)
+    .from('estoque_kit_versoes')
+    .update({ eh_padrao: false })
     .eq('kit_id', kitId)
     .eq('company_id', companyId)
 
-  if (deleteError) {
-    throw new Error((deleteError as { message?: string }).message ?? 'Erro ao atualizar componentes do kit.')
-  }
+  for (const versao of versoes) {
+    if (versao.id) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: versaoError } = await (supabase as any)
+        .from('estoque_kit_versoes')
+        .update({
+          nome: versao.nome.trim(),
+          item_resultante_id: versao.itemResultanteId,
+          eh_padrao: versao.ehPadrao,
+          ativo: true,
+        })
+        .eq('id', versao.id)
+        .eq('company_id', companyId)
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error: compsError } = await (supabase as any).from('estoque_kit_componentes').insert(
-    componentes.map((comp) => ({
-      company_id: companyId,
-      kit_id: kitId,
-      componente_item_id: comp.componenteItemId,
-      quantidade: comp.quantidade,
-    })),
-  )
+      if (versaoError) {
+        throw new Error((versaoError as { message?: string }).message ?? 'Erro ao atualizar versão do kit.')
+      }
 
-  if (compsError) {
-    throw new Error((compsError as { message?: string }).message ?? 'Erro ao salvar componentes do kit.')
+      await salvarComponentesVersao({
+        companyId,
+        kitId,
+        versaoId: versao.id,
+        componentes: versao.componentes,
+      })
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: versaoData, error: versaoError } = await (supabase as any)
+        .from('estoque_kit_versoes')
+        .insert({
+          company_id: companyId,
+          kit_id: kitId,
+          nome: versao.nome.trim(),
+          item_resultante_id: versao.itemResultanteId,
+          eh_padrao: versao.ehPadrao,
+          ativo: true,
+        })
+        .select()
+        .single()
+
+      if (versaoError) {
+        throw new Error((versaoError as { message?: string }).message ?? 'Erro ao criar versão do kit.')
+      }
+
+      await salvarComponentesVersao({
+        companyId,
+        kitId,
+        versaoId: (versaoData as EstoqueKitVersaoRow).id,
+        componentes: versao.componentes,
+      })
+    }
   }
 }
 
@@ -828,10 +1088,12 @@ export async function sincronizarCustoItemResultanteKit(params: {
 export async function montarKit(params: {
   companyId: string
   kitId: string
+  versaoId: string
   quantidade: number
   origem?: string
+  substituicoes?: Array<{ componenteItemId: string; substituirPorItemId: string }>
 }): Promise<void> {
-  const { companyId, kitId, quantidade, origem } = params
+  const { companyId, kitId, versaoId, quantidade, origem, substituicoes = [] } = params
   if (!ehQuantidadeInteiraPositiva(quantidade)) {
     throw new Error(MSG_QUANTIDADE_INTEIRA)
   }
@@ -839,8 +1101,13 @@ export async function montarKit(params: {
   const { error } = await (supabase as any).rpc('registrar_montagem_kit', {
     p_company_id: companyId,
     p_kit_id: kitId,
+    p_versao_id: versaoId,
     p_quantidade: quantidade,
     p_origem: origem ?? null,
+    p_substituicoes: substituicoes.map((s) => ({
+      componente_item_id: s.componenteItemId,
+      substituir_por_item_id: s.substituirPorItemId,
+    })),
   })
 
   if (error) throw new Error((error as { message?: string }).message ?? 'Erro ao montar kit.')
@@ -849,10 +1116,11 @@ export async function montarKit(params: {
 export async function desmontarKit(params: {
   companyId: string
   kitId: string
+  versaoId: string
   quantidade: number
   origem?: string
 }): Promise<void> {
-  const { companyId, kitId, quantidade, origem } = params
+  const { companyId, kitId, versaoId, quantidade, origem } = params
   if (!ehQuantidadeInteiraPositiva(quantidade)) {
     throw new Error(MSG_QUANTIDADE_INTEIRA)
   }
@@ -860,6 +1128,7 @@ export async function desmontarKit(params: {
   const { error } = await (supabase as any).rpc('registrar_desmontagem_kit', {
     p_company_id: companyId,
     p_kit_id: kitId,
+    p_versao_id: versaoId,
     p_quantidade: quantidade,
     p_origem: origem ?? null,
   })
@@ -868,7 +1137,7 @@ export async function desmontarKit(params: {
     const msg = (error as { message?: string }).message ?? ''
     if (/registrar_desmontagem_kit|não consegui encontrar a função|does not exist|schema cache/i.test(msg)) {
       throw new Error(
-        'Função de desmontagem de kit não encontrada no banco. Execute supabase/sql/041_desmontagem_kit.sql no Supabase.',
+        'Função de desmontagem de kit não encontrada no banco. Execute supabase/sql/084_kit_versoes_substituicao_snapshot.sql no Supabase.',
       )
     }
     throw new Error(msg || 'Erro ao desmontar kit.')

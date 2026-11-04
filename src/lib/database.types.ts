@@ -772,6 +772,7 @@ export type Database = {
           id: string
           kit_id: string
           quantidade: number
+          versao_id: string
         }
         Insert: {
           company_id: string
@@ -780,12 +781,108 @@ export type Database = {
           id?: string
           kit_id: string
           quantidade: number
+          versao_id: string
         }
         Update: {
           company_id?: string
           componente_item_id?: string
           kit_id?: string
           quantidade?: number
+          versao_id?: string
+        }
+      }
+      estoque_kit_versoes: {
+        Row: {
+          ativo: boolean
+          company_id: string
+          created_at: string
+          eh_padrao: boolean
+          id: string
+          item_resultante_id: string
+          kit_id: string
+          nome: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          company_id: string
+          created_at?: string
+          eh_padrao?: boolean
+          id?: string
+          item_resultante_id: string
+          kit_id: string
+          nome: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          company_id?: string
+          eh_padrao?: boolean
+          item_resultante_id?: string
+          kit_id?: string
+          nome?: string
+          updated_at?: string
+        }
+      }
+      estoque_kit_montagens: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          item_resultante_id: string
+          kit_id: string
+          origem: string | null
+          quantidade: number
+          quantidade_restante: number
+          versao_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          item_resultante_id: string
+          kit_id: string
+          origem?: string | null
+          quantidade: number
+          quantidade_restante: number
+          versao_id: string
+        }
+        Update: {
+          company_id?: string
+          created_by?: string | null
+          item_resultante_id?: string
+          kit_id?: string
+          origem?: string | null
+          quantidade?: number
+          quantidade_restante?: number
+          versao_id?: string
+        }
+      }
+      estoque_kit_montagem_itens: {
+        Row: {
+          company_id: string
+          componente_receita_item_id: string
+          id: string
+          item_baixado_id: string
+          montagem_id: string
+          quantidade_por_kit: number
+        }
+        Insert: {
+          company_id: string
+          componente_receita_item_id: string
+          id?: string
+          item_baixado_id: string
+          montagem_id: string
+          quantidade_por_kit: number
+        }
+        Update: {
+          company_id?: string
+          componente_receita_item_id?: string
+          item_baixado_id?: string
+          montagem_id?: string
+          quantidade_por_kit?: number
         }
       }
       estoque_kits: {
