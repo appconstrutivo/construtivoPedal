@@ -4,6 +4,7 @@ import { listarClientes, type ClienteComRelacoes } from '../services/clientes.se
 import {
   isVencida,
   labelCategoriaContaPagar,
+  listarContasPagarPendentesAteHoje,
   listarContasPagarPendentesPeriodo,
   nomeCredorContaPagar,
   type ContaPagar,
@@ -12,21 +13,26 @@ import {
   atualizarCalendarioEvento,
   CORES_CALENDARIO_TIPO,
   criarCalendarioEvento,
+  criarCalendarioEventosRecorrentes,
   criarCalendarioTipoEvento,
   corTipoCalendario,
   dataLocalISO,
   excluirCalendarioEvento,
   eventoCobreData,
   eventoEhPeriodo,
+  FREQUENCIA_EVENTO_LABEL,
+  gerarDatasEventoRecorrenteAte,
   labelStatusCalendario,
   labelTipoCalendario,
   listarCalendarioEventos,
+  listarCalendarioEventosPendentesAteHoje,
   listarCalendarioTiposEvento,
   montarTiposCalendarioOpcoes,
   tipoCalendarioEhPadrao,
   type CalendarioEventoRow,
   type CalendarioTipoEventoRow,
   type CorCalendarioTipo,
+  type FrequenciaEventoRecorrencia,
   type TipoCalendarioEvento,
 } from '../services/calendario.service'
 
@@ -94,6 +100,9 @@ type FormEvento = {
   horaInicio: string
   clienteId: string
   observacoes: string
+  recorrente: boolean
+  frequencia: FrequenciaEventoRecorrencia
+  repetirAte: string
 }
 
 function formVazio(dia: string): FormEvento {
@@ -105,6 +114,9 @@ function formVazio(dia: string): FormEvento {
     horaInicio: '',
     clienteId: '',
     observacoes: '',
+    recorrente: false,
+    frequencia: 'mensal',
+    repetirAte: '',
   }
 }
 
@@ -117,8 +129,12 @@ function formDoEvento(e: CalendarioEventoRow): FormEvento {
     horaInicio: formatHora(e.hora_inicio) ?? '',
     clienteId: e.cliente_id ?? '',
     observacoes: e.observacoes ?? '',
+    recorrente: false,
+    frequencia: 'mensal',
+    repetirAte: '',
   }
 }
+
 
 export function AgendaPanel({
   companyId,
@@ -134,6 +150,8 @@ export function AgendaPanel({
   const [diaSelecionado, setDiaSelecionado] = useState(hoje)
   const [eventos, setEventos] = useState<CalendarioEventoRow[]>([])
   const [contasPagar, setContasPagar] = useState<ContaPagar[]>([])
+  const [eventosEmAberto, setEventosEmAberto] = useState<CalendarioEventoRow[]>([])
+  const [contasEmAberto, setContasEmAberto] = useState<ContaPagar[]>([])
   const [clientes, setClientes] = useState<ClienteComRelacoes[]>([])
   const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
@@ -165,6 +183,8 @@ export function AgendaPanel({
     if (!activeStoreId) {
       setEventos([])
       setContasPagar([])
+      setEventosEmAberto([])
+      setContasEmAberto([])
       setClientes([])
       setTiposCustom([])
       setLoading(false)
@@ -174,15 +194,19 @@ export function AgendaPanel({
     setLoading(true)
     setErro(null)
     try {
-      const [ev, cp, cl, tipos] = await Promise.all([
+      const [ev, cp, evAberto, cpAberto, cl, tipos] = await Promise.all([
         listarCalendarioEventos(companyId, activeStoreId, inicioGrade, fimGrade),
         listarContasPagarPendentesPeriodo(companyId, activeStoreId, inicioGrade, fimGrade),
+        listarCalendarioEventosPendentesAteHoje(companyId, activeStoreId),
+        listarContasPagarPendentesAteHoje(companyId, activeStoreId),
         listarClientes(companyId, activeStoreId),
         listarCalendarioTiposEvento(companyId, activeStoreId),
       ])
       if (seq !== loadSeqRef.current) return
       setEventos(ev)
       setContasPagar(cp)
+      setEventosEmAberto(evAberto)
+      setContasEmAberto(cpAberto)
       setClientes(cl)
       setTiposCustom(tipos)
     } catch (e: unknown) {
@@ -232,15 +256,32 @@ export function AgendaPanel({
     return map
   }, [celulas, contasPagar])
 
-  const eventosHoje = useMemo(
-    () => eventos.filter((e) => e.status === 'agendado' && eventoCobreData(e, hoje)),
-    [eventos, hoje],
-  )
-  const contasHoje = useMemo(() => contasPagar.filter((c) => c.vencimento === hoje), [contasPagar, hoje])
+  /** Pendências em aberto (hoje + atrasadas) — só saem ao concluir/pagar/cancelar. */
+  const eventosAlerta = eventosEmAberto
+  const contasAlerta = contasEmAberto
 
   const itensDoDia = useMemo(() => {
-    const eventosLista = eventosPorDia.get(diaSelecionado) ?? []
-    const contasLista = contasPorDia.get(diaSelecionado) ?? []
+    const eventosLista = [...(eventosPorDia.get(diaSelecionado) ?? [])]
+    const contasLista = [...(contasPorDia.get(diaSelecionado) ?? [])]
+
+    // No dia de hoje, traz também atrasados de outras datas ainda em aberto.
+    if (diaSelecionado === hoje) {
+      const idsEv = new Set(eventosLista.map((e) => e.id))
+      for (const e of eventosEmAberto) {
+        if (!idsEv.has(e.id) && !eventoCobreData(e, hoje)) {
+          eventosLista.push(e)
+          idsEv.add(e.id)
+        }
+      }
+      const idsCp = new Set(contasLista.map((c) => c.id))
+      for (const c of contasEmAberto) {
+        if (!idsCp.has(c.id) && c.vencimento !== hoje) {
+          contasLista.push(c)
+          idsCp.add(c.id)
+        }
+      }
+    }
+
     const itens: AgendaItemDia[] = [
       ...eventosLista.map((e) => ({ kind: 'evento' as const, data: e })),
       ...contasLista.map((c) => ({ kind: 'conta_pagar' as const, data: c })),
@@ -254,11 +295,11 @@ export function AgendaPanel({
         return a.data.titulo.localeCompare(b.data.titulo, 'pt-BR')
       }
       if (a.kind === 'conta_pagar' && b.kind === 'conta_pagar') {
-        return a.data.descricao.localeCompare(b.data.descricao, 'pt-BR')
+        return a.data.vencimento.localeCompare(b.data.vencimento) || a.data.descricao.localeCompare(b.data.descricao, 'pt-BR')
       }
       return 0
     })
-  }, [eventosPorDia, contasPorDia, diaSelecionado])
+  }, [eventosPorDia, contasPorDia, diaSelecionado, hoje, eventosEmAberto, contasEmAberto])
 
   function fecharModal() {
     setModalAberto(false)
@@ -342,6 +383,17 @@ export function AgendaPanel({
     return tipoCalendarioEhPadrao(tipo) ? tipo : `custom-${corTipoCalendario(tipo, tiposCustom)}`
   }
 
+  const previewRecorrencia = useMemo(() => {
+    if (!form.recorrente || editandoId || !form.repetirAte) return null
+    const datas = gerarDatasEventoRecorrenteAte(form.dataInicio, form.frequencia, form.repetirAte)
+    if (datas.length === 0) return null
+    return {
+      qtd: datas.length,
+      ultima: datas[datas.length - 1],
+      diaMes: Number(form.dataInicio.slice(8, 10)),
+    }
+  }, [form.recorrente, form.repetirAte, form.dataInicio, form.frequencia, editandoId])
+
   async function handleSalvar(e: React.FormEvent) {
     e.preventDefault()
     if (!activeStoreId) {
@@ -353,9 +405,19 @@ export function AgendaPanel({
       setErro('Informe o título do evento.')
       return
     }
-    if (form.dataFim < form.dataInicio) {
+    if (!form.recorrente && form.dataFim < form.dataInicio) {
       setErro('A data final não pode ser anterior ao início.')
       return
+    }
+    if (!editandoId && form.recorrente) {
+      if (!form.repetirAte) {
+        setErro('Informe até quando o evento deve se repetir.')
+        return
+      }
+      if (form.repetirAte < form.dataInicio) {
+        setErro('A data “repetir até” deve ser igual ou posterior ao início.')
+        return
+      }
     }
     setBusy('save')
     setErro(null)
@@ -365,7 +427,7 @@ export function AgendaPanel({
         titulo,
         tipo: form.tipo,
         data_inicio: form.dataInicio,
-        data_fim: form.dataFim,
+        data_fim: form.recorrente ? form.dataInicio : form.dataFim,
         hora_inicio: form.horaInicio || null,
         cliente_id: form.clienteId || null,
         observacoes: form.observacoes.trim() || null,
@@ -373,6 +435,24 @@ export function AgendaPanel({
       if (editandoId) {
         await atualizarCalendarioEvento(editandoId, payload)
         setMsgOk('Evento atualizado.')
+      } else if (form.recorrente) {
+        const criados = await criarCalendarioEventosRecorrentes({
+          company_id: companyId,
+          store_id: activeStoreId,
+          titulo,
+          tipo: form.tipo,
+          data_inicio: form.dataInicio,
+          hora_inicio: form.horaInicio || null,
+          cliente_id: form.clienteId || null,
+          observacoes: form.observacoes.trim() || null,
+          frequencia: form.frequencia,
+          repetirAte: form.repetirAte,
+        })
+        setMsgOk(
+          criados.length === 1
+            ? 'Evento criado.'
+            : `${criados.length} eventos criados (${FREQUENCIA_EVENTO_LABEL[form.frequencia].toLowerCase()}).`,
+        )
       } else {
         await criarCalendarioEvento({
           company_id: companyId,
@@ -447,27 +527,27 @@ export function AgendaPanel({
         </p>
       )}
 
-      {(eventosHoje.length > 0 || contasHoje.length > 0) && (
+      {(eventosAlerta.length > 0 || contasAlerta.length > 0) && (
         <div className="cal-hoje" role="status">
           <strong>
-            {eventosHoje.length > 0 && contasHoje.length > 0
-              ? `${eventosHoje.length} evento${eventosHoje.length === 1 ? '' : 's'} e ${contasHoje.length} conta${contasHoje.length === 1 ? '' : 's'} a pagar hoje`
-              : eventosHoje.length > 0
-                ? eventosHoje.length === 1
-                  ? '1 evento hoje'
-                  : `${eventosHoje.length} eventos hoje`
-                : contasHoje.length === 1
-                  ? '1 conta a pagar hoje'
-                  : `${contasHoje.length} contas a pagar hoje`}
+            {eventosAlerta.length > 0 && contasAlerta.length > 0
+              ? `${eventosAlerta.length} evento${eventosAlerta.length === 1 ? '' : 's'} e ${contasAlerta.length} conta${contasAlerta.length === 1 ? '' : 's'} a pagar em aberto`
+              : eventosAlerta.length > 0
+                ? eventosAlerta.length === 1
+                  ? '1 evento em aberto'
+                  : `${eventosAlerta.length} eventos em aberto`
+                : contasAlerta.length === 1
+                  ? '1 conta a pagar em aberto'
+                  : `${contasAlerta.length} contas a pagar em aberto`}
           </strong>
           <span>
             {[
-              ...eventosHoje.slice(0, 2).map((e) => e.titulo),
-              ...contasHoje.slice(0, 2).map((c) => c.descricao),
+              ...eventosAlerta.slice(0, 2).map((e) => e.titulo),
+              ...contasAlerta.slice(0, 2).map((c) => c.descricao),
             ]
               .slice(0, 3)
               .join(' · ')}
-            {eventosHoje.length + contasHoje.length > 3 ? '…' : ''}
+            {eventosAlerta.length + contasAlerta.length > 3 ? '…' : ''}
           </span>
           {diaSelecionado !== hoje && (
             <button type="button" className="st-ghost-btn" onClick={irHoje}>
@@ -799,7 +879,7 @@ export function AgendaPanel({
               </fieldset>
               <div className="cal-form-grid">
                 <label className="st-field">
-                  <span>Início</span>
+                  <span>{form.recorrente && !editandoId ? 'Primeira data' : 'Início'}</span>
                   <input
                     type="date"
                     className="st-input"
@@ -810,22 +890,37 @@ export function AgendaPanel({
                         ...f,
                         dataInicio: v,
                         dataFim: f.dataFim < v ? v : f.dataFim,
+                        repetirAte: f.repetirAte && f.repetirAte < v ? v : f.repetirAte,
                       }))
                     }}
                     required
                   />
                 </label>
-                <label className="st-field">
-                  <span>Fim do período</span>
-                  <input
-                    type="date"
-                    className="st-input"
-                    value={form.dataFim}
-                    min={form.dataInicio}
-                    onChange={(ev) => setForm((f) => ({ ...f, dataFim: ev.target.value }))}
-                    required
-                  />
-                </label>
+                {!(form.recorrente && !editandoId) ? (
+                  <label className="st-field">
+                    <span>Fim do período</span>
+                    <input
+                      type="date"
+                      className="st-input"
+                      value={form.dataFim}
+                      min={form.dataInicio}
+                      onChange={(ev) => setForm((f) => ({ ...f, dataFim: ev.target.value }))}
+                      required
+                    />
+                  </label>
+                ) : (
+                  <label className="st-field">
+                    <span>Repetir até</span>
+                    <input
+                      type="date"
+                      className="st-input"
+                      value={form.repetirAte}
+                      min={form.dataInicio}
+                      onChange={(ev) => setForm((f) => ({ ...f, repetirAte: ev.target.value }))}
+                      required
+                    />
+                  </label>
+                )}
                 <label className="st-field">
                   <span>Horário (opcional)</span>
                   <input
@@ -836,10 +931,69 @@ export function AgendaPanel({
                   />
                 </label>
               </div>
-              <p className="cal-field-hint">
-                Use o mesmo dia no início e no fim para um compromisso pontual. Datas diferentes marcam o intervalo no
-                calendário.
-              </p>
+              {!editandoId ? (
+                <div className="fin-rec-block">
+                  <label className="fin-rec-toggle">
+                    <input
+                      type="checkbox"
+                      checked={form.recorrente}
+                      onChange={(ev) => {
+                        const checked = ev.target.checked
+                        setForm((f) => ({
+                          ...f,
+                          recorrente: checked,
+                          dataFim: checked ? f.dataInicio : f.dataFim,
+                          repetirAte: checked
+                            ? f.repetirAte || f.dataInicio
+                            : f.repetirAte,
+                        }))
+                      }}
+                    />
+                    <span>Evento recorrente (data fixa)</span>
+                  </label>
+                  {form.recorrente ? (
+                    <div className="fin-rec-fields">
+                      <label className="st-field">
+                        <span>Repetir</span>
+                        <select
+                          className="st-input"
+                          value={form.frequencia}
+                          onChange={(ev) =>
+                            setForm((f) => ({
+                              ...f,
+                              frequencia: ev.target.value as FrequenciaEventoRecorrencia,
+                            }))
+                          }
+                        >
+                          <option value="mensal">Todo mês (mesmo dia)</option>
+                          <option value="trimestral">A cada 3 meses</option>
+                          <option value="anual">Todo ano</option>
+                        </select>
+                      </label>
+                      <p className="cal-field-hint">
+                        Ex.: início dia 10 → gera todo dia 10 até a data “Repetir até” (máx. 36 ocorrências).
+                      </p>
+                      {previewRecorrencia ? (
+                        <p className="fin-rec-preview" role="status">
+                          Serão criados <strong>{previewRecorrencia.qtd}</strong> eventos no dia{' '}
+                          <strong>{previewRecorrencia.diaMes}</strong>, até{' '}
+                          <strong>{formatDiaCurto(previewRecorrencia.ultima)}</strong>.
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="cal-field-hint">
+                      Use o mesmo dia no início e no fim para um compromisso pontual. Datas diferentes marcam o
+                      intervalo no calendário.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="cal-field-hint">
+                  Use o mesmo dia no início e no fim para um compromisso pontual. Datas diferentes marcam o intervalo no
+                  calendário.
+                </p>
+              )}
               <label className="st-field">
                 <span>Cliente (opcional)</span>
                 <ClientePicker

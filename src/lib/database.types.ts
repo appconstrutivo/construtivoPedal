@@ -1062,6 +1062,9 @@ export type Database = {
           hora_inicio: string | null
           cliente_id: string | null
           status: string
+          grupo_recorrencia_id: string | null
+          ocorrencia: number | null
+          ocorrencias_total: number | null
           created_by: string | null
           created_at: string
           updated_at: string
@@ -1078,6 +1081,9 @@ export type Database = {
           hora_inicio?: string | null
           cliente_id?: string | null
           status?: string
+          grupo_recorrencia_id?: string | null
+          ocorrencia?: number | null
+          ocorrencias_total?: number | null
           created_by?: string | null
           created_at?: string
           updated_at?: string
@@ -1091,6 +1097,9 @@ export type Database = {
           hora_inicio?: string | null
           cliente_id?: string | null
           status?: string
+          grupo_recorrencia_id?: string | null
+          ocorrencia?: number | null
+          ocorrencias_total?: number | null
           updated_at?: string
         }
       }

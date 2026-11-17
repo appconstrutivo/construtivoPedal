@@ -402,13 +402,13 @@ export function AppShell({
             className="cp-btn cp-btn--ghost cp-header__notify"
             aria-label={
               notificacoesCount > 0
-                ? `${notificacoesCount} notificação(ões) do dia`
+                ? `${notificacoesCount} notificação(ões) em aberto`
                 : 'Notificações'
             }
             onClick={() => (onNotificacoesClick ?? (() => onNavigate?.('clientes')))()}
             title={
               notificacoesCount > 0
-                ? 'Pendências de hoje (agenda e pós-venda)'
+                ? 'Pendências em aberto (agenda e pós-venda)'
                 : 'Notificações'
             }
           >

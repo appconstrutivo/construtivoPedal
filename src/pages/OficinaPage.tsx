@@ -38,7 +38,9 @@ import {
 import { listarCatalogoServicos, type CatalogoServicoRow } from '../services/catalogo-servicos.service'
 import { contarSelosAplicadosNaOs } from '../services/manual-proprietario.service'
 import {
+  atualizarClienteContaReceberPendente,
   cancelarContaReceber,
+  dataHojeBrasilia,
   faturarOs,
   garantirContaCaixa,
   labelFormaRecebimento,
@@ -137,6 +139,8 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
 
   const [formDetalhe, setFormDetalhe] = useState({
     status: 'aberta' as StatusOrdemServico,
+    clienteId: '',
+    bicicletaId: '',
     problema: '',
     diagnostico: '',
     observacoes: '',
@@ -157,10 +161,10 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
   const [busyFinanceiro, setBusyFinanceiro] = useState(false)
   const [modalFaturar, setModalFaturar] = useState(false)
   const [modalReceberOs, setModalReceberOs] = useState(false)
-  const [faturarVencimento, setFaturarVencimento] = useState(() => new Date().toISOString().slice(0, 10))
+  const [faturarVencimento, setFaturarVencimento] = useState(() => dataHojeBrasilia())
   const [receberContaId, setReceberContaId] = useState('')
   const [pagamentosReceber, setPagamentosReceber] = useState<PagamentoLinha[]>(() => [novaLinhaPagamento('pix')])
-  const [receberData, setReceberData] = useState(() => new Date().toISOString().slice(0, 10))
+  const [receberData, setReceberData] = useState(() => dataHojeBrasilia())
   const [faturarEReceber, setFaturarEReceber] = useState(false)
   const [contasFinOpts, setContasFinOpts] = useState<{ id: string; nome: string }[]>([])
 
@@ -230,6 +234,8 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
         if (d) {
           setFormDetalhe({
             status: d.status as StatusOrdemServico,
+            clienteId: d.cliente_id ?? '',
+            bicicletaId: d.bicicleta_id ?? '',
             problema: d.problema_relatado ?? '',
             diagnostico: d.diagnostico ?? '',
             observacoes: d.observacoes_internas ?? '',
@@ -365,9 +371,13 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
       ) {
         await cancelarContaReceber(contaReceberOs.id)
       }
+      const clienteId = formDetalhe.clienteId.trim() || null
+      const bicicletaId = clienteId ? formDetalhe.bicicletaId || null : null
       await atualizarOrdemServico(detalhe.id, {
         status: formDetalhe.status,
         store_id: activeStoreId,
+        cliente_id: clienteId,
+        bicicleta_id: bicicletaId,
         problema_relatado: formDetalhe.problema,
         diagnostico: formDetalhe.diagnostico || null,
         observacoes_internas: formDetalhe.observacoes || null,
@@ -376,6 +386,9 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
             ? detalhe.closed_at ?? new Date().toISOString()
             : null,
       })
+      if (contaReceberOs?.status === 'pendente' && contaReceberOs.cliente_id !== clienteId) {
+        await atualizarClienteContaReceberPendente(contaReceberOs.id, clienteId)
+      }
       if (formDetalhe.status === 'cancelada' && contaReceberOs?.status === 'pendente') {
         await cancelarContaReceber(contaReceberOs.id)
       }
@@ -418,7 +431,7 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
       const caixa = contas.find((c) => c.tipo === 'caixa') ?? contas[0]
       if (caixa) setReceberContaId(caixa.id)
       setPagamentosReceber([novaLinhaPagamento('pix')])
-      setReceberData(new Date().toISOString().slice(0, 10))
+      setReceberData(dataHojeBrasilia())
       setModalReceberOs(true)
     } catch (e: unknown) {
       setErro(e instanceof Error ? e.message : 'Erro ao preparar recebimento.')
@@ -445,7 +458,7 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
           contaReceberId: crId,
           contaFinanceiraId: caixaId,
           pagamentos: parsed,
-          dataRecebimento: receberData,
+          dataRecebimento: dataHojeBrasilia(),
         })
       }
       setModalFaturar(false)
@@ -473,7 +486,7 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
         contaReceberId: contaReceberOs.id,
         contaFinanceiraId: receberContaId,
         pagamentos: parsed,
-        dataRecebimento: receberData,
+        dataRecebimento: dataHojeBrasilia(),
       })
       setModalReceberOs(false)
       if (res.vendaNumero) {
@@ -539,6 +552,27 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
     const c = clientes.find((x) => x.id === novaOs.clienteId)
     return c?.bicicletas ?? []
   }, [clientes, novaOs.clienteId])
+
+  const bikesDoClienteDetalhe = useMemo(() => {
+    const c = clientes.find((x) => x.id === formDetalhe.clienteId)
+    return c?.bicicletas ?? []
+  }, [clientes, formDetalhe.clienteId])
+
+  const clienteNomeForm = useMemo(() => {
+    if (!formDetalhe.clienteId) return OS_CLIENTE_BALCAO
+    return clientes.find((c) => c.id === formDetalhe.clienteId)?.nome ?? detalhe?.clienteNome ?? 'Cliente'
+  }, [formDetalhe.clienteId, clientes, detalhe?.clienteNome])
+
+  const bikeLabelForm = useMemo(() => {
+    if (!formDetalhe.bicicletaId) return null
+    const bike = bikesDoClienteDetalhe.find((b) => b.id === formDetalhe.bicicletaId)
+    if (!bike) return detalhe?.bikeLabel ?? null
+    const partes = [bike.marca, bike.modelo].filter(Boolean)
+    return partes.length > 0 ? partes.join(' ') : 'Bicicleta'
+  }, [formDetalhe.bicicletaId, bikesDoClienteDetalhe, detalhe?.bikeLabel])
+
+  const podeEditarClienteOs =
+    !!detalhe && detalhe.status !== 'cancelada' && contaReceberOs?.status !== 'recebido'
 
   async function addChecklist() {
     if (!detalhe || !checkNovoRotulo.trim()) return
@@ -909,10 +943,10 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
                     <div>
                       <h2 className="os-detail__title">
                         OS #{detalhe.numero}{' '}
-                        <span className="os-detail__client">— {detalhe.clienteNome}</span>
+                        <span className="os-detail__client">— {clienteNomeForm}</span>
                       </h2>
-                      {detalhe.bikeLabel ? (
-                        <p className="os-detail__bike">{detalhe.bikeLabel}</p>
+                      {bikeLabelForm ? (
+                        <p className="os-detail__bike">{bikeLabelForm}</p>
                       ) : (
                         <p className="os-detail__bike os-detail__bike--muted">Sem bicicleta vinculada</p>
                       )}
@@ -949,6 +983,54 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
                   <div className="os-detail__grid">
                     <div className="os-card">
                       <h3 className="os-card__title">Situação</h3>
+                      <label className="os-field">
+                        <span>Cliente</span>
+                        <ClientePicker
+                          clientes={clientes}
+                          value={formDetalhe.clienteId}
+                          balcaoLabel={OS_CLIENTE_BALCAO}
+                          disabled={!podeEditarClienteOs}
+                          inputClassName="os-input"
+                          onChange={(clienteId) =>
+                            setFormDetalhe((f) => ({
+                              ...f,
+                              clienteId,
+                              bicicletaId: clienteId === f.clienteId ? f.bicicletaId : '',
+                            }))
+                          }
+                        />
+                        {!podeEditarClienteOs ? (
+                          <span className="st-field__hint">
+                            {detalhe.status === 'cancelada'
+                              ? 'OS cancelada — cliente bloqueado.'
+                              : 'OS já recebida — cliente bloqueado.'}
+                          </span>
+                        ) : (
+                          <span className="st-field__hint">
+                            Pode vincular ou trocar o cliente depois de abrir a OS.
+                          </span>
+                        )}
+                      </label>
+                      <label className="os-field">
+                        <span>Bicicleta</span>
+                        <select
+                          className="os-input"
+                          value={formDetalhe.bicicletaId}
+                          disabled={!podeEditarClienteOs || !formDetalhe.clienteId}
+                          onChange={(e) =>
+                            setFormDetalhe((f) => ({ ...f, bicicletaId: e.target.value }))
+                          }
+                        >
+                          <option value="">
+                            {formDetalhe.clienteId ? 'Sem bicicleta' : 'Disponível após vincular cliente'}
+                          </option>
+                          {bikesDoClienteDetalhe.map((b) => (
+                            <option key={b.id} value={b.id}>
+                              {b.marca} {b.modelo}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                       <label className="os-field">
                         <span>Status</span>
                         <select
@@ -1297,7 +1379,9 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
                             type="button"
                             className="st-primary-btn"
                             onClick={() => {
-                              setFaturarVencimento(new Date().toISOString().slice(0, 10))
+                              const hoje = dataHojeBrasilia()
+                              setFaturarVencimento(hoje)
+                              setReceberData(hoje)
                               setFaturarEReceber(false)
                               setPagamentosReceber([novaLinhaPagamento('pix')])
                               setModalFaturar(true)
@@ -1373,7 +1457,15 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
               <input type="date" value={faturarVencimento} onChange={(e) => setFaturarVencimento(e.target.value)} required />
             </label>
             <label className="fin-rec-toggle">
-              <input type="checkbox" checked={faturarEReceber} onChange={(e) => setFaturarEReceber(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={faturarEReceber}
+                onChange={(e) => {
+                  const checked = e.target.checked
+                  setFaturarEReceber(checked)
+                  if (checked) setReceberData(dataHojeBrasilia())
+                }}
+              />
               <span>Receber agora (à vista)</span>
             </label>
             {faturarEReceber ? (
@@ -1384,8 +1476,8 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
                   onChange={setPagamentosReceber}
                 />
                 <label className="fin-field">
-                  <span>Data do recebimento</span>
-                  <input type="date" value={receberData} onChange={(e) => setReceberData(e.target.value)} required />
+                  <span>Data do recebimento (Brasília)</span>
+                  <input type="date" value={receberData} readOnly required />
                 </label>
               </>
             ) : null}
@@ -1426,8 +1518,8 @@ export function OficinaPage({ companyId, activeStoreId, companyName, storeName }
               onChange={setPagamentosReceber}
             />
             <label className="fin-field">
-              <span>Data do recebimento</span>
-              <input type="date" value={receberData} onChange={(e) => setReceberData(e.target.value)} required />
+              <span>Data do recebimento (Brasília)</span>
+              <input type="date" value={receberData} readOnly required />
             </label>
             <div className="fin-modal__actions">
               <button type="button" className="st-ghost-btn" onClick={() => setModalReceberOs(false)}>Voltar</button>

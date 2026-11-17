@@ -1,16 +1,20 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { listarClientes } from '../../services/clientes.service'
 import type { FormaPagamento } from '../../services/pdv.service'
 import {
+  buscarOpcoesHistoricoVendas,
+  obterHistoricoVendasItem,
   obterRelatorioVendasDetalhado,
   type CategoriaProdutoFiltro,
   type FiltrosRelatorioVendas,
+  type HistoricoItemOpcao,
+  type HistoricoVendasItem,
   type OrigemVendaFiltro,
   type RelatorioVendasDetalhado,
 } from '../../services/relatorios-vendas.service'
 import type { IntervaloRelatorio } from '../../services/relatorios.service'
 
-type VisaoVendas = 'resumo' | 'vendas' | 'itens' | 'servicos' | 'clientes' | 'diario'
+type VisaoVendas = 'resumo' | 'vendas' | 'itens' | 'servicos' | 'clientes' | 'diario' | 'historico'
 
 type RelatorioVendasPanelProps = {
   companyId: string
@@ -23,6 +27,7 @@ const VISAO: { key: VisaoVendas; label: string }[] = [
   { key: 'vendas', label: 'Por venda' },
   { key: 'itens', label: 'Por peça' },
   { key: 'servicos', label: 'Por serviço' },
+  { key: 'historico', label: 'Histórico' },
   { key: 'clientes', label: 'Por cliente' },
   { key: 'diario', label: 'Faturamento diário' },
 ]
@@ -358,6 +363,268 @@ function VisaoDiario({ dados }: { dados: RelatorioVendasDetalhado }) {
   )
 }
 
+function rotuloOpcaoHistorico(op: HistoricoItemOpcao) {
+  return op.detalhe ? `${op.label} (${op.detalhe})` : op.label
+}
+
+function VisaoHistoricoItem({
+  companyId,
+  activeStoreId,
+  intervalo,
+}: {
+  companyId: string
+  activeStoreId: string
+  intervalo: IntervaloRelatorio
+}) {
+  const listId = useId()
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const [busca, setBusca] = useState('')
+  const [sugestoes, setSugestoes] = useState<HistoricoItemOpcao[]>([])
+  const [listaAberta, setListaAberta] = useState(false)
+  const [buscando, setBuscando] = useState(false)
+  const [selecionado, setSelecionado] = useState<HistoricoItemOpcao | null>(null)
+  const [historico, setHistorico] = useState<HistoricoVendasItem | null>(null)
+  const [loadingHist, setLoadingHist] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
+  const buscaSeq = useRef(0)
+
+  useEffect(() => {
+    if (!listaAberta) return
+    const fechar = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setListaAberta(false)
+      }
+    }
+    document.addEventListener('mousedown', fechar)
+    return () => document.removeEventListener('mousedown', fechar)
+  }, [listaAberta])
+
+  useEffect(() => {
+    setSelecionado(null)
+    setHistorico(null)
+    setBusca('')
+    setSugestoes([])
+    setErro(null)
+  }, [companyId, activeStoreId])
+
+  useEffect(() => {
+    const termo = busca.trim()
+    if (selecionado && termo === rotuloOpcaoHistorico(selecionado)) {
+      setSugestoes([])
+      return
+    }
+    if (termo.length < 2) {
+      setSugestoes([])
+      return
+    }
+    const seq = ++buscaSeq.current
+    const t = window.setTimeout(() => {
+      setBuscando(true)
+      void buscarOpcoesHistoricoVendas(companyId, activeStoreId, termo)
+        .then((rows) => {
+          if (seq !== buscaSeq.current) return
+          setSugestoes(rows)
+          setListaAberta(true)
+        })
+        .catch((e) => {
+          if (seq !== buscaSeq.current) return
+          setErro(e instanceof Error ? e.message : 'Erro na busca.')
+          setSugestoes([])
+        })
+        .finally(() => {
+          if (seq === buscaSeq.current) setBuscando(false)
+        })
+    }, 280)
+    return () => window.clearTimeout(t)
+  }, [busca, companyId, activeStoreId, selecionado])
+
+  useEffect(() => {
+    if (!selecionado || !activeStoreId) {
+      setHistorico(null)
+      return
+    }
+    let cancel = false
+    setLoadingHist(true)
+    setErro(null)
+    void obterHistoricoVendasItem(companyId, activeStoreId, intervalo, selecionado)
+      .then((res) => {
+        if (!cancel) setHistorico(res)
+      })
+      .catch((e) => {
+        if (!cancel) {
+          setErro(e instanceof Error ? e.message : 'Erro ao carregar histórico.')
+          setHistorico(null)
+        }
+      })
+      .finally(() => {
+        if (!cancel) setLoadingHist(false)
+      })
+    return () => {
+      cancel = true
+    }
+  }, [selecionado, companyId, activeStoreId, intervalo])
+
+  function escolher(op: HistoricoItemOpcao) {
+    setSelecionado(op)
+    setBusca(rotuloOpcaoHistorico(op))
+    setSugestoes([])
+    setListaAberta(false)
+  }
+
+  function limpar() {
+    setSelecionado(null)
+    setHistorico(null)
+    setBusca('')
+    setSugestoes([])
+    setErro(null)
+  }
+
+  return (
+    <div className="rl-hist">
+      <section className="rl-card">
+        <h2 className="rl-sec__title">Histórico por peça ou serviço</h2>
+        <p className="rl-card__hint">
+          Digite o nome ou SKU, escolha o item e veja as vendas do período selecionado acima.
+        </p>
+        <div className="rl-hist__busca" ref={wrapRef}>
+          <label className="rl-hist__field">
+            <span>Buscar</span>
+            <div className="rl-hist__input-row">
+              <input
+                type="search"
+                className="rl-hist__input"
+                value={busca}
+                placeholder="Ex.: corrente Shimano, revisão completa…"
+                autoComplete="off"
+                role="combobox"
+                aria-expanded={listaAberta && sugestoes.length > 0}
+                aria-controls={listId}
+                aria-autocomplete="list"
+                onChange={(e) => {
+                  setBusca(e.target.value)
+                  if (selecionado) setSelecionado(null)
+                }}
+                onFocus={() => {
+                  if (sugestoes.length > 0) setListaAberta(true)
+                }}
+              />
+              {selecionado || busca ? (
+                <button type="button" className="st-ghost-btn rl-hist__limpar" onClick={limpar}>
+                  Limpar
+                </button>
+              ) : null}
+            </div>
+          </label>
+          {listaAberta && sugestoes.length > 0 ? (
+            <ul id={listId} className="rl-hist__sugestoes" role="listbox">
+              {sugestoes.map((op) => (
+                <li key={op.key}>
+                  <button
+                    type="button"
+                    className="rl-hist__sugestao"
+                    role="option"
+                    onClick={() => escolher(op)}
+                  >
+                    <span
+                      className={`rl-badge rl-badge--${op.kind === 'peca' ? 'teal' : 'violet'}`}
+                    >
+                      {op.kind === 'peca' ? 'Peça' : 'Serviço'}
+                    </span>
+                    <span className="rl-hist__sugestao-nome">{op.label}</span>
+                    {op.detalhe ? <em className="rl-muted">{op.detalhe}</em> : null}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {buscando ? <p className="rl-hist__status">Buscando…</p> : null}
+        </div>
+      </section>
+
+      {erro ? (
+        <div className="rl-alert" role="alert">
+          {erro}
+        </div>
+      ) : null}
+
+      {!selecionado ? (
+        <ListaVazia texto="Selecione uma peça ou serviço para ver o histórico." />
+      ) : loadingHist ? (
+        <div className="rl-loading" role="status">
+          <span className="cp-auth-loading__spinner" aria-hidden />
+          Carregando histórico…
+        </div>
+      ) : historico ? (
+        <>
+          <div className="rl-kpi-grid rl-kpi-grid--3">
+            <KpiCard
+              tom="teal"
+              label="Faturamento"
+              value={formatBRL(historico.faturamentoTotal)}
+              hint={selecionado.label}
+            />
+            <KpiCard
+              tom="blue"
+              label="Quantidade"
+              value={formatNum(historico.quantidadeTotal, 0)}
+              hint={selecionado.kind === 'peca' ? 'unidades' : 'lançamentos'}
+            />
+            <KpiCard
+              tom="violet"
+              label="Vendas"
+              value={String(historico.vendas)}
+              hint={intervalo.label}
+            />
+          </div>
+
+          {historico.linhas.length === 0 ? (
+            <ListaVazia texto="Nenhuma venda deste item no período." />
+          ) : (
+            <div className="rl-card rl-card--flush">
+              <div className="rl-data-table-wrap">
+                <table className="rl-data-table">
+                  <thead>
+                    <tr>
+                      <th>Data</th>
+                      <th>Venda</th>
+                      <th>Cliente</th>
+                      <th>Origem</th>
+                      <th className="rl-data-table__num">Qtd</th>
+                      <th className="rl-data-table__num">Unitário</th>
+                      <th className="rl-data-table__num">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historico.linhas.map((l, i) => (
+                      <tr key={`${l.vendaId}-${i}`}>
+                        <td>{formatShortDate(l.realizadaEm)}</td>
+                        <td className="rl-data-table__strong">#{l.numero}</td>
+                        <td>{l.clienteNome ?? '—'}</td>
+                        <td>
+                          <span
+                            className={`rl-badge rl-badge--${l.origem === 'oficina' ? 'violet' : 'teal'}`}
+                          >
+                            {l.origem === 'oficina' ? 'Oficina' : 'Balcão'}
+                          </span>
+                        </td>
+                        <td className="rl-data-table__num">{formatNum(l.quantidade, 0)}</td>
+                        <td className="rl-data-table__num">{formatBRL(l.precoUnitario)}</td>
+                        <td className="rl-data-table__num rl-data-table__strong">
+                          {formatBRL(l.totalLinha)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
+      ) : null}
+    </div>
+  )
+}
+
 export function RelatorioVendasPanel({ companyId, activeStoreId, intervalo }: RelatorioVendasPanelProps) {
   const [visao, setVisao] = useState<VisaoVendas>('resumo')
   const [origem, setOrigem] = useState<OrigemVendaFiltro>('todas')
@@ -380,8 +647,7 @@ export function RelatorioVendasPanel({ companyId, activeStoreId, intervalo }: Re
   }, [companyId, activeStoreId])
 
   const carregar = useCallback(async () => {
-    if (!activeStoreId) {
-      setDados(null)
+    if (!activeStoreId || visao === 'historico') {
       return
     }
     setLoading(true)
@@ -401,73 +667,77 @@ export function RelatorioVendasPanel({ companyId, activeStoreId, intervalo }: Re
     } finally {
       setLoading(false)
     }
-  }, [companyId, activeStoreId, intervalo, origem, formaPagamento, categoria, clienteId])
+  }, [companyId, activeStoreId, intervalo, origem, formaPagamento, categoria, clienteId, visao])
 
   useEffect(() => {
     void carregar()
   }, [carregar])
 
+  const filtrosVisiveis = visao !== 'historico'
+
   return (
     <div className={loading && dados ? 'rl-vendas rl-vendas--loading' : 'rl-vendas'}>
-      <div className="rl-vendas-filters">
-        <label className="rl-vendas-filters__field">
-          <span>Cliente</span>
-          <select
-            value={clienteId}
-            onChange={(e) => setClienteId(e.target.value)}
-            disabled={loading}
-          >
-            <option value="">Todos os clientes</option>
-            {clientes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nome}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="rl-vendas-filters__field">
-          <span>Origem</span>
-          <select
-            value={origem}
-            onChange={(e) => setOrigem(e.target.value as OrigemVendaFiltro)}
-            disabled={loading}
-          >
-            {ORIGENS.map((o) => (
-              <option key={o.key} value={o.key}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="rl-vendas-filters__field">
-          <span>Pagamento</span>
-          <select
-            value={formaPagamento}
-            onChange={(e) => setFormaPagamento(e.target.value as FormaPagamento | 'todas')}
-            disabled={loading}
-          >
-            {FORMAS.map((f) => (
-              <option key={f.key} value={f.key}>
-                {f.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="rl-vendas-filters__field">
-          <span>Categoria</span>
-          <select
-            value={categoria}
-            onChange={(e) => setCategoria(e.target.value as CategoriaProdutoFiltro)}
-            disabled={loading}
-          >
-            {CATEGORIAS.map((c) => (
-              <option key={c.key} value={c.key}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      {filtrosVisiveis ? (
+        <div className="rl-vendas-filters">
+          <label className="rl-vendas-filters__field">
+            <span>Cliente</span>
+            <select
+              value={clienteId}
+              onChange={(e) => setClienteId(e.target.value)}
+              disabled={loading}
+            >
+              <option value="">Todos os clientes</option>
+              {clientes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nome}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="rl-vendas-filters__field">
+            <span>Origem</span>
+            <select
+              value={origem}
+              onChange={(e) => setOrigem(e.target.value as OrigemVendaFiltro)}
+              disabled={loading}
+            >
+              {ORIGENS.map((o) => (
+                <option key={o.key} value={o.key}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="rl-vendas-filters__field">
+            <span>Pagamento</span>
+            <select
+              value={formaPagamento}
+              onChange={(e) => setFormaPagamento(e.target.value as FormaPagamento | 'todas')}
+              disabled={loading}
+            >
+              {FORMAS.map((f) => (
+                <option key={f.key} value={f.key}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="rl-vendas-filters__field">
+            <span>Categoria</span>
+            <select
+              value={categoria}
+              onChange={(e) => setCategoria(e.target.value as CategoriaProdutoFiltro)}
+              disabled={loading}
+            >
+              {CATEGORIAS.map((c) => (
+                <option key={c.key} value={c.key}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      ) : null}
 
       <nav className="rl-subtabs" aria-label="Visão do relatório de vendas">
         {VISAO.map((v) => (
@@ -476,34 +746,44 @@ export function RelatorioVendasPanel({ companyId, activeStoreId, intervalo }: Re
             type="button"
             className={visao === v.key ? 'rl-subtabs__btn rl-subtabs__btn--active' : 'rl-subtabs__btn'}
             onClick={() => setVisao(v.key)}
-            disabled={loading && !dados}
+            disabled={loading && !dados && v.key !== 'historico'}
           >
             {v.label}
           </button>
         ))}
       </nav>
 
-      {erro ? (
-        <div className="rl-alert" role="alert">
-          {erro}
-        </div>
-      ) : null}
-
-      {loading && !dados ? (
-        <div className="rl-loading" role="status">
-          <span className="cp-auth-loading__spinner" aria-hidden />
-          Carregando movimentações…
-        </div>
-      ) : dados ? (
+      {visao === 'historico' ? (
+        <VisaoHistoricoItem
+          companyId={companyId}
+          activeStoreId={activeStoreId}
+          intervalo={intervalo}
+        />
+      ) : (
         <>
-          {visao === 'resumo' && <VisaoResumo dados={dados} />}
-          {visao === 'vendas' && <VisaoPorVenda dados={dados} />}
-          {visao === 'itens' && <VisaoPorItem dados={dados} />}
-          {visao === 'servicos' && <VisaoPorServico dados={dados} />}
-          {visao === 'clientes' && <VisaoPorCliente dados={dados} />}
-          {visao === 'diario' && <VisaoDiario dados={dados} />}
+          {erro ? (
+            <div className="rl-alert" role="alert">
+              {erro}
+            </div>
+          ) : null}
+
+          {loading && !dados ? (
+            <div className="rl-loading" role="status">
+              <span className="cp-auth-loading__spinner" aria-hidden />
+              Carregando movimentações…
+            </div>
+          ) : dados ? (
+            <>
+              {visao === 'resumo' && <VisaoResumo dados={dados} />}
+              {visao === 'vendas' && <VisaoPorVenda dados={dados} />}
+              {visao === 'itens' && <VisaoPorItem dados={dados} />}
+              {visao === 'servicos' && <VisaoPorServico dados={dados} />}
+              {visao === 'clientes' && <VisaoPorCliente dados={dados} />}
+              {visao === 'diario' && <VisaoDiario dados={dados} />}
+            </>
+          ) : null}
         </>
-      ) : null}
+      )}
     </div>
   )
 }

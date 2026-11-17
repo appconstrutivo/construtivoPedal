@@ -3,6 +3,7 @@ import { PagamentoMistoFields, validarPagamentoMisto } from '../PagamentoMistoFi
 import { novaLinhaPagamento, type PagamentoLinha } from '../../lib/pagamento-misto'
 import {
   cancelarContaReceber,
+  dataHojeBrasilia,
   FINANCEIRO_LISTA_PAGE_SIZE,
   garantirContaCaixa,
   isVencida,
@@ -52,7 +53,7 @@ export function FinContasReceberTab({ companyId, storeId }: FinContasReceberTabP
   const [modalReceber, setModalReceber] = useState<ContaReceber | null>(null)
   const [contaReceberId, setContaReceberId] = useState('')
   const [pagamentos, setPagamentos] = useState<PagamentoLinha[]>(() => [novaLinhaPagamento('pix')])
-  const [dataRecebimento, setDataRecebimento] = useState(() => new Date().toISOString().slice(0, 10))
+  const [dataRecebimento, setDataRecebimento] = useState(() => dataHojeBrasilia())
   const [pagina, setPagina] = useState(1)
 
   const recarregar = useCallback(async () => {
@@ -107,7 +108,7 @@ export function FinContasReceberTab({ companyId, storeId }: FinContasReceberTabP
   function abrirReceber(cr: ContaReceber) {
     setModalReceber(cr)
     setPagamentos([novaLinhaPagamento('pix')])
-    setDataRecebimento(new Date().toISOString().slice(0, 10))
+    setDataRecebimento(dataHojeBrasilia())
     setSucesso(null)
     setErro(null)
   }
@@ -127,7 +128,7 @@ export function FinContasReceberTab({ companyId, storeId }: FinContasReceberTabP
         contaReceberId: modalReceber.id,
         contaFinanceiraId: contaReceberId,
         pagamentos: parsed,
-        dataRecebimento,
+        dataRecebimento: dataHojeBrasilia(),
       })
       setModalReceber(null)
       setSucesso(
@@ -365,13 +366,8 @@ export function FinContasReceberTab({ companyId, storeId }: FinContasReceberTabP
               onChange={setPagamentos}
             />
             <label className="fin-field">
-              <span>Data do recebimento</span>
-              <input
-                type="date"
-                value={dataRecebimento}
-                onChange={(e) => setDataRecebimento(e.target.value)}
-                required
-              />
+              <span>Data do recebimento (Brasília)</span>
+              <input type="date" value={dataRecebimento} readOnly required />
             </label>
             <div className="fin-modal__actions">
               <button type="button" className="cp-btn cp-btn--ghost" onClick={() => setModalReceber(null)}>

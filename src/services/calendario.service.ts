@@ -24,10 +24,55 @@ export type CalendarioEventoRow = {
   hora_inicio: string | null
   cliente_id: string | null
   status: StatusCalendarioEvento
+  grupo_recorrencia_id: string | null
+  ocorrencia: number | null
+  ocorrencias_total: number | null
   created_by: string | null
   created_at: string
   updated_at: string
   clienteNome: string | null
+}
+
+export type FrequenciaEventoRecorrencia = 'mensal' | 'trimestral' | 'anual'
+
+const FREQUENCIA_EVENTO_MESES: Record<FrequenciaEventoRecorrencia, number> = {
+  mensal: 1,
+  trimestral: 3,
+  anual: 12,
+}
+
+export const FREQUENCIA_EVENTO_LABEL: Record<FrequenciaEventoRecorrencia, string> = {
+  mensal: 'Mensal',
+  trimestral: 'Trimestral',
+  anual: 'Anual',
+}
+
+/** Datas (YYYY-MM-DD) a partir do 1º dia, no dia do mês, até a data limite (máx. 36). */
+export function gerarDatasEventoRecorrenteAte(
+  primeiraData: string,
+  frequencia: FrequenciaEventoRecorrencia,
+  ate: string,
+  maxOcorrencias = 36,
+): string[] {
+  const partes = primeiraData.split('-').map(Number)
+  if (partes.length !== 3 || !ate || ate < primeiraData) return []
+
+  const [ano0, mes0, dia0] = partes
+  const salto = FREQUENCIA_EVENTO_MESES[frequencia]
+  const datas: string[] = []
+
+  for (let i = 0; i < maxOcorrencias; i++) {
+    const mesAbs = mes0 - 1 + i * salto
+    const ano = ano0 + Math.floor(mesAbs / 12)
+    const mes = (mesAbs % 12) + 1
+    const ultimoDia = new Date(ano, mes, 0).getDate()
+    const dia = Math.min(dia0, ultimoDia)
+    const iso = `${ano}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`
+    if (iso > ate) break
+    datas.push(iso)
+  }
+
+  return datas
 }
 
 export type TipoCalendarioOpcao = {
@@ -216,7 +261,10 @@ export async function listarCalendarioEventos(
   return [...unicos.values()]
 }
 
-/** Eventos agendados cujo período inclui hoje — badge do menu. */
+/**
+ * Eventos ainda agendados que já começaram (hoje ou atrasados).
+ * Badge do menu: só some ao concluir ou cancelar — não some só porque a data passou.
+ */
 export async function contarCalendarioEventosHoje(
   companyId: string,
   storeId: string,
@@ -232,10 +280,33 @@ export async function contarCalendarioEventosHoje(
     .eq('store_id', storeId)
     .eq('status', 'agendado')
     .lte('data_inicio', hoje)
-    .gte('data_fim', hoje)
 
   if (error) throw new Error(error.message ?? 'Erro ao contar eventos da agenda.')
   return count ?? 0
+}
+
+/** Eventos agendados em aberto até hoje (inclui atrasados) — faixa de alerta da agenda. */
+export async function listarCalendarioEventosPendentesAteHoje(
+  companyId: string,
+  storeId: string,
+): Promise<CalendarioEventoRow[]> {
+  if (!storeId) return []
+  const hoje = dataLocalISO()
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('calendario_eventos')
+    .select('*, clientes(nome)')
+    .eq('company_id', companyId)
+    .eq('store_id', storeId)
+    .eq('status', 'agendado')
+    .lte('data_inicio', hoje)
+    .order('data_inicio', { ascending: true })
+    .order('hora_inicio', { ascending: true, nullsFirst: true })
+    .limit(200)
+
+  if (error) throw new Error(error.message ?? 'Erro ao listar eventos em aberto.')
+  return ((data ?? []) as RawEvento[]).map(mapEvento)
 }
 
 export async function criarCalendarioEvento(
@@ -256,6 +327,74 @@ export async function criarCalendarioEvento(
     .single()
   if (error) throw new Error(error.message ?? 'Erro ao criar evento.')
   return mapEvento(data as RawEvento)
+}
+
+export type CriarEventoRecorrenteInput = {
+  company_id: string
+  store_id: string
+  titulo: string
+  tipo: TipoCalendarioEvento
+  data_inicio: string
+  hora_inicio?: string | null
+  cliente_id?: string | null
+  observacoes?: string | null
+  frequencia: FrequenciaEventoRecorrencia
+  repetirAte: string
+}
+
+/** Cria série de eventos pontuais (ex.: todo dia 10 até a data limite). */
+export async function criarCalendarioEventosRecorrentes(
+  params: CriarEventoRecorrenteInput,
+): Promise<CalendarioEventoRow[]> {
+  const datas = gerarDatasEventoRecorrenteAte(params.data_inicio, params.frequencia, params.repetirAte)
+  if (datas.length === 0) {
+    throw new Error('Informe uma data final igual ou posterior ao início.')
+  }
+  if (datas.length === 1) {
+    const um = await criarCalendarioEvento({
+      company_id: params.company_id,
+      store_id: params.store_id,
+      titulo: params.titulo.trim(),
+      tipo: params.tipo,
+      data_inicio: datas[0],
+      data_fim: datas[0],
+      hora_inicio: params.hora_inicio || null,
+      cliente_id: params.cliente_id || null,
+      observacoes: params.observacoes?.trim() || null,
+      status: 'agendado',
+    })
+    return [um]
+  }
+
+  const { data: auth } = await supabase.auth.getUser()
+  const grupoId = crypto.randomUUID()
+  const tituloBase = params.titulo.trim()
+  const total = datas.length
+  const linhas = datas.map((dia, i) => ({
+    company_id: params.company_id,
+    store_id: params.store_id,
+    titulo: `${tituloBase} (${i + 1}/${total})`,
+    tipo: params.tipo,
+    data_inicio: dia,
+    data_fim: dia,
+    hora_inicio: params.hora_inicio || null,
+    cliente_id: params.cliente_id || null,
+    observacoes: params.observacoes?.trim() || null,
+    status: 'agendado' as const,
+    grupo_recorrencia_id: grupoId,
+    ocorrencia: i + 1,
+    ocorrencias_total: total,
+    created_by: auth.user?.id ?? null,
+  }))
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('calendario_eventos')
+    .insert(linhas)
+    .select('*, clientes(nome)')
+
+  if (error) throw new Error(error.message ?? 'Erro ao criar eventos recorrentes.')
+  return ((data ?? []) as RawEvento[]).map(mapEvento)
 }
 
 export async function atualizarCalendarioEvento(

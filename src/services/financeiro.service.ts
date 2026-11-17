@@ -150,6 +150,16 @@ export function dataLocalISO(d = new Date()): string {
   return `${y}-${m}-${day}`
 }
 
+/** Dia civil atual em America/Sao_Paulo (YYYY-MM-DD). Não usar toISOString — UTC vira dia errado. */
+export function dataHojeBrasilia(d = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d)
+}
+
 export function isVencendoHoje(vencimento: string, status: StatusContaPagar): boolean {
   return status === 'pendente' && vencimento === dataLocalISO()
 }
@@ -162,14 +172,17 @@ function isVencida(vencimento: string, status: StatusContaPagar) {
   return venc < hoje
 }
 
-/** Contas pendentes com vencimento na data de hoje (badge do menu Financeiro). */
+/**
+ * Contas a pagar pendentes com vencimento hoje ou já vencido.
+ * Badge do menu: só some ao pagar ou cancelar — não some só porque a data passou.
+ */
 export async function contarContasPagarVencendoHoje(
   companyId: string,
   storeId: string,
 ): Promise<number> {
   if (!storeId) return 0
 
-  const hoje = dataLocalISO()
+  const hoje = dataHojeBrasilia()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { count, error } = await (supabase as any)
@@ -178,11 +191,42 @@ export async function contarContasPagarVencendoHoje(
     .eq('company_id', companyId)
     .eq('store_id', storeId)
     .eq('status', 'pendente')
-    .eq('vencimento', hoje)
+    .lte('vencimento', hoje)
 
   if (error) throw new Error(error.message ?? 'Erro ao contar contas a pagar.')
 
   return count ?? 0
+}
+
+/** Contas a pagar pendentes até hoje (inclui vencidas) — faixa de alerta da agenda. */
+export async function listarContasPagarPendentesAteHoje(
+  companyId: string,
+  storeId: string,
+): Promise<ContaPagar[]> {
+  if (!storeId) return []
+
+  const hoje = dataHojeBrasilia()
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('financeiro_contas_pagar')
+    .select('*, fornecedores(nome)')
+    .eq('company_id', companyId)
+    .eq('store_id', storeId)
+    .eq('status', 'pendente')
+    .lte('vencimento', hoje)
+    .order('vencimento', { ascending: true })
+    .limit(200)
+
+  if (error) throw new Error(error.message ?? 'Erro ao listar contas a pagar em aberto.')
+
+  type Raw = ContaPagar & { fornecedores?: { nome?: string | null } | null }
+
+  return ((data ?? []) as Raw[]).map((row) => ({
+    ...row,
+    valor: Number(row.valor),
+    fornecedorNome: row.fornecedores?.nome ?? null,
+  }))
 }
 
 /** Contas a pagar pendentes com vencimento no intervalo — exibição no calendário da agenda. */
@@ -918,7 +962,7 @@ export async function registrarRecebimentoConta(params: {
     p_conta_receber_id: params.contaReceberId,
     p_conta_financeira_id: params.contaFinanceiraId,
     p_forma_pagamento: pagamentosJson ? null : (params.formaPagamento ?? 'dinheiro'),
-    p_data_recebimento: params.dataRecebimento ?? null,
+    p_data_recebimento: params.dataRecebimento?.trim() || dataHojeBrasilia(),
     p_pagamentos: pagamentosJson,
   })
   if (error) throw new Error(error.message ?? 'Erro ao registrar recebimento.')
@@ -937,6 +981,20 @@ export async function cancelarContaReceber(contaReceberId: string): Promise<void
     p_conta_receber_id: contaReceberId,
   })
   if (error) throw new Error(error.message ?? 'Erro ao cancelar faturamento.')
+}
+
+/** Alinha cliente da conta a receber pendente ao cliente atual da OS. */
+export async function atualizarClienteContaReceberPendente(
+  contaReceberId: string,
+  clienteId: string | null,
+): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from('financeiro_contas_receber')
+    .update({ cliente_id: clienteId })
+    .eq('id', contaReceberId)
+    .eq('status', 'pendente')
+  if (error) throw new Error(error.message ?? 'Erro ao atualizar cliente no faturamento.')
 }
 
 export { isVencida }

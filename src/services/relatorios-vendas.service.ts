@@ -465,3 +465,210 @@ export async function obterRelatorioVendasDetalhado(
       .sort((a, b) => a.data.localeCompare(b.data)),
   }
 }
+
+// ─── Histórico por peça / serviço ────────────────────────────────────────────
+
+export type HistoricoItemOpcao = {
+  key: string
+  kind: 'peca' | 'servico'
+  label: string
+  detalhe: string | null
+  estoqueItemId: string | null
+  descricao: string
+}
+
+export type HistoricoVendaLinha = {
+  vendaId: string
+  numero: number
+  realizadaEm: string
+  clienteNome: string | null
+  origem: 'balcao' | 'oficina'
+  descricao: string
+  quantidade: number
+  precoUnitario: number
+  totalLinha: number
+}
+
+export type HistoricoVendasItem = {
+  item: HistoricoItemOpcao
+  quantidadeTotal: number
+  faturamentoTotal: number
+  vendas: number
+  linhas: HistoricoVendaLinha[]
+}
+
+function escaparIlike(termo: string): string {
+  return termo.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
+}
+
+/** Sugestões rápidas: peças do estoque + serviços do catálogo. */
+export async function buscarOpcoesHistoricoVendas(
+  companyId: string,
+  storeId: string,
+  busca: string,
+): Promise<HistoricoItemOpcao[]> {
+  if (!storeId) return []
+  const termo = busca.trim()
+  if (termo.length < 2) return []
+
+  const pattern = `%${escaparIlike(termo)}%`
+
+  type PecaRaw = {
+    id: string
+    nome: string
+    sku: string | null
+    sku_fornecedor: string | null
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const basePecas = () =>
+    (supabase as any)
+      .from('estoque_itens')
+      .select('id, nome, sku, sku_fornecedor')
+      .eq('company_id', companyId)
+      .eq('store_id', storeId)
+      .eq('ativo', true)
+      .limit(12)
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [porNome, porSku, porSkuForn, servicosRes] = await Promise.all([
+    basePecas().ilike('nome', pattern).order('nome', { ascending: true }),
+    basePecas().ilike('sku', pattern).order('nome', { ascending: true }),
+    basePecas().ilike('sku_fornecedor', pattern).order('nome', { ascending: true }),
+    (supabase as any)
+      .from('catalogo_servicos')
+      .select('id, nome')
+      .eq('company_id', companyId)
+      .eq('store_id', storeId)
+      .eq('ativo', true)
+      .ilike('nome', pattern)
+      .order('nome', { ascending: true })
+      .limit(8),
+  ])
+
+  for (const res of [porNome, porSku, porSkuForn]) {
+    if (res.error) throw new Error(res.error.message ?? 'Erro ao buscar peças.')
+  }
+  if (servicosRes.error) throw new Error(servicosRes.error.message ?? 'Erro ao buscar serviços.')
+
+  const pecasMap = new Map<string, HistoricoItemOpcao>()
+  for (const row of [...(porNome.data ?? []), ...(porSku.data ?? []), ...(porSkuForn.data ?? [])] as PecaRaw[]) {
+    if (pecasMap.has(row.id)) continue
+    const sku = row.sku?.trim() || row.sku_fornecedor?.trim() || null
+    pecasMap.set(row.id, {
+      key: `peca:${row.id}`,
+      kind: 'peca',
+      label: row.nome,
+      detalhe: sku,
+      estoqueItemId: row.id,
+      descricao: row.nome,
+    })
+  }
+
+  const servicos: HistoricoItemOpcao[] = ((servicosRes.data ?? []) as Array<{
+    id: string
+    nome: string
+  }>).map((s) => ({
+    key: `servico:${s.nome}`,
+    kind: 'servico' as const,
+    label: s.nome,
+    detalhe: null,
+    estoqueItemId: null,
+    descricao: s.nome,
+  }))
+
+  return [...pecasMap.values(), ...servicos].slice(0, 20)
+}
+
+type HistoricoItemRaw = {
+  descricao: string
+  quantidade: number
+  preco_unitario: number
+  vendas: {
+    id: string
+    numero: number
+    status: string
+    realizada_em: string | null
+    created_at: string
+    os_id: string | null
+    store_id: string
+    clientes?: { nome?: string | null } | null
+  } | null
+}
+
+/** Histórico de vendas de uma peça (por id) ou serviço (por descrição) no período. */
+export async function obterHistoricoVendasItem(
+  companyId: string,
+  storeId: string,
+  intervalo: IntervaloRelatorio,
+  item: HistoricoItemOpcao,
+): Promise<HistoricoVendasItem> {
+  const vazio: HistoricoVendasItem = {
+    item,
+    quantidadeTotal: 0,
+    faturamentoTotal: 0,
+    vendas: 0,
+    linhas: [],
+  }
+  if (!storeId) return vazio
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let q = (supabase as any)
+    .from('venda_itens')
+    .select(
+      'descricao, quantidade, preco_unitario, vendas!inner(id, numero, status, realizada_em, created_at, os_id, store_id, clientes(nome))',
+    )
+    .eq('company_id', companyId)
+    .eq('vendas.store_id', storeId)
+    .eq('vendas.status', 'finalizada')
+    .gte('vendas.realizada_em', intervalo.desde)
+    .lte('vendas.realizada_em', intervalo.ate)
+
+  if (item.kind === 'peca' && item.estoqueItemId) {
+    q = q.eq('estoque_item_id', item.estoqueItemId)
+  } else {
+    q = q.is('estoque_item_id', null).ilike('descricao', item.descricao)
+  }
+
+  const { data, error } = await q.limit(500)
+  if (error) throw new Error(error.message ?? 'Erro ao carregar histórico do item.')
+
+  const rows = (data ?? []) as HistoricoItemRaw[]
+  const linhas: HistoricoVendaLinha[] = []
+  const vendasIds = new Set<string>()
+  let quantidadeTotal = 0
+  let faturamentoTotal = 0
+
+  for (const row of rows) {
+    const v = row.vendas
+    if (!v) continue
+    const quando = dataExibicaoVenda(v)
+    const qtd = Number(row.quantidade) || 0
+    const preco = Number(row.preco_unitario) || 0
+    const totalLinha = round2(qtd * preco)
+    quantidadeTotal += qtd
+    faturamentoTotal += totalLinha
+    vendasIds.add(v.id)
+    linhas.push({
+      vendaId: v.id,
+      numero: Number(v.numero),
+      realizadaEm: quando,
+      clienteNome: v.clientes?.nome?.trim() || null,
+      origem: v.os_id ? 'oficina' : 'balcao',
+      descricao: row.descricao,
+      quantidade: qtd,
+      precoUnitario: preco,
+      totalLinha,
+    })
+  }
+
+  linhas.sort((a, b) => b.realizadaEm.localeCompare(a.realizadaEm) || b.numero - a.numero)
+
+  return {
+    item,
+    quantidadeTotal: round2(quantidadeTotal),
+    faturamentoTotal: round2(faturamentoTotal),
+    vendas: vendasIds.size,
+    linhas,
+  }
+}

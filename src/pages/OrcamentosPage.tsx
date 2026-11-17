@@ -3,6 +3,7 @@ import { ClientePicker } from '../components/ClientePicker'
 import { EstoqueItemPicker } from '../components/EstoqueItemPicker'
 import { ServicoCatalogoPicker } from '../components/ServicoCatalogoPicker'
 import { imprimirOrcamento } from '../components/OrcamentoPrint'
+import { parseMoneyInput } from '../lib/money'
 import {
   MSG_QUANTIDADE_INTEIRA,
   filtrarInputQuantidadeInteira,
@@ -142,7 +143,12 @@ export function OrcamentosPage({
   const [busy, setBusy] = useState<string | null>(null)
   const [pecaItemId, setPecaItemId] = useState('')
   const [pecaQtd, setPecaQtd] = useState('1')
-  const [servicoCatalogoId, setServicoCatalogoId] = useState('')
+  const [servicoForm, setServicoForm] = useState({
+    catalogoId: '',
+    desc: '',
+    qtd: '1',
+    preco: '0',
+  })
 
   const carregarLista = useCallback(async () => {
     if (!activeStoreId) { setLista([]); setLoadingLista(false); return }
@@ -385,19 +391,57 @@ export function OrcamentosPage({
     finally { setBusy(null) }
   }
 
+  function selecionarServicoCatalogo(id: string) {
+    if (!id) {
+      setServicoForm({ catalogoId: '', desc: '', qtd: '1', preco: '0' })
+      return
+    }
+    const svc = catalogoServicos.find((s) => s.id === id)
+    setServicoForm({
+      catalogoId: id,
+      desc: svc?.nome ?? '',
+      qtd: '1',
+      preco: svc != null ? String(Number(svc.preco_sugerido) || 0) : '0',
+    })
+  }
+
   async function handleAddServico() {
-    if (!detalhe || !editavel || !servicoCatalogoId) return
-    const svc = catalogoServicos.find((s) => s.id === servicoCatalogoId)
-    if (!svc) return
+    if (!detalhe || !editavel) return
+    const q = parseQuantidadeInteira(servicoForm.qtd)
+    if (!Number.isFinite(q) || q < 1) {
+      setErro(MSG_QUANTIDADE_INTEIRA)
+      return
+    }
+    const cat = servicoForm.catalogoId
+      ? catalogoServicos.find((s) => s.id === servicoForm.catalogoId)
+      : undefined
+    const nomeLinha = (servicoForm.desc.trim() || cat?.nome || '').trim()
+    if (!nomeLinha) {
+      setErro('Escolha um serviço no catálogo ou digite a descrição à mão.')
+      return
+    }
+    const preco = parseMoneyInput(servicoForm.preco) ?? 0
     setBusy('svc')
+    setErro(null)
     try {
       await adicionarOrcamentoItem({
-        company_id: companyId, orcamento_id: detalhe.id, tipo: 'servico', estoque_item_id: null,
-        servico_catalogo_id: svc.id, descricao: svc.nome, quantidade: 1, preco_unitario: Number(svc.preco_sugerido) || 0,
+        company_id: companyId,
+        orcamento_id: detalhe.id,
+        tipo: 'servico',
+        estoque_item_id: null,
+        servico_catalogo_id: cat?.id ?? null,
+        descricao: nomeLinha.slice(0, 500),
+        quantidade: q,
+        preco_unitario: preco,
       })
-      setServicoCatalogoId(''); await carregarLista(); await recarregarDetalhe(detalhe.id)
-    } catch (e: unknown) { setErro(e instanceof Error ? e.message : 'Erro ao adicionar serviço.') }
-    finally { setBusy(null) }
+      setServicoForm({ catalogoId: '', desc: '', qtd: '1', preco: '0' })
+      await carregarLista()
+      await recarregarDetalhe(detalhe.id)
+    } catch (e: unknown) {
+      setErro(e instanceof Error ? e.message : 'Erro ao adicionar serviço.')
+    } finally {
+      setBusy(null)
+    }
   }
 
   async function patchItem(item: OrcamentoItemRow, patch: { quantidade?: number; preco_unitario?: number }) {
@@ -430,7 +474,13 @@ export function OrcamentosPage({
       <tr key={item.id} className={semSaldo ? 'orc-table__row--sem-saldo' : undefined}>
         <td>
           {item.descricao}
-          <span className="orc-table__tipo">{item.tipo === 'servico' ? 'Serviço' : 'Peça'}</span>
+          <span className="orc-table__tipo">
+            {item.tipo === 'servico'
+              ? item.servico_catalogo_id
+                ? 'Serviço'
+                : 'Serviço avulso'
+              : 'Peça'}
+          </span>
           {semSaldo && <span className="orc-table__obs">{OBS_ITEM_ORCAMENTO_SEM_SALDO}</span>}
         </td>
         <td className="orc-table__num">
@@ -631,15 +681,64 @@ export function OrcamentosPage({
                         </div>
                       </div>
                       <div className="orc-add-block">
-                        <p className="orc-add-label">Serviço (catálogo)</p>
+                        <p className="orc-add-label">Serviço / mão de obra</p>
                         <ServicoCatalogoPicker
                           servicos={catalogoServicos}
-                          value={servicoCatalogoId}
-                          onChange={setServicoCatalogoId}
+                          value={servicoForm.catalogoId}
+                          onChange={selecionarServicoCatalogo}
                           formatPreco={formatBRL}
+                          permitirAvulso
                           disabled={busy === 'svc'}
+                          placeholder={
+                            catalogoServicos.length === 0
+                              ? 'Sem serviços no catálogo — use avulso abaixo'
+                              : 'Buscar serviço do catálogo…'
+                          }
+                          rotuloAvulso="Serviço avulso (descrição livre abaixo)"
+                          hintAvulso="Digite a descrição manualmente no campo abaixo"
                         />
-                        <button type="button" className="st-ghost-btn" disabled={!servicoCatalogoId || busy === 'svc'} onClick={() => void handleAddServico()}>Adicionar serviço</button>
+                        <input
+                          className="orc-input"
+                          placeholder="Preenchida pelo catálogo ou digite à mão (serviço avulso)"
+                          value={servicoForm.desc}
+                          disabled={busy === 'svc'}
+                          onChange={(e) => setServicoForm((f) => ({ ...f, desc: e.target.value }))}
+                        />
+                        <div className="orc-add-inline">
+                          <input
+                            className="orc-input orc-input--qtd"
+                            type="number"
+                            min={1}
+                            step={1}
+                            inputMode="numeric"
+                            value={servicoForm.qtd}
+                            disabled={busy === 'svc'}
+                            onChange={(e) =>
+                              setServicoForm((f) => ({
+                                ...f,
+                                qtd: filtrarInputQuantidadeInteira(e.target.value),
+                              }))
+                            }
+                            aria-label="Quantidade do serviço"
+                          />
+                          <input
+                            className="orc-input orc-input--qtd"
+                            inputMode="decimal"
+                            placeholder="R$ 0,00"
+                            value={servicoForm.preco}
+                            disabled={busy === 'svc'}
+                            onChange={(e) => setServicoForm((f) => ({ ...f, preco: e.target.value }))}
+                            aria-label="Preço unitário do serviço"
+                          />
+                          <button
+                            type="button"
+                            className="st-ghost-btn"
+                            disabled={busy === 'svc'}
+                            onClick={() => void handleAddServico()}
+                          >
+                            Adicionar serviço
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
