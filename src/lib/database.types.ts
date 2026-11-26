@@ -368,6 +368,45 @@ export type Database = {
           tipo?: string
         }
       }
+      estoque_valor_snapshots: {
+        Row: {
+          id: string
+          company_id: string
+          store_id: string
+          competencia: string
+          valor_mercadorias: number
+          valor_patrimonio: number
+          total_skus: number
+          criticos: number
+          reposicao: number
+          origem: string
+          capturado_em: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          store_id: string
+          competencia: string
+          valor_mercadorias?: number
+          valor_patrimonio?: number
+          total_skus?: number
+          criticos?: number
+          reposicao?: number
+          origem?: string
+          capturado_em?: string
+          created_at?: string
+        }
+        Update: {
+          valor_mercadorias?: number
+          valor_patrimonio?: number
+          total_skus?: number
+          criticos?: number
+          reposicao?: number
+          origem?: string
+          capturado_em?: string
+        }
+      }
       bicicletas: {
         Row: {
           aro: string | null

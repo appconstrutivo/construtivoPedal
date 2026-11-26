@@ -27,6 +27,8 @@ import {
 type FinContasPagarTabProps = {
   companyId: string
   storeId: string
+  /** Intervalo por vencimento (YYYY-MM-DD). Combina com qualquer status. */
+  periodo?: { desde: string; ate: string; label: string } | null
   onListaChange?: () => void
   onNavigateFornecedores?: () => void
 }
@@ -59,6 +61,7 @@ function parseValorInput(raw: string) {
 export function FinContasPagarTab({
   companyId,
   storeId,
+  periodo = null,
   onListaChange,
   onNavigateFornecedores,
 }: FinContasPagarTabProps) {
@@ -104,12 +107,17 @@ export function FinContasPagarTab({
   const [pagina, setPagina] = useState(1)
   const [filtroCredor, setFiltroCredor] = useState('')
 
+  const periodoConsulta = useMemo(() => {
+    if (!periodo?.desde || !periodo?.ate) return null
+    return { desde: periodo.desde, ate: periodo.ate }
+  }, [periodo?.desde, periodo?.ate])
+
   const recarregar = useCallback(async () => {
     setLoading(true)
     setErro(null)
     try {
       const [items, res, contasFin, forns] = await Promise.all([
-        listarContasPagar(companyId, storeId, filtro),
+        listarContasPagar(companyId, storeId, filtro, periodoConsulta),
         obterResumoContasPagar(companyId, storeId),
         listarContasFinanceiras(companyId, storeId),
         listarFornecedores(companyId, storeId),
@@ -125,7 +133,7 @@ export function FinContasPagarTab({
     } finally {
       setLoading(false)
     }
-  }, [companyId, storeId, filtro, onListaChange])
+  }, [companyId, storeId, filtro, periodoConsulta, onListaChange])
 
   useEffect(() => {
     void recarregar()
@@ -134,7 +142,7 @@ export function FinContasPagarTab({
   useEffect(() => {
     setPagina(1)
     setFiltroCredor('')
-  }, [filtro, storeId])
+  }, [filtro, storeId, periodoConsulta?.desde, periodoConsulta?.ate])
 
   const opcoesCredor = useMemo(() => {
     const nomes = new Set<string>()
@@ -439,7 +447,10 @@ export function FinContasPagarTab({
         {loading ? (
           <p className="lc-empty">Carregando…</p>
         ) : lista.length === 0 ? (
-          <p className="lc-empty">Nenhuma conta neste filtro.</p>
+          <p className="lc-empty">
+            Nenhuma conta neste filtro
+            {periodo?.label ? ` · vencimento em ${periodo.label}` : ''}.
+          </p>
         ) : listaFiltrada.length === 0 ? (
           <p className="lc-empty">Nenhuma conta para o fornecedor selecionado.</p>
         ) : (
@@ -448,6 +459,7 @@ export function FinContasPagarTab({
             <span className="fin-lista-total__meta">
               {totalItens === 1 ? '1 título' : `${totalItens} títulos`}
               {filtroCredor ? ` · ${filtroCredor}` : ''}
+              {periodo?.label ? ` · venc. ${periodo.label}` : ''}
             </span>
             <strong className="fin-lista-total__valor">{formatBRL(somatorioLista)}</strong>
           </div>

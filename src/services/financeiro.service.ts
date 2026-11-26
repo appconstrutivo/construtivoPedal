@@ -485,10 +485,18 @@ export async function obterResumoFluxoCaixa(
   }
 }
 
+export type PeriodoContasPagar = {
+  /** YYYY-MM-DD — filtro por data de vencimento. */
+  desde: string
+  /** YYYY-MM-DD — filtro por data de vencimento. */
+  ate: string
+}
+
 export async function listarContasPagar(
   companyId: string,
   storeId: string,
   filtro: FiltroContaPagar = 'todas',
+  periodo?: PeriodoContasPagar | null,
 ): Promise<ContaPagar[]> {
   if (!storeId) return []
 
@@ -498,6 +506,11 @@ export async function listarContasPagar(
     .select('*, fornecedores(nome)')
     .eq('company_id', companyId)
     .eq('store_id', storeId)
+
+  // Período aplica em qualquer status (eixo: vencimento).
+  if (periodo?.desde && periodo?.ate) {
+    q = q.gte('vencimento', periodo.desde).lte('vencimento', periodo.ate)
+  }
 
   if (filtro === 'pagas') {
     q = q

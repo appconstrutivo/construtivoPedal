@@ -119,6 +119,22 @@ export type RelatorioOficina = {
   faturamentoRecebido: number
 }
 
+/** Snapshot mensal do capital em estoque (custo das mercadorias). */
+export type EstoqueValorMensal = {
+  competencia: string
+  label: string
+  valorMercadorias: number
+  valorPatrimonio: number
+  totalSkus: number
+  criticos: number
+  reposicao: number
+  capturadoEm: string
+  /** Variação % vs mês anterior (null se não houver base). */
+  variacaoPct: number | null
+  /** Diferença absoluta vs mês anterior (null se não houver base). */
+  variacaoAbs: number | null
+}
+
 export type RelatorioEstoque = {
   totalSkus: number
   criticos: number
@@ -127,6 +143,13 @@ export type RelatorioEstoque = {
   entradas: number
   saidas: number
   itensCriticos: Array<{ nome: string; saldo: number; minimo: number; sku: string | null }>
+  /** Série mensal (mais recente primeiro), até 12 competências. */
+  historicoValorMensal: EstoqueValorMensal[]
+  /** Snapshot congelado do mês atual (se já capturado). */
+  snapshotMesAtual: EstoqueValorMensal | null
+  /** Variação do valor ao vivo vs snapshot do mês atual. */
+  variacaoVsInicioMesPct: number | null
+  variacaoVsInicioMesAbs: number | null
 }
 
 export type RelatorioClientes = {
@@ -454,6 +477,106 @@ export async function obterRelatorioOficina(
   }
 }
 
+const LABEL_MES = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' })
+
+function labelCompetencia(competenciaIso: string): string {
+  const [y, m] = competenciaIso.slice(0, 10).split('-').map(Number)
+  return LABEL_MES.format(new Date(y, m - 1, 1))
+}
+
+function pctVariacao(atual: number, anterior: number): number | null {
+  if (!Number.isFinite(atual) || !Number.isFinite(anterior)) return null
+  if (anterior === 0) return atual === 0 ? 0 : null
+  return Math.round(((atual - anterior) / Math.abs(anterior)) * 1000) / 10
+}
+
+type SnapshotRow = {
+  competencia: string
+  valor_mercadorias: number
+  valor_patrimonio: number
+  total_skus: number
+  criticos: number
+  reposicao: number
+  capturado_em: string
+}
+
+function mapHistoricoValorMensal(rows: SnapshotRow[]): EstoqueValorMensal[] {
+  // rows: competência ascendente → calcula delta vs mês anterior; depois inverte para UI.
+  const ordered = [...rows].sort((a, b) => a.competencia.localeCompare(b.competencia))
+  const mapped: EstoqueValorMensal[] = ordered.map((row, idx) => {
+    const valor = Number(row.valor_mercadorias) || 0
+    const prev = idx > 0 ? Number(ordered[idx - 1].valor_mercadorias) || 0 : null
+    const variacaoAbs = prev == null ? null : round2(valor - prev)
+    return {
+      competencia: row.competencia.slice(0, 10),
+      label: labelCompetencia(row.competencia),
+      valorMercadorias: valor,
+      valorPatrimonio: Number(row.valor_patrimonio) || 0,
+      totalSkus: Number(row.total_skus) || 0,
+      criticos: Number(row.criticos) || 0,
+      reposicao: Number(row.reposicao) || 0,
+      capturadoEm: row.capturado_em,
+      variacaoPct: prev == null ? null : pctVariacao(valor, prev),
+      variacaoAbs,
+    }
+  })
+  return mapped.reverse()
+}
+
+/** Garante snapshot do mês atual (freeze na 1ª captura) e lista até 12 meses. */
+export async function obterHistoricoValorEstoque(
+  companyId: string,
+  storeId: string,
+): Promise<{ historico: EstoqueValorMensal[]; snapshotMesAtual: EstoqueValorMensal | null }> {
+  if (!companyId || !storeId) return { historico: [], snapshotMesAtual: null }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: capturaError } = await (supabase as any).rpc('capturar_estoque_valor_snapshot', {
+    p_company_id: companyId,
+    p_store_id: storeId,
+    p_competencia: null,
+    p_origem: 'auto',
+  })
+  if (capturaError) {
+    throw new Error(
+      (capturaError as { message?: string }).message ?? 'Erro ao capturar snapshot de estoque.',
+    )
+  }
+
+  const limite = new Date()
+  limite.setMonth(limite.getMonth() - 11)
+  limite.setDate(1)
+  const desdeComp = `${limite.getFullYear()}-${String(limite.getMonth() + 1).padStart(2, '0')}-01`
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('estoque_valor_snapshots')
+    .select(
+      'competencia, valor_mercadorias, valor_patrimonio, total_skus, criticos, reposicao, capturado_em',
+    )
+    .eq('company_id', companyId)
+    .eq('store_id', storeId)
+    .gte('competencia', desdeComp)
+    .order('competencia', { ascending: true })
+
+  if (error) {
+    throw new Error((error as { message?: string }).message ?? 'Erro ao carregar histórico de estoque.')
+  }
+
+  const historico = mapHistoricoValorMensal((data ?? []) as SnapshotRow[])
+  // Alinha com estoque_competencia_atual() (America/Sao_Paulo).
+  const spParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(new Date())
+  const y = spParts.find((p) => p.type === 'year')?.value ?? '1970'
+  const m = spParts.find((p) => p.type === 'month')?.value ?? '01'
+  const compAtual = `${y}-${m}-01`
+  const snapshotMesAtual = historico.find((h) => h.competencia === compAtual) ?? null
+  return { historico, snapshotMesAtual }
+}
+
 export async function obterRelatorioEstoque(
   companyId: string,
   storeId: string,
@@ -467,6 +590,10 @@ export async function obterRelatorioEstoque(
     entradas: 0,
     saidas: 0,
     itensCriticos: [],
+    historicoValorMensal: [],
+    snapshotMesAtual: null,
+    variacaoVsInicioMesPct: null,
+    variacaoVsInicioMesAbs: null,
   }
   if (!storeId) return vazio
 
@@ -507,6 +634,22 @@ export async function obterRelatorioEstoque(
     else if (m.tipo === 'saida') saidas += q
   }
 
+  let historicoValorMensal: EstoqueValorMensal[] = []
+  let snapshotMesAtual: EstoqueValorMensal | null = null
+  try {
+    const hist = await obterHistoricoValorEstoque(companyId, storeId)
+    historicoValorMensal = hist.historico
+    snapshotMesAtual = hist.snapshotMesAtual
+  } catch {
+    // Relatório principal não deve falhar se o histórico ainda não estiver disponível.
+  }
+
+  const baseMes = snapshotMesAtual?.valorMercadorias ?? null
+  const variacaoVsInicioMesAbs =
+    baseMes == null ? null : round2(resumo.valorEstoque - baseMes)
+  const variacaoVsInicioMesPct =
+    baseMes == null ? null : pctVariacao(resumo.valorEstoque, baseMes)
+
   return {
     totalSkus: resumo.totalSkus,
     criticos: resumo.criticos,
@@ -515,6 +658,10 @@ export async function obterRelatorioEstoque(
     entradas,
     saidas,
     itensCriticos,
+    historicoValorMensal,
+    snapshotMesAtual,
+    variacaoVsInicioMesPct,
+    variacaoVsInicioMesAbs,
   }
 }
 

@@ -383,13 +383,28 @@ export function FinanceiroPage({
   const [erro, setErro] = useState<string | null>(null)
 
   const semLoja = !activeStoreId
-  const periodoDesabilitado = aba !== 'extrato'
+  const periodoDesabilitado = aba !== 'extrato' && aba !== 'pagar'
   const precisaDadosDashboard = aba === 'caixa' || aba === 'extrato'
 
   const intervalo = useMemo((): IntervaloRelatorio | null => {
     if (periodo === 'custom') return tentarIntervaloPersonalizado(dataInicio, dataFim)
     return intervaloPeriodo(periodo)
   }, [periodo, dataInicio, dataFim])
+
+  /** Datas YYYY-MM-DD para filtrar contas a pagar por vencimento. */
+  const periodoPagar = useMemo(() => {
+    if (!intervalo) return null
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const toYmd = (iso: string) => {
+      const d = new Date(iso)
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+    }
+    return {
+      desde: toYmd(intervalo.desde),
+      ate: toYmd(intervalo.ate),
+      label: intervalo.label,
+    }
+  }, [intervalo])
 
   const carregarCaixa = useCallback(async () => {
     const hojeInterval = intervaloPeriodo('hoje')
@@ -494,7 +509,9 @@ export function FinanceiroPage({
       ? `${storeName ?? 'Loja ativa'} · Caixa e pendências do dia`
       : aba === 'extrato'
         ? `${storeName ?? 'Loja ativa'} · ${intervalo?.label ?? 'período personalizado'}`
-        : `${storeName ?? 'Loja ativa'} · Operação financeira`
+        : aba === 'pagar'
+          ? `${storeName ?? 'Loja ativa'} · A pagar · ${periodoPagar?.label ?? 'período personalizado'}`
+          : `${storeName ?? 'Loja ativa'} · Operação financeira`
 
   return (
     <div className="cp-page fin-page">
@@ -530,7 +547,11 @@ export function FinanceiroPage({
               className={periodo === p.key ? 'rl-period__btn rl-period__btn--active' : 'rl-period__btn'}
               onClick={() => setPeriodo(p.key)}
               disabled={semLoja || periodoDesabilitado}
-              title={periodoDesabilitado ? 'Período disponível na aba Extrato' : undefined}
+              title={
+                periodoDesabilitado
+                  ? 'Período disponível em A pagar e Extrato'
+                  : undefined
+              }
             >
               {p.label}
             </button>
@@ -586,10 +607,21 @@ export function FinanceiroPage({
             unidade.
           </p>
         </section>
+      ) : aba === 'pagar' && periodo === 'custom' && !periodoPagar ? (
+        <section className="cp-panel cp-panel--muted">
+          <p className="cp-panel__hint">
+            Informe a data inicial e a data final para filtrar as contas a pagar.
+          </p>
+        </section>
+      ) : aba === 'pagar' && periodo === 'custom' && dataInicio > dataFim ? (
+        <section className="cp-panel cp-panel--muted">
+          <p className="cp-panel__hint">A data inicial não pode ser posterior à data final.</p>
+        </section>
       ) : aba === 'pagar' ? (
         <FinContasPagarTab
           companyId={companyId}
           storeId={activeStoreId}
+          periodo={periodoPagar}
           onListaChange={onContasPagarChange}
           onNavigateFornecedores={onNavigateFornecedores}
         />

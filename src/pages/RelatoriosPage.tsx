@@ -263,8 +263,37 @@ function AbaOficina({ dados }: { dados: RelatorioConsolidado }) {
   )
 }
 
+function DeltaValor({
+  pct,
+  abs,
+  comparacao,
+}: {
+  pct: number | null
+  abs: number | null
+  comparacao: string
+}) {
+  if (pct == null || abs == null || abs === 0) return null
+  const positivo = abs > 0
+  return (
+    <span
+      className={positivo ? 'rl-delta rl-delta--up' : 'rl-delta rl-delta--down'}
+      title={`vs ${comparacao}`}
+    >
+      {positivo ? '▲' : '▼'} {formatBRL(Math.abs(abs))} ({Math.abs(pct)}%)
+    </span>
+  )
+}
+
 function AbaEstoque({ dados }: { dados: RelatorioConsolidado }) {
   const { estoque } = dados
+  const maxValor = estoque.historicoValorMensal.reduce(
+    (m, h) => Math.max(m, h.valorMercadorias),
+    0,
+  )
+  const hintValor =
+    estoque.variacaoVsInicioMesAbs != null && estoque.variacaoVsInicioMesAbs !== 0
+      ? `vs início do mês: ${estoque.variacaoVsInicioMesAbs > 0 ? '+' : '−'}${formatBRL(Math.abs(estoque.variacaoVsInicioMesAbs))}`
+      : 'posição atual (custo médio)'
 
   return (
     <>
@@ -272,7 +301,7 @@ function AbaEstoque({ dados }: { dados: RelatorioConsolidado }) {
         <KpiCard tom="slate" label="SKUs ativos" value={String(estoque.totalSkus)} />
         <KpiCard tom="rose" label="Críticos" value={String(estoque.criticos)} />
         <KpiCard tom="amber" label="Reposição" value={String(estoque.reposicao)} />
-        <KpiCard tom="teal" label="Valor (custo)" value={formatBRL(estoque.valorEstoque)} />
+        <KpiCard tom="teal" label="Valor (custo)" value={formatBRL(estoque.valorEstoque)} hint={hintValor} />
       </div>
       <div className="rl-split">
         <section className="rl-card">
@@ -307,6 +336,38 @@ function AbaEstoque({ dados }: { dados: RelatorioConsolidado }) {
           )}
         </section>
       </div>
+
+      <section className="rl-card">
+        <SecaoTitulo>Capital em estoque por mês</SecaoTitulo>
+        <p className="rl-card__hint">
+          Valor de custo das mercadorias no início de cada mês. A captura é automática (dia 1) e o
+          registro fica congelado para comparação de crescimento do capital na loja.
+        </p>
+        {estoque.historicoValorMensal.length === 0 ? (
+          <ListaVazia texto="Histórico ainda não disponível para esta loja." />
+        ) : (
+          <ul className="rl-daily">
+            {estoque.historicoValorMensal.map((h) => (
+              <li key={h.competencia} className="rl-daily__row">
+                <div className="rl-daily__head">
+                  <span className="rl-daily__date">{h.label}</span>
+                  <span className="rl-daily__total">{formatBRL(h.valorMercadorias)}</span>
+                </div>
+                <BarraProporcional valor={h.valorMercadorias} max={maxValor} tom="teal" />
+                <div className="rl-daily__meta">
+                  <span>{formatNum(h.totalSkus, 0)} SKUs</span>
+                  {h.criticos > 0 ? <span>{h.criticos} críticos</span> : null}
+                  <DeltaValor
+                    pct={h.variacaoPct}
+                    abs={h.variacaoAbs}
+                    comparacao="mês anterior"
+                  />
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </>
   )
 }

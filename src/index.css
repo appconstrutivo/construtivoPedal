@@ -6957,6 +6957,11 @@ button {
   line-height: 1.45;
 }
 
+.rl-card__hint + .rl-daily,
+.rl-card__hint + .rl-empty {
+  margin-top: 14px;
+}
+
 .rl-highlight {
   margin: 0;
   font-size: 1.75rem;
