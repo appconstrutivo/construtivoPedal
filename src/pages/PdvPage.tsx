@@ -553,7 +553,12 @@ export function PdvPage({ companyId, activeStoreId, companyName, storeName }: Pd
                       {semSaldo && <span className="pdv-prod-card__badge">Sem saldo</span>}
                     </button>
                     <span className="pdv-prod-tooltip" role="tooltip">
-                      {item.nome}
+                      <span className="pdv-prod-tooltip__nome">{item.nome}</span>
+                      <span className="pdv-prod-tooltip__local">
+                        {item.localCodigo
+                          ? `Local: ${item.localCodigo}${item.localNome ? ` — ${item.localNome}` : ''}`
+                          : 'Local: sem locação'}
+                      </span>
                     </span>
                   </li>
                 )

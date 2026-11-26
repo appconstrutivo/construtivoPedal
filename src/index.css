@@ -5863,8 +5863,10 @@ button {
   inset: 0;
   z-index: 5;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   padding: 10px 8px;
   font-size: 0.76rem;
   font-weight: 650;
@@ -5883,6 +5885,17 @@ button {
     opacity 0.15s ease,
     visibility 0.15s ease;
   word-break: break-word;
+}
+
+.pdv-prod-tooltip__nome {
+  display: block;
+}
+
+.pdv-prod-tooltip__local {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--cp-muted, color-mix(in srgb, var(--cp-text) 65%, transparent));
 }
 
 .pdv-prod-grid__item:hover .pdv-prod-tooltip,

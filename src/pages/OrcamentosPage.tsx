@@ -3,7 +3,7 @@ import { ClientePicker } from '../components/ClientePicker'
 import { EstoqueItemPicker } from '../components/EstoqueItemPicker'
 import { ServicoCatalogoPicker } from '../components/ServicoCatalogoPicker'
 import { imprimirOrcamento } from '../components/OrcamentoPrint'
-import { parseMoneyInput } from '../lib/money'
+import { formatMoneyInput, maskMoneyInput, parseMoneyInput } from '../lib/money'
 import {
   MSG_QUANTIDADE_INTEIRA,
   filtrarInputQuantidadeInteira,
@@ -147,7 +147,7 @@ export function OrcamentosPage({
     catalogoId: '',
     desc: '',
     qtd: '1',
-    preco: '0',
+    preco: '',
   })
 
   const carregarLista = useCallback(async () => {
@@ -393,15 +393,17 @@ export function OrcamentosPage({
 
   function selecionarServicoCatalogo(id: string) {
     if (!id) {
-      setServicoForm({ catalogoId: '', desc: '', qtd: '1', preco: '0' })
+      setServicoForm({ catalogoId: '', desc: '', qtd: '1', preco: '' })
       return
     }
     const svc = catalogoServicos.find((s) => s.id === id)
+    const precoNum = svc != null ? Number(svc.preco_sugerido) || 0 : 0
     setServicoForm({
       catalogoId: id,
       desc: svc?.nome ?? '',
       qtd: '1',
-      preco: svc != null ? String(Number(svc.preco_sugerido) || 0) : '0',
+      // Máscara BRL (centavos implícitos): "25" vira "25,00" — parseMoneyInput lê certo.
+      preco: formatMoneyInput(precoNum),
     })
   }
 
@@ -434,7 +436,7 @@ export function OrcamentosPage({
         quantidade: q,
         preco_unitario: preco,
       })
-      setServicoForm({ catalogoId: '', desc: '', qtd: '1', preco: '0' })
+      setServicoForm({ catalogoId: '', desc: '', qtd: '1', preco: '' })
       await carregarLista()
       await recarregarDetalhe(detalhe.id)
     } catch (e: unknown) {
@@ -723,11 +725,13 @@ export function OrcamentosPage({
                           />
                           <input
                             className="orc-input orc-input--qtd"
-                            inputMode="decimal"
+                            inputMode="numeric"
                             placeholder="R$ 0,00"
                             value={servicoForm.preco}
                             disabled={busy === 'svc'}
-                            onChange={(e) => setServicoForm((f) => ({ ...f, preco: e.target.value }))}
+                            onChange={(e) =>
+                              setServicoForm((f) => ({ ...f, preco: maskMoneyInput(e.target.value) }))
+                            }
                             aria-label="Preço unitário do serviço"
                           />
                           <button

@@ -247,6 +247,12 @@ export async function estornarBaixasOs(osId: string): Promise<void> {
 
 /** Remove a OS e registros vinculados (checklist, itens, anexos). Estorna baixas antes de excluir. */
 export async function excluirOrdemServico(companyId: string, osId: string): Promise<void> {
+  if (await osTemFaturamentoAtivo(osId)) {
+    throw new Error(
+      'Não é possível excluir OS faturada ou recebida. Cancele o faturamento/recebimento antes de excluir.',
+    )
+  }
+
   await estornarBaixasOs(osId)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -273,7 +279,15 @@ export async function excluirOrdemServico(companyId: string, osId: string): Prom
     .eq('id', osId)
     .eq('company_id', companyId)
 
-  if (error) throw new Error((error as { message?: string }).message ?? 'Erro ao excluir ordem de serviço.')
+  if (error) {
+    const msg = (error as { message?: string }).message ?? ''
+    if (/financeiro_contas_receber|foreign key|violates/i.test(msg)) {
+      throw new Error(
+        'Não é possível excluir esta OS porque há vínculo financeiro. Cancele o faturamento/recebimento antes.',
+      )
+    }
+    throw new Error(msg || 'Erro ao excluir ordem de serviço.')
+  }
 }
 
 export async function adicionarChecklistItem(
